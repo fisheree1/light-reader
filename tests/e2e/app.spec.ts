@@ -119,3 +119,41 @@ test('persists global reading settings and a per-book override', async ({
   await expect(page.getByLabel('为本书使用单独设置')).toBeChecked();
   await expect(page.getByLabel('阅读主题')).toHaveValue('dark');
 });
+
+test('creates a highlight with a note and restores both after reopening', async ({
+  page,
+}) => {
+  await page.goto('/library');
+  await page.getByRole('button', { name: '导入 EPUB' }).click();
+  await page.getByRole('button', { name: /Web 测试 EPUB/ }).click();
+  await expect(page.getByRole('button', { name: '第一章' })).toBeVisible();
+
+  await expect.poll(() => page.frames().length).toBeGreaterThan(1);
+  const contentFrame = page
+    .frames()
+    .find((frame) => frame !== page.mainFrame());
+  if (!contentFrame) throw new Error('EPUB content frame was not created');
+  await contentFrame
+    .getByText('这是 LightReader 自制的无版权测试内容。')
+    .selectText();
+
+  await page.getByRole('button', { name: '蓝色高亮' }).click();
+  await page.getByRole('button', { name: '添加高亮' }).click();
+  const annotationCard = page
+    .getByText('这是 LightReader 自制的无版权测试内容。', { exact: true })
+    .locator('..');
+  await expect(annotationCard).toBeVisible();
+  await annotationCard.click();
+
+  await page.getByLabel('批注内容').fill('E2E 自制批注');
+  await page.getByRole('button', { name: '保存' }).click();
+  await expect(page.getByText('已保存')).toBeVisible();
+  await page.getByRole('button', { name: '关闭批注' }).click();
+  await page.getByRole('link', { name: '返回书架' }).click();
+
+  await page.getByRole('button', { name: /Web 测试 EPUB/ }).click();
+  await expect(
+    page.getByText('这是 LightReader 自制的无版权测试内容。', { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText('E2E 自制批注', { exact: true })).toBeVisible();
+});

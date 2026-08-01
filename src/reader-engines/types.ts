@@ -19,6 +19,29 @@ export interface ReaderTocItem {
 
 export type RelocationListener = (locator: BookLocator) => void;
 
+export type AnnotationColor = 'yellow' | 'blue' | 'green' | 'red';
+
+export interface ReaderTextSelection {
+  locator: BookLocator;
+  text: string;
+  textAfter: string | null;
+  textBefore: string | null;
+}
+
+export interface ReaderHighlight {
+  color: AnnotationColor;
+  id: string;
+  locator: BookLocator;
+}
+
+export interface HighlightRestoreResult {
+  id: string;
+  status: 'restored' | 'unresolved';
+}
+
+export type SelectionListener = (selection: ReaderTextSelection | null) => void;
+export type HighlightActivationListener = (id: string) => void;
+
 export interface ReaderDisplayOptions {
   contentWidth: number;
   fontSize: number;
@@ -38,5 +61,16 @@ export interface EbookReader {
   nextPage(): Promise<void>;
   getCurrentLocator(): Promise<BookLocator>;
   subscribeToRelocation(listener: RelocationListener): () => void;
+  getSelection(): ReaderTextSelection | null;
+  subscribeToSelection(listener: SelectionListener): () => void;
+  createHighlight(highlight: ReaderHighlight): Promise<void>;
+  removeHighlight(id: string): Promise<void>;
+  restoreHighlights(
+    highlights: ReaderHighlight[],
+  ): Promise<HighlightRestoreResult[]>;
+  showHighlight(id: string): Promise<void>;
+  subscribeToHighlightActivation(
+    listener: HighlightActivationListener,
+  ): () => void;
   close(): Promise<void>;
 }

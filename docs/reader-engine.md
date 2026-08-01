@@ -16,6 +16,9 @@ ReaderPage / useReader
   -> BookRepository
   -> ReaderSettingsRepository
      -> SQLite (desktop) / localStorage test adapter (Web)
+  -> AnnotationService
+     -> AnnotationRepository
+     -> EbookReader highlight operations
 ```
 
 React does not import Foliate or Tauri modules. Custom elements, upstream event
@@ -65,6 +68,32 @@ The effective value is `global + per-book override`. SQLite remains the source
 of truth; Zustand holds only the currently open book's resolved UI state. Book
 overrides and positions cascade when their book is removed.
 
+## Highlights and annotation comments
+
+The engine contract exposes only `ReaderTextSelection`, `ReaderHighlight`, and
+versioned `BookLocator` values. Selection DOM ranges, Foliate section indexes,
+Overlayer instances, and SVG nodes remain private to `FoliateEbookReader`.
+
+The adapter listens to selection changes in loaded EPUB documents, converts the
+range to CFI, captures bounded text context, and delegates drawing to Foliate's
+public `Overlayer.highlight`. It also maps overlay clicks back to application
+annotation IDs. Highlight drawing supports the four validated colors plus hover
+and pressed feedback.
+
+`AnnotationService` coordinates the engine and `AnnotationRepository`:
+
+- create: render the selected range, persist it, and remove the transient render
+  if persistence fails;
+- restore: load annotations, attempt each CFI independently, and retain rows that
+  can no longer be resolved;
+- delete: remove the render and database row, with a best-effort render rollback
+  if persistence fails;
+- comments: normalize and persist plain text on the existing annotation row.
+
+Migration `0004_annotations.sql` creates `annotations`; immutable migration
+`0005_annotation_notes.sql` adds `note_text`. No DOM selector, page number,
+Foliate object, or book content BLOB is persisted.
+
 ## Lifecycle and navigation
 
 1. Resolve the `Book` through `BookRepository`.
@@ -72,9 +101,11 @@ overrides and positions cascade when their book is removed.
 3. Load global settings, the optional book override and saved locator.
 4. Mount one `foliate-view`, open the EPUB Blob and apply resolved appearance.
 5. Restore the saved locator and map the EPUB TOC into nested `ReaderTocItem` values.
-6. Translate later relocation events into locators and debounce persistence.
-7. Navigate using CFI first, then chapter href, then total progression.
-8. On source change or unmount, remove listeners, unload sections, close the
+6. Load annotations and restore each highlight without failing the reading session.
+7. Translate later relocation events into locators and debounce persistence.
+8. Navigate using CFI first, then chapter href, then total progression.
+9. On source change or unmount, remove selection/overlay/navigation listeners,
+   unload sections, close the
    renderer and detach the custom element. `close()` is idempotent.
 
 Vite excludes Foliate's dormant PDF, MOBI, FB2, CBZ, search and TTS dynamic

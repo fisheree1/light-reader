@@ -1,6 +1,9 @@
 import { isTauri } from '@tauri-apps/api/core';
 
 import type { BookRepository } from '../../../database/repositories/book-repository';
+import type { AnnotationRepository } from '../../../database/repositories/annotation-repository';
+import { SqliteAnnotationRepository } from '../../../database/repositories/sqlite-annotation-repository';
+import { WebAnnotationRepository } from '../../../database/repositories/web-annotation-repository';
 import type { ReaderSettingsRepository } from '../../../database/repositories/reader-settings-repository';
 import { SqliteReaderSettingsRepository } from '../../../database/repositories/sqlite-reader-settings-repository';
 import { WebReaderSettingsRepository } from '../../../database/repositories/web-reader-settings-repository';
@@ -14,6 +17,7 @@ import {
 import { WebReaderBookSource } from './web-reader-book-source';
 
 export interface ReaderServices {
+  annotationRepository: AnnotationRepository;
   createReader(): EbookReader;
   repository: BookRepository;
   settingsRepository: ReaderSettingsRepository;
@@ -21,6 +25,9 @@ export interface ReaderServices {
 }
 
 export const readerServices: ReaderServices = {
+  annotationRepository: isTauri()
+    ? new SqliteAnnotationRepository()
+    : new WebAnnotationRepository(),
   repository: libraryServices.repository,
   settingsRepository: isTauri()
     ? new SqliteReaderSettingsRepository()

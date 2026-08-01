@@ -3,6 +3,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ListTree,
+  Highlighter,
   RotateCcw,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -12,6 +13,9 @@ import { EmptyState } from '../../components/common/empty-state';
 import { Button } from '../../components/ui/button';
 import { IconButton } from '../../components/ui/icon-button';
 import { cn } from '../../lib/cn';
+import { AnnotationPopover } from '../annotations/components/annotation-popover';
+import { AnnotationSidebar } from '../annotations/components/annotation-sidebar';
+import { SelectionToolbar } from '../annotations/components/selection-toolbar';
 import { ReaderTableOfContents } from './components/reader-table-of-contents';
 import { ReaderSettingsDialog } from './components/reader-settings-dialog';
 import { useReader } from './hooks/use-reader';
@@ -36,8 +40,13 @@ export function ReaderPage({ services = readerServices }: ReaderPageProps) {
   const { bookId = '' } = useParams();
   const {
     book,
+    activeAnnotationId,
+    annotationError,
+    annotations,
     bookOverride,
     clearBookSettings,
+    createHighlight,
+    deleteAnnotation,
     effectiveSettings,
     error,
     goToChapter,
@@ -45,14 +54,23 @@ export function ReaderPage({ services = readerServices }: ReaderPageProps) {
     locator,
     navigationError,
     nextPage,
+    navigateToAnnotation,
     persistenceError,
     phase,
     previousPage,
     retry,
     saveBookSettings,
+    selection,
+    setActiveAnnotationId,
     toc,
+    unresolvedAnnotationIds,
+    updateAnnotationNote,
   } = useReader(bookId, services);
   const [isTocOpen, setIsTocOpen] = useState(true);
+  const [isAnnotationSidebarOpen, setIsAnnotationSidebarOpen] = useState(true);
+  const activeAnnotation =
+    annotations.find((annotation) => annotation.id === activeAnnotationId) ??
+    null;
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -108,6 +126,15 @@ export function ReaderPage({ services = readerServices }: ReaderPageProps) {
           onClear={clearBookSettings}
           onSave={saveBookSettings}
         />
+        <IconButton
+          aria-pressed={isAnnotationSidebarOpen}
+          icon={<Highlighter aria-hidden="true" size={17} />}
+          label={isAnnotationSidebarOpen ? '隐藏高亮与批注' : '显示高亮与批注'}
+          onClick={() => {
+            setIsAnnotationSidebarOpen((current) => !current);
+          }}
+          variant="ghost"
+        />
         <span
           aria-label={`阅读进度 ${String(progress)}%`}
           className="text-muted-foreground w-12 text-right text-xs tabular-nums"
@@ -136,6 +163,8 @@ export function ReaderPage({ services = readerServices }: ReaderPageProps) {
             className="reader-render-host bg-surface h-full"
             ref={hostRef}
           />
+
+          <SelectionToolbar onCreate={createHighlight} selection={selection} />
 
           {phase === 'loading' ? (
             <div
@@ -185,6 +214,15 @@ export function ReaderPage({ services = readerServices }: ReaderPageProps) {
             </div>
           ) : null}
 
+          {annotationError ? (
+            <div
+              className="border-destructive/30 bg-background text-destructive absolute top-16 left-1/2 z-20 -translate-x-1/2 rounded-md border px-3 py-2 text-sm shadow"
+              role="alert"
+            >
+              {annotationError}
+            </div>
+          ) : null}
+
           <div
             className={cn(
               'pointer-events-none absolute inset-x-0 bottom-4 flex justify-center gap-2 transition-opacity',
@@ -211,7 +249,30 @@ export function ReaderPage({ services = readerServices }: ReaderPageProps) {
             />
           </div>
         </main>
+
+        {isAnnotationSidebarOpen ? (
+          <AnnotationSidebar
+            activeId={activeAnnotationId}
+            annotations={annotations}
+            onSelect={(annotationId) => {
+              void navigateToAnnotation(annotationId);
+            }}
+            unresolvedIds={unresolvedAnnotationIds}
+          />
+        ) : null}
       </div>
+
+      {activeAnnotation ? (
+        <AnnotationPopover
+          annotation={activeAnnotation}
+          key={activeAnnotation.id}
+          onClose={() => {
+            setActiveAnnotationId(null);
+          }}
+          onDelete={deleteAnnotation}
+          onSave={updateAnnotationNote}
+        />
+      ) : null}
     </div>
   );
 }

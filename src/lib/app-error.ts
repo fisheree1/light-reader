@@ -14,6 +14,13 @@ export const appErrorMessages = {
   READER_SETTINGS_READ_FAILED: '无法加载阅读设置，将使用默认排版。',
   READER_SETTINGS_WRITE_FAILED: '无法保存阅读设置，请稍后重试。',
   READING_STATE_WRITE_FAILED: '无法保存当前阅读位置。',
+  ANNOTATION_READ_FAILED: '无法加载高亮和批注，请稍后重试。',
+  ANNOTATION_WRITE_FAILED: '无法保存高亮或批注，请稍后重试。',
+  ANNOTATION_NOT_FOUND: '这条高亮已经不存在。',
+  ANNOTATION_SELECTION_EMPTY: '请先选择一段正文。',
+  ANNOTATION_RENDER_FAILED: '高亮已保存，但暂时无法定位原文。',
+  ANNOTATION_LOCATE_FAILED: '无法定位原文，EPUB 内容可能已发生变化。',
+  ANNOTATION_RESTORE_PARTIAL: '部分高亮无法定位原文，数据仍已保留。',
   UNKNOWN: '发生了意外错误，请重试。',
 } as const;
 

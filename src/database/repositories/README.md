@@ -4,8 +4,8 @@ Repositories are the only application-layer entry point for persistent business 
 
 Add a repository only with its owning feature. Keep database rows private to the repository, map them to domain types at the boundary, and cover reads, writes, errors, and migrations with tests.
 
-`BookRepository` is the first concrete application of this convention. Its
-SQLite implementation validates both write values and returned rows, translates
-database failures to the shared `AppError`, and exposes only domain `Book`
-objects. EPUB files and covers remain on disk; the repository stores generated,
-application-relative paths only.
+`BookRepository`, `ReaderSettingsRepository`, and `AnnotationRepository` follow
+this boundary. SQLite implementations validate write values and returned rows,
+translate database failures to the shared `AppError`, and expose only domain
+objects. EPUB files and covers remain on disk; annotation rows contain only
+user-created text, bounded context, stable CFI locators, colors, and timestamps.

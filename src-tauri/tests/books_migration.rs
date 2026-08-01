@@ -39,6 +39,14 @@ async fn apply_migrations(connection: &mut SqliteConnection) {
         .execute(include_str!("../migrations/0003_reader_settings.sql"))
         .await
         .expect("reader settings migration should apply");
+    connection
+        .execute(include_str!("../migrations/0004_annotations.sql"))
+        .await
+        .expect("annotations migration should apply");
+    connection
+        .execute(include_str!("../migrations/0005_annotation_notes.sql"))
+        .await
+        .expect("annotation notes migration should apply");
 }
 
 #[tokio::test]
@@ -79,6 +87,23 @@ async fn reader_settings_and_position_persist_and_follow_book_lifecycle() {
     .execute(&mut connection)
     .await
     .expect("reading state should be created");
+    sqlx::query(
+        r#"INSERT INTO annotations (
+          id, book_id, text, text_before, text_after, chapter_href,
+          locator_json, color, note_text, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'yellow', ?, 4, 5)"#,
+    )
+    .bind("annotation-1")
+    .bind("reader-book")
+    .bind("selected text")
+    .bind("before")
+    .bind("after")
+    .bind("EPUB/one.xhtml")
+    .bind(r#"{"version":1,"format":"epub","chapterHref":"EPUB/one.xhtml","cfi":"epubcfi(/6/2!/4/2,/1:0,/1:4)"}"#)
+    .bind("first note")
+    .execute(&mut connection)
+    .await
+    .expect("annotation and note should be created");
 
     connection.close().await.expect("database should close");
     let mut reopened = connect(&path).await;
@@ -99,6 +124,13 @@ async fn reader_settings_and_position_persist_and_follow_book_lifecycle() {
         .expect("reading state should survive reopen")
         .get::<f64, _>("progression");
     assert!((progression - 0.42).abs() < f64::EPSILON);
+    let note = sqlx::query("SELECT note_text FROM annotations WHERE id = ?")
+        .bind("annotation-1")
+        .fetch_one(&mut reopened)
+        .await
+        .expect("annotation should survive reopen")
+        .get::<String, _>("note_text");
+    assert_eq!(note, "first note");
 
     sqlx::query("DELETE FROM books WHERE id = ?")
         .bind("reader-book")
@@ -111,6 +143,12 @@ async fn reader_settings_and_position_persist_and_follow_book_lifecycle() {
         .expect("reading states should be queryable")
         .get::<i64, _>("count");
     assert_eq!(state_count, 0);
+    let annotation_count = sqlx::query("SELECT COUNT(*) AS count FROM annotations")
+        .fetch_one(&mut reopened)
+        .await
+        .expect("annotations should be queryable")
+        .get::<i64, _>("count");
+    assert_eq!(annotation_count, 0);
     reopened.close().await.expect("database should close again");
     std::fs::remove_file(path).expect("test database should be removable");
 }

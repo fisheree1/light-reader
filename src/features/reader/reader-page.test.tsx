@@ -1,15 +1,28 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import type { BookRepository } from '../../database/repositories/book-repository';
+import type { AnnotationRepository } from '../../database/repositories/annotation-repository';
 import type { ReaderSettingsRepository } from '../../database/repositories/reader-settings-repository';
 import { defaultReaderSettings } from './domain/reader-settings';
+import type { Annotation } from '../annotations/domain/annotation';
 import type {
   BookLocator,
   EbookReader,
   ReaderTocItem,
   RelocationListener,
+  SelectionListener,
+  HighlightActivationListener,
+  ReaderTextSelection,
+  ReaderHighlight,
+  HighlightRestoreResult,
 } from '../../reader-engines/types';
 import type { Book } from '../library/domain/book';
 import { ReaderPage } from './reader-page';
@@ -36,13 +49,49 @@ const BOOK: Book = {
   updatedAt: 1,
 };
 
+const ANNOTATION: Annotation = {
+  id: 'annotation-1',
+  bookId: BOOK.id,
+  text: '渲染后的 EPUB 正文',
+  textBefore: null,
+  textAfter: null,
+  chapterHref: 'one.xhtml',
+  locator: {
+    version: 1,
+    format: 'epub',
+    chapterHref: 'one.xhtml',
+    cfi: 'epubcfi(/6/2!/4/2,/1:0,/1:8)',
+  },
+  color: 'yellow',
+  noteText: null,
+  createdAt: 1,
+  updatedAt: 1,
+};
+
 class FakeReader implements EbookReader {
   readonly applyDisplaySettings = vi.fn();
   readonly close = vi.fn(() => Promise.resolve());
   readonly goTo = vi.fn(() => Promise.resolve());
   readonly nextPage = vi.fn(() => Promise.resolve());
   readonly previousPage = vi.fn(() => Promise.resolve());
+  readonly createHighlight = vi.fn(() => Promise.resolve());
+  readonly removeHighlight = vi.fn(() => Promise.resolve());
+  readonly restoreHighlights = vi.fn<
+    (highlights: ReaderHighlight[]) => Promise<HighlightRestoreResult[]>
+  >((highlights) =>
+    Promise.resolve(
+      highlights.map((highlight) => ({
+        id: highlight.id,
+        status: 'restored',
+      })),
+    ),
+  );
+  readonly showHighlight = vi.fn(() => Promise.resolve());
   private listener: RelocationListener | null = null;
+  private selectionListener: SelectionListener | null = null;
+  private highlightActivationListener: HighlightActivationListener | null =
+    null;
+  private selection: ReaderTextSelection | null = null;
 
   mount(host: HTMLElement): void {
     const content = document.createElement('p');
@@ -72,9 +121,49 @@ class FakeReader implements EbookReader {
     };
   }
 
+  getSelection(): ReaderTextSelection | null {
+    return this.selection;
+  }
+
+  subscribeToSelection(listener: SelectionListener): () => void {
+    this.selectionListener = listener;
+    return () => {
+      this.selectionListener = null;
+    };
+  }
+
+  subscribeToHighlightActivation(
+    listener: HighlightActivationListener,
+  ): () => void {
+    this.highlightActivationListener = listener;
+    return () => {
+      this.highlightActivationListener = null;
+    };
+  }
+
   emit(locator: BookLocator) {
     this.listener?.(locator);
   }
+
+  emitSelection(selection: ReaderTextSelection | null) {
+    this.selection = selection;
+    this.selectionListener?.(selection);
+  }
+
+  activateHighlight(id: string) {
+    this.highlightActivationListener?.(id);
+  }
+}
+
+function createAnnotationRepository(): AnnotationRepository {
+  return {
+    create: (annotation) => Promise.resolve(annotation),
+    findByBookId: () => Promise.resolve([]),
+    findById: () => Promise.resolve(null),
+    updateColor: () => Promise.reject(new Error('not used')),
+    updateNote: () => Promise.reject(new Error('not used')),
+    delete: () => Promise.resolve(),
+  };
 }
 
 function createSettingsRepository(): ReaderSettingsRepository {
@@ -118,6 +207,7 @@ describe('ReaderPage', () => {
   it('shows loading while the managed EPUB is being read', async () => {
     const reader = new FakeReader();
     renderReader({
+      annotationRepository: createAnnotationRepository(),
       repository: createRepository(),
       settingsRepository: createSettingsRepository(),
       source: { read: () => new Promise(() => undefined) },
@@ -132,6 +222,7 @@ describe('ReaderPage', () => {
     const user = userEvent.setup();
     const reader = new FakeReader();
     renderReader({
+      annotationRepository: createAnnotationRepository(),
       repository: createRepository(),
       settingsRepository: createSettingsRepository(),
       source: { read: () => Promise.resolve(new ArrayBuffer(1)) },
@@ -170,6 +261,7 @@ describe('ReaderPage', () => {
     const user = userEvent.setup();
     let attempt = 0;
     renderReader({
+      annotationRepository: createAnnotationRepository(),
       repository: createRepository(),
       settingsRepository: createSettingsRepository(),
       source: {
@@ -193,6 +285,7 @@ describe('ReaderPage', () => {
   it('closes the engine when leaving the reader', async () => {
     const reader = new FakeReader();
     const rendered = renderReader({
+      annotationRepository: createAnnotationRepository(),
       repository: createRepository(),
       settingsRepository: createSettingsRepository(),
       source: { read: () => Promise.resolve(new ArrayBuffer(1)) },
@@ -216,6 +309,7 @@ describe('ReaderPage', () => {
     });
     const saveReadingState = vi.spyOn(settingsRepository, 'saveReadingState');
     renderReader({
+      annotationRepository: createAnnotationRepository(),
       repository: createRepository(),
       settingsRepository,
       source: { read: () => Promise.resolve(new ArrayBuffer(1)) },
@@ -250,6 +344,7 @@ describe('ReaderPage', () => {
     const settingsRepository = createSettingsRepository();
     const saveBookOverride = vi.spyOn(settingsRepository, 'saveBookOverride');
     renderReader({
+      annotationRepository: createAnnotationRepository(),
       repository: createRepository(),
       settingsRepository,
       source: { read: () => Promise.resolve(new ArrayBuffer(1)) },
@@ -272,5 +367,107 @@ describe('ReaderPage', () => {
         theme: 'dark',
       });
     });
+  });
+
+  it('creates a colored highlight from the current text selection', async () => {
+    const user = userEvent.setup();
+    const reader = new FakeReader();
+    const annotationRepository = createAnnotationRepository();
+    const create = vi.spyOn(annotationRepository, 'create');
+    renderReader({
+      annotationRepository,
+      repository: createRepository(),
+      settingsRepository: createSettingsRepository(),
+      source: { read: () => Promise.resolve(new ArrayBuffer(1)) },
+      createReader: () => reader,
+    });
+    await screen.findByRole('button', { name: '第一章' });
+
+    act(() => {
+      reader.emitSelection({
+        text: '渲染后的 EPUB 正文',
+        textBefore: null,
+        textAfter: null,
+        locator: ANNOTATION.locator,
+      });
+    });
+    await user.click(await screen.findByRole('button', { name: '绿色高亮' }));
+    await user.click(screen.getByRole('button', { name: '添加高亮' }));
+
+    await waitFor(() => {
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          bookId: BOOK.id,
+          text: '渲染后的 EPUB 正文',
+          color: 'green',
+          locator: ANNOTATION.locator,
+        }),
+      );
+      expect(reader.createHighlight).toHaveBeenCalled();
+    });
+    expect(screen.getByLabelText('高亮与批注')).toHaveTextContent(
+      '渲染后的 EPUB 正文',
+    );
+  });
+
+  it('opens an activated highlight, saves a note, and deletes it', async () => {
+    const user = userEvent.setup();
+    const reader = new FakeReader();
+    const updateNote = vi.fn((_id: string, noteText: string | null) =>
+      Promise.resolve({ ...ANNOTATION, noteText, updatedAt: 2 }),
+    );
+    const remove = vi.fn(() => Promise.resolve());
+    const annotationRepository: AnnotationRepository = {
+      ...createAnnotationRepository(),
+      findByBookId: () => Promise.resolve([ANNOTATION]),
+      updateNote,
+      delete: remove,
+    };
+    renderReader({
+      annotationRepository,
+      repository: createRepository(),
+      settingsRepository: createSettingsRepository(),
+      source: { read: () => Promise.resolve(new ArrayBuffer(1)) },
+      createReader: () => reader,
+    });
+    await screen.findByText(ANNOTATION.text);
+
+    reader.activateHighlight(ANNOTATION.id);
+    const input = await screen.findByLabelText('批注内容');
+    await user.type(input, '我的批注');
+    await user.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => {
+      expect(updateNote).toHaveBeenCalledWith(ANNOTATION.id, '我的批注');
+    });
+
+    await user.click(screen.getByRole('button', { name: '删除' }));
+    await user.click(screen.getByRole('button', { name: '确认删除' }));
+    await waitFor(() => {
+      expect(remove).toHaveBeenCalledWith(ANNOTATION.id);
+    });
+    expect(screen.queryByLabelText('批注内容')).not.toBeInTheDocument();
+  });
+
+  it('keeps a stale restored highlight and marks it as unresolved', async () => {
+    const reader = new FakeReader();
+    reader.restoreHighlights.mockResolvedValue([
+      { id: ANNOTATION.id, status: 'unresolved' },
+    ]);
+    const annotationRepository: AnnotationRepository = {
+      ...createAnnotationRepository(),
+      findByBookId: () => Promise.resolve([ANNOTATION]),
+    };
+    renderReader({
+      annotationRepository,
+      repository: createRepository(),
+      settingsRepository: createSettingsRepository(),
+      source: { read: () => Promise.resolve(new ArrayBuffer(1)) },
+      createReader: () => reader,
+    });
+
+    expect(await screen.findByText('无法定位原文')).toBeInTheDocument();
+    expect(screen.getByLabelText('高亮与批注')).toHaveTextContent(
+      ANNOTATION.text,
+    );
   });
 });

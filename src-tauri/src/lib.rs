@@ -22,6 +22,18 @@ pub fn run() {
             sql: include_str!("../migrations/0003_reader_settings.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 4,
+            description: "create annotations table",
+            sql: include_str!("../migrations/0004_annotations.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 5,
+            description: "add annotation notes",
+            sql: include_str!("../migrations/0005_annotation_notes.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

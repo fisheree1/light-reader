@@ -7,9 +7,15 @@ import {
 } from '../domain/reader-settings';
 import { AppError, asAppError } from '../../../lib/app-error';
 import type {
+  Annotation,
+  AnnotationColor,
+} from '../../annotations/domain/annotation';
+import { AnnotationService } from '../../annotations/services/annotation-service';
+import type {
   BookLocator,
   EbookReader,
   ReaderTocItem,
+  ReaderTextSelection,
 } from '../../../reader-engines/types';
 import { useReaderSettingsStore } from '../../../stores/reader-settings-store';
 import type { Book } from '../../library/domain/book';
@@ -33,8 +39,18 @@ export function useReader(bookId: string, services: ReaderServices) {
   const [persistenceError, setPersistenceError] = useState<string | null>(null);
   const [phase, setPhase] = useState<ReaderPhase>('loading');
   const [toc, setToc] = useState<ReaderTocItem[]>([]);
+  const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [annotationError, setAnnotationError] = useState<string | null>(null);
+  const [selection, setSelection] = useState<ReaderTextSelection | null>(null);
+  const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(
+    null,
+  );
+  const [unresolvedAnnotationIds, setUnresolvedAnnotationIds] = useState<
+    string[]
+  >([]);
   const hostRef = useRef<HTMLDivElement>(null);
   const readerRef = useRef<EbookReader | null>(null);
+  const annotationServiceRef = useRef<AnnotationService | null>(null);
   const hydrateSettings = useReaderSettingsStore((state) => state.hydrate);
   const setBookOverride = useReaderSettingsStore(
     (state) => state.setBookOverride,
@@ -53,6 +69,8 @@ export function useReader(bookId: string, services: ReaderServices) {
     const isCancelled = () => cancelled;
     let reader: EbookReader | null = null;
     let unsubscribe: () => void = () => undefined;
+    let unsubscribeSelection: () => void = () => undefined;
+    let unsubscribeHighlightActivation: () => void = () => undefined;
     let saveTimer: ReturnType<typeof setTimeout> | undefined;
     let pendingLocator: BookLocator | null = null;
     const host = hostRef.current;
@@ -104,6 +122,40 @@ export function useReader(bookId: string, services: ReaderServices) {
           await reader.goTo(readingState.locator);
           setLocator(readingState.locator);
         }
+        const annotationService = new AnnotationService(
+          services.annotationRepository,
+          reader,
+        );
+        annotationServiceRef.current = annotationService;
+        unsubscribeSelection = reader.subscribeToSelection((nextSelection) => {
+          if (!isCancelled()) setSelection(nextSelection);
+        });
+        unsubscribeHighlightActivation = reader.subscribeToHighlightActivation(
+          (annotationId) => {
+            if (!isCancelled()) setActiveAnnotationId(annotationId);
+          },
+        );
+        try {
+          const restored = await annotationService.restore(bookId);
+          if (!isCancelled()) {
+            setAnnotations(restored.annotations);
+            const unresolved = restored.restoreResults
+              .filter((result) => result.status === 'unresolved')
+              .map((result) => result.id);
+            setUnresolvedAnnotationIds(unresolved);
+            if (unresolved.length > 0) {
+              setAnnotationError(
+                new AppError('ANNOTATION_RESTORE_PARTIAL').userMessage,
+              );
+            }
+          }
+        } catch (reason) {
+          if (!isCancelled()) {
+            setAnnotationError(
+              asAppError(reason, 'ANNOTATION_READ_FAILED').userMessage,
+            );
+          }
+        }
         unsubscribe = reader.subscribeToRelocation((nextLocator) => {
           if (isCancelled()) return;
           setLocator(nextLocator);
@@ -126,7 +178,10 @@ export function useReader(bookId: string, services: ReaderServices) {
       savePendingLocator();
       cancelled = true;
       unsubscribe();
+      unsubscribeSelection();
+      unsubscribeHighlightActivation();
       readerRef.current = null;
+      annotationServiceRef.current = null;
       void reader?.close();
     };
   }, [attempt, bookId, hydrateSettings, services]);
@@ -181,6 +236,77 @@ export function useReader(bookId: string, services: ReaderServices) {
     }
   }, [bookId, globalSettings, services.settingsRepository, setBookOverride]);
 
+  const createHighlight = useCallback(
+    async (color: AnnotationColor) => {
+      const service = annotationServiceRef.current;
+      if (!service) return;
+      setAnnotationError(null);
+      try {
+        const annotation = await service.createFromSelection(bookId, color);
+        setAnnotations((current) => [annotation, ...current]);
+      } catch (reason) {
+        const appError = asAppError(reason, 'ANNOTATION_WRITE_FAILED');
+        setAnnotationError(appError.userMessage);
+        throw appError;
+      }
+    },
+    [bookId],
+  );
+
+  const updateAnnotationNote = useCallback(
+    async (annotationId: string, noteText: string) => {
+      const service = annotationServiceRef.current;
+      if (!service) throw new AppError('ANNOTATION_WRITE_FAILED');
+      const updated = await service.updateNote(annotationId, noteText);
+      setAnnotations((current) =>
+        current.map((annotation) =>
+          annotation.id === updated.id ? updated : annotation,
+        ),
+      );
+      return updated;
+    },
+    [],
+  );
+
+  const deleteAnnotation = useCallback(
+    async (annotationId: string) => {
+      const service = annotationServiceRef.current;
+      if (!service) throw new AppError('ANNOTATION_WRITE_FAILED');
+      const annotation = annotations.find((item) => item.id === annotationId);
+      if (!annotation) throw new AppError('ANNOTATION_NOT_FOUND');
+      try {
+        await service.delete(annotation);
+        setAnnotations((current) =>
+          current.filter((item) => item.id !== annotationId),
+        );
+        setActiveAnnotationId((current) =>
+          current === annotationId ? null : current,
+        );
+        setUnresolvedAnnotationIds((current) =>
+          current.filter((id) => id !== annotationId),
+        );
+      } catch (reason) {
+        const appError = asAppError(reason, 'ANNOTATION_WRITE_FAILED');
+        setAnnotationError(appError.userMessage);
+        throw appError;
+      }
+    },
+    [annotations],
+  );
+
+  const navigateToAnnotation = useCallback(async (annotationId: string) => {
+    const located =
+      (await annotationServiceRef.current?.navigateTo(annotationId)) ?? false;
+    setActiveAnnotationId(annotationId);
+    if (!located) {
+      setUnresolvedAnnotationIds((current) =>
+        current.includes(annotationId) ? current : [...current, annotationId],
+      );
+      setAnnotationError(new AppError('ANNOTATION_LOCATE_FAILED').userMessage);
+    }
+    return located;
+  }, []);
+
   const goToChapter = useCallback(
     (chapterHref: string) =>
       runNavigation((reader) =>
@@ -205,13 +331,23 @@ export function useReader(bookId: string, services: ReaderServices) {
     setPersistenceError(null);
     setPhase('loading');
     setToc([]);
+    setAnnotations([]);
+    setAnnotationError(null);
+    setSelection(null);
+    setActiveAnnotationId(null);
+    setUnresolvedAnnotationIds([]);
     setAttempt((current) => current + 1);
   }, []);
 
   return {
     book,
+    activeAnnotationId,
+    annotationError,
+    annotations,
     bookOverride,
     clearBookSettings,
+    createHighlight,
+    deleteAnnotation,
     effectiveSettings,
     error,
     goToChapter,
@@ -219,11 +355,16 @@ export function useReader(bookId: string, services: ReaderServices) {
     locator,
     navigationError,
     nextPage,
+    navigateToAnnotation,
     persistenceError,
     phase,
     previousPage,
     retry,
     saveBookSettings,
+    selection,
+    setActiveAnnotationId,
     toc,
+    unresolvedAnnotationIds,
+    updateAnnotationNote,
   };
 }
