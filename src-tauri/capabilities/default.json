@@ -1,0 +1,32 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-window",
+  "description": "Minimum platform permissions for the LightReader main window",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        { "path": "$APPDATA/light-reader" },
+        { "path": "$APPDATA/light-reader/**" }
+      ]
+    },
+    "fs:allow-exists",
+    "fs:allow-mkdir",
+    "fs:allow-read-file",
+    "fs:allow-remove",
+    "fs:allow-write-file",
+    "sql:default",
+    {
+      "identifier": "sql:allow-execute",
+      "allow": [{ "url": "sqlite:light-reader.db" }]
+    },
+    "log:default",
+    "os:default",
+    "process:allow-exit",
+    "process:allow-restart"
+  ]
+}
