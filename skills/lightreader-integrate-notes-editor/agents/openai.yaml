@@ -1,0 +1,4 @@
+interface:
+  display_name: 'LightReader 笔记编辑器'
+  short_description: '按本地优先数据模型安全接入 Tiptap 笔记编辑能力'
+  default_prompt: 'Use $lightreader-integrate-notes-editor to add or evolve LightReader note editing with Tiptap.'

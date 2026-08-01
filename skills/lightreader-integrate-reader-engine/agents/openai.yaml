@@ -1,0 +1,4 @@
+interface:
+  display_name: 'LightReader 阅读引擎'
+  short_description: '安全接入 EPUB、PDF、定位、高亮与阅读性能能力'
+  default_prompt: 'Use $lightreader-integrate-reader-engine to integrate or evolve a LightReader ebook rendering engine.'

@@ -1,0 +1,4 @@
+interface:
+  display_name: 'LightReader 功能扩展'
+  short_description: '按项目架构与质量门禁实现 LightReader 功能'
+  default_prompt: 'Use $lightreader-extend-feature to implement a scoped LightReader feature with the repository architecture and verification rules.'

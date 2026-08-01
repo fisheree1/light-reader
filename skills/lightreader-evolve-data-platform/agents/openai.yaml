@@ -1,0 +1,4 @@
+interface:
+  display_name: 'LightReader 数据与平台'
+  short_description: '规范演进 SQLite、Repository、Adapter 与最小 Tauri 权限'
+  default_prompt: 'Use $lightreader-evolve-data-platform to add a migration, repository, storage adapter, or Tauri platform capability.'
