@@ -1,16 +1,17 @@
 # 轻阅笔记（LightReader）
 
-轻阅笔记是一个以本地优先方式管理电子书、阅读进度与阅读笔记的桌面应用。当前 MVP 已支持 EPUB 导入、书架持久化，并可使用 Foliate JS 阅读正文、调整主题与排版、恢复上次阅读位置，以及创建持久化高亮和文字批注。
+轻阅笔记是一个以本地优先方式管理电子书、阅读进度与阅读笔记的桌面应用。当前 MVP 已支持 EPUB 导入、书架持久化，并可使用 Foliate JS 阅读正文、调整主题与排版、恢复上次阅读位置、创建持久化高亮和文字批注，以及用 Tiptap 编写带原文引用的独立笔记。
 
 ## 当前阶段
 
-当前完成了 EPUB 导入、书架持久化、基础阅读、高亮和轻量文字批注闭环。支持格式目前仅为 EPUB；阅读设置、位置、高亮原文/上下文/CFI 和批注均持久化到本地 SQLite。正文搜索和独立笔记编辑器仍未实现。
+当前完成了 EPUB 导入、书架持久化、基础阅读、高亮、轻量文字批注和独立笔记闭环。支持格式目前仅为 EPUB；阅读设置、位置、高亮、批注和版本化 Tiptap JSON 笔记均持久化到本地 SQLite。高亮可以创建引用笔记，点击引用块可返回对应 EPUB 位置。
 
 ## 技术栈
 
 - TypeScript 6（严格模式）、React 19、React Router 7、Vite 8
 - Tauri 2、Rust、SQLite、Tauri SQL 插件
 - Foliate JS（固定官方 Git 提交）
+- Tiptap 3（StarterKit、Markdown、Placeholder、自定义 BookQuoteNode）
 - Zustand、Zod
 - Tailwind CSS 4、Radix UI、Lucide React、CVA
 - Vitest、React Testing Library、Playwright
@@ -75,7 +76,7 @@ pnpm exec playwright install chromium
 pnpm test:e2e
 ```
 
-当前 Playwright 用例运行在 Vite Web 页面上，覆盖启动、导航、主题、预置书架、mock 导入，以及通过 Foliate JS 打开自制 EPUB、选择正文、创建高亮、添加批注和重新打开恢复。Foliate 内容帧相关用例串行运行，以避免本地或受限 CI 主机冷启动模块图时的不稳定竞争。Web 模式使用确定性的 mock importer 与无版权 EPUB；真实系统文件选择、受控文件读取和 SQLite 持久化只在 Tauri 运行时启用。
+当前 Playwright 用例运行在 Vite Web 页面上，覆盖启动、导航、主题、预置书架、mock 导入，以及通过 Foliate JS 打开自制 EPUB、选择正文、创建高亮、添加批注、引用到 Tiptap 笔记、刷新恢复和返回原文。Foliate 内容帧相关用例串行运行，以避免本地或受限 CI 主机冷启动模块图时的不稳定竞争。Web 模式使用确定性的 mock importer、localStorage Repository 与无版权 EPUB；真实系统文件选择、受控文件读取和 SQLite 持久化只在 Tauri 运行时启用。
 
 仅运行 EPUB 导入相关单元和 UI 测试：
 
@@ -107,7 +108,7 @@ pnpm tauri:build
 src/
 ├── app/                  # 路由、Provider、桌面布局
 ├── components/           # 通用组件与基础 UI
-├── database/             # SQL 客户端、Book/阅读设置/Annotation Repository
+├── database/             # SQL 客户端、Book/阅读设置/Annotation/Note Repository
 ├── features/             # 按业务能力组织的功能模块
 ├── reader-engines/       # 阅读引擎抽象与 Foliate adapter
 ├── storage/              # 存储抽象和受控 EPUB 文件存储
@@ -121,11 +122,11 @@ docs/                     # 后续架构文档
 
 React 组件不能直接调用 Tauri API。文件与平台能力通过 Adapter/Service 隔离，持久化业务数据通过 Repository 隔离；这让 Web 测试和未来实现替换保持可控。
 
-EPUB 导入的依赖边界、回滚策略和路径约束见 [`docs/epub-import.md`](docs/epub-import.md)。阅读器生命周期、定位模型和内容安全策略见 [`docs/reader-engine.md`](docs/reader-engine.md)。
+EPUB 导入的依赖边界、回滚策略和路径约束见 [`docs/epub-import.md`](docs/epub-import.md)。阅读器生命周期、定位模型和内容安全策略见 [`docs/reader-engine.md`](docs/reader-engine.md)。笔记文档、自动保存和引用块约定见 [`docs/notes-editor.md`](docs/notes-editor.md)。
 
 ## EPUB 数据与文件位置
 
-- SQLite 数据库：Tauri 应用配置目录中的 `light-reader.db`；`0002` 创建图书，`0003` 创建阅读设置和位置，`0004` 创建高亮，`0005` 为同一 annotations 表增加批注文本。
+- SQLite 数据库：Tauri 应用配置目录中的 `light-reader.db`；`0002` 创建图书，`0003` 创建阅读设置和位置，`0004` 创建高亮，`0005` 为同一 annotations 表增加批注文本，`0006` 创建独立 notes 表。
 - EPUB：Tauri `AppData/light-reader/books/<book-id>/book.epub`。
 - 封面：Tauri `AppData/light-reader/covers/<book-id>.<ext>`；无可用封面时显示内置默认封面。
 - 临时导入：Tauri `AppData/light-reader/tmp/<book-id>/`，成功或失败后清理。
@@ -148,6 +149,7 @@ EPUB 导入的依赖边界、回滚策略和路径约束见 [`docs/epub-import.m
 - 保存原文、前后文、章节 href 和版本化 CFI，不保存 DOM selector 或页码；
 - 通过右侧栏定位高亮，失效 locator 会保留数据并标记“无法定位原文”；
 - 点击高亮添加、编辑、自动保存或删除轻量文字批注；
+- 从高亮创建带原文、书籍、章节和 CFI 快照的独立笔记；
 - 加载、文件缺失、损坏 EPUB 和导航错误状态；
 - 离开页面时卸载章节、撤销资源并销毁 Foliate renderer。
 
@@ -156,12 +158,13 @@ EPUB 导入的依赖边界、回滚策略和路径约束见 [`docs/epub-import.m
 - PDF 阅读
 - 书签
 - 正文搜索
-- 笔记编辑器
-- 高亮引用到独立笔记
+- 跨设备协作编辑
+- 笔记导出
+- 全文笔记搜索（当前只支持标题过滤）
 - 批注导出
 - AI 总结
 - 云同步
-- PDF.js 与 Tiptap 依赖
+- PDF.js
 
 ## 常见问题
 

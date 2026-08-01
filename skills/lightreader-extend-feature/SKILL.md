@@ -12,6 +12,7 @@ description: Implement, refactor, or review a scoped LightReader product feature
 3. Read [project-conventions.md](references/project-conventions.md).
 4. Read [upstream-lessons.md](references/upstream-lessons.md) only for architectural, local-first, or accessibility decisions.
 5. Load `$lightreader-integrate-reader-engine`, `$lightreader-evolve-data-platform`, or `$lightreader-integrate-notes-editor` when the task involves that domain.
+6. Load the project-local [$lightreader-verify-efficiently](../lightreader-verify-efficiently/SKILL.md) before selecting final verification commands.
 
 ## Define the slice
 
@@ -40,14 +41,4 @@ Do not call Tauri or SQL from React components. Do not put database entities int
 
 ## Verify proportionally
 
-Always run:
-
-```bash
-pnpm format:check
-pnpm typecheck
-pnpm lint
-pnpm test:run
-pnpm build
-```
-
-Also run `pnpm test:e2e` for user flows. For `src-tauri`, plugins, migrations, or capabilities, run `cargo fmt --check` and `pnpm tauri build --debug --no-bundle`. Report only commands actually run and preserve unrelated worktree changes.
+Use the project-local `$lightreader-verify-efficiently` Skill to select the smallest sufficient lane from the actual diff. Keep focused feature tests mandatory, but do not automatically run every project suite, production build, E2E suite, Cargo check, and Tauri build for an isolated change. Explicit user-requested commands still take precedence. Report only commands actually run and preserve unrelated worktree changes.

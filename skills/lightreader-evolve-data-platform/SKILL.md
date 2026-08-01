@@ -7,7 +7,7 @@ description: Evolve LightReader persistent data and Tauri platform boundaries sa
 
 ## Route the change
 
-Read `AGENTS.md`, [data-model.md](references/data-model.md), and [tauri-platform.md](references/tauri-platform.md). Inspect `src/database`, `src/storage`, `src-tauri/migrations`, Rust plugin registration, capabilities, package versions, and `git status`.
+Read `AGENTS.md`, [data-model.md](references/data-model.md), and [tauri-platform.md](references/tauri-platform.md). Inspect `src/database`, `src/storage`, `src-tauri/migrations`, Rust plugin registration, capabilities, package versions, and `git status`. Load the project-local [$lightreader-verify-efficiently](../lightreader-verify-efficiently/SKILL.md) before selecting final verification commands.
 
 Choose one primary boundary:
 
@@ -44,11 +44,4 @@ Do not use process or shell plugins to bypass filesystem scopes. Do not broaden 
 
 ## Verify
 
-Run the standard TypeScript gates and relevant tests. For migration, Rust, plugin, or capability changes also run:
-
-```bash
-cargo fmt --check --manifest-path src-tauri/Cargo.toml
-pnpm tauri build --debug --no-bundle
-```
-
-When feasible, launch `pnpm tauri:dev` and exercise the actual Service. Report whether native UI/database behavior was directly verified or only compiled/tested.
+Use the project-local `$lightreader-verify-efficiently` Skill to verify the changed persistence or platform invariant directly. Migration and Repository tests remain required for data changes, but a SQL-only change does not automatically require every frontend, Cargo, and Tauri build check. Run native compilation or `pnpm tauri:dev` when Rust integration, plugins, capabilities, CSP, packaging, or real platform behavior changed. Report whether native UI/database behavior was directly verified, compiled/tested, or intentionally not exercised.

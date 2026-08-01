@@ -1,4 +1,4 @@
-import { Save, Trash2, X } from 'lucide-react';
+import { NotebookPen, Save, Trash2, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { Button } from '../../../components/ui/button';
@@ -11,6 +11,7 @@ interface AnnotationPopoverProps {
   annotation: Annotation;
   onClose: () => void;
   onDelete: (id: string) => Promise<void>;
+  onInsertIntoNote?: (id: string) => Promise<void>;
   onSave: (id: string, noteText: string) => Promise<Annotation>;
 }
 
@@ -20,12 +21,15 @@ export function AnnotationPopover({
   annotation,
   onClose,
   onDelete,
+  onInsertIntoNote,
   onSave,
 }: AnnotationPopoverProps) {
   const [draft, setDraft] = useState(annotation.noteText ?? '');
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteError, setDeleteError] = useState(false);
+  const [insertError, setInsertError] = useState(false);
+  const [isInserting, setIsInserting] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const latestDraftRef = useRef(draft);
   const savedDraftRef = useRef(draft);
@@ -87,6 +91,18 @@ export function AnnotationPopover({
     }
   }
 
+  async function handleInsertIntoNote() {
+    if (!onInsertIntoNote || isInserting) return;
+    setInsertError(false);
+    setIsInserting(true);
+    try {
+      await onInsertIntoNote(annotation.id);
+    } catch {
+      setInsertError(true);
+      setIsInserting(false);
+    }
+  }
+
   return (
     <section
       aria-label="高亮批注"
@@ -132,6 +148,17 @@ export function AnnotationPopover({
           <Save aria-hidden="true" size={14} />
           保存
         </Button>
+        {onInsertIntoNote ? (
+          <Button
+            disabled={isInserting}
+            onClick={() => void handleInsertIntoNote()}
+            size="sm"
+            variant="secondary"
+          >
+            <NotebookPen aria-hidden="true" size={14} />
+            {isInserting ? '正在创建…' : '插入笔记'}
+          </Button>
+        ) : null}
         <Button
           onClick={() => void handleDelete()}
           size="sm"
@@ -152,6 +179,11 @@ export function AnnotationPopover({
       {deleteError ? (
         <p className="text-destructive mt-2 text-xs" role="alert">
           删除失败，请重试。
+        </p>
+      ) : null}
+      {insertError ? (
+        <p className="text-destructive mt-2 text-xs" role="alert">
+          无法创建引用笔记，请重试。
         </p>
       ) : null}
     </section>

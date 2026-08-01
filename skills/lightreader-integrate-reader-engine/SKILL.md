@@ -11,6 +11,7 @@ description: Integrate or evolve LightReader ebook rendering for EPUB, PDF, navi
 2. Confirm the active task explicitly authorizes Foliate JS or PDF.js; the project intentionally defers both dependencies.
 3. Read [foliate-js.md](references/foliate-js.md) for EPUB or [pdf-js.md](references/pdf-js.md) for PDF. Re-check upstream current documentation before choosing a version or commit.
 4. Load `$lightreader-extend-feature` for product UI and `$lightreader-evolve-data-platform` if locators or annotations require persistence.
+5. Load the project-local [$lightreader-verify-efficiently](../lightreader-verify-efficiently/SKILL.md) before selecting final verification commands.
 
 ## Preserve the engine boundary
 
@@ -47,4 +48,4 @@ Load sections/pages lazily. Render only visible or near-visible PDF pages. Cance
 - Test locator serialization round trips and progression bounds.
 - Use tiny licensed fixtures covering reflowable, fixed-layout/RTL when relevant, and malformed input.
 - Verify keyboard navigation, focus, resize, light/dark presentation, and no leaked listeners/workers.
-- Run the standard project gates, relevant E2E, and Tauri debug build when CSP or native loading changes.
+- Use the project-local `$lightreader-verify-efficiently` Skill to run focused engine contracts and the relevant user flow. Add production or Tauri builds only when bundling, CSP, native loading, capabilities, packaging, or explicit acceptance criteria require them.

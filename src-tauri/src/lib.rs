@@ -34,6 +34,12 @@ pub fn run() {
             sql: include_str!("../migrations/0005_annotation_notes.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 6,
+            description: "create notes table",
+            sql: include_str!("../migrations/0006_notes.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

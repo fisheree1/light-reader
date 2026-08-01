@@ -29,8 +29,8 @@ These rules apply to the entire repository.
 
 ## Verification
 
-- After changes, run `pnpm typecheck` and `pnpm lint`.
-- Run the tests related to the change; use `pnpm test:run` for cross-cutting changes.
-- Run `pnpm build` when changing production code or build configuration.
-- Run Rust/Tauri checks when changing `src-tauri`, plugin registration, migrations, or capabilities.
+- Read and follow the project-local verification Skill at `skills/lightreader-verify-efficiently/SKILL.md`, then select the smallest lane that proves the changed behavior.
+- Explicit verification commands in the active task are mandatory even when a smaller lane would normally apply.
+- Prefer changed-file formatting/lint and focused tests; widen to full suites, builds, E2E, Cargo, or Tauri only when the affected boundary requires them.
+- Do not repeat a successful command on an unchanged relevant tree. After a fix, rerun the failed check and checks invalidated by that fix.
 - Report commands actually run and never claim an unchecked result passed.

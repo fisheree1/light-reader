@@ -11,6 +11,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type { BookRepository } from '../../database/repositories/book-repository';
 import type { AnnotationRepository } from '../../database/repositories/annotation-repository';
 import type { ReaderSettingsRepository } from '../../database/repositories/reader-settings-repository';
+import type { NoteRepository } from '../../database/repositories/note-repository';
 import { defaultReaderSettings } from './domain/reader-settings';
 import type { Annotation } from '../annotations/domain/annotation';
 import type {
@@ -25,6 +26,7 @@ import type {
   HighlightRestoreResult,
 } from '../../reader-engines/types';
 import type { Book } from '../library/domain/book';
+import type { Note } from '../notes/domain/note';
 import { ReaderPage } from './reader-page';
 import type { ReaderServices } from './services/reader-services';
 
@@ -179,6 +181,21 @@ function createSettingsRepository(): ReaderSettingsRepository {
   };
 }
 
+function createNoteRepository(): NoteRepository {
+  const notes: Note[] = [];
+  return {
+    create: (note) => {
+      notes.push(note);
+      return Promise.resolve(note);
+    },
+    findById: (id) =>
+      Promise.resolve(notes.find((note) => note.id === id) ?? null),
+    list: () => Promise.resolve(notes),
+    update: () => Promise.reject(new Error('not used')),
+    delete: () => Promise.resolve(),
+  };
+}
+
 function createRepository(book: Book | null = BOOK): BookRepository {
   return {
     create: (value) => Promise.resolve(value),
@@ -198,6 +215,7 @@ function renderReader(services: ReaderServices) {
           path="/reader/:bookId"
         />
         <Route element={<div>书架页面</div>} path="/library" />
+        <Route element={<div>笔记页面</div>} path="/notes" />
       </Routes>
     </MemoryRouter>,
   );
@@ -469,5 +487,79 @@ describe('ReaderPage', () => {
     expect(screen.getByLabelText('高亮与批注')).toHaveTextContent(
       ANNOTATION.text,
     );
+  });
+
+  it('creates a quote note from an activated highlight', async () => {
+    const user = userEvent.setup();
+    const reader = new FakeReader();
+    const annotationRepository: AnnotationRepository = {
+      ...createAnnotationRepository(),
+      findByBookId: () => Promise.resolve([ANNOTATION]),
+    };
+    const noteRepository = createNoteRepository();
+    const create = vi.spyOn(noteRepository, 'create');
+    renderReader({
+      annotationRepository,
+      noteRepository,
+      repository: createRepository(),
+      settingsRepository: createSettingsRepository(),
+      source: { read: () => Promise.resolve(new ArrayBuffer(1)) },
+      createReader: () => reader,
+    });
+    await screen.findByText(ANNOTATION.text);
+
+    reader.activateHighlight(ANNOTATION.id);
+    await user.click(await screen.findByRole('button', { name: '插入笔记' }));
+
+    await waitFor(() => {
+      expect(create).toHaveBeenCalledOnce();
+      const created = create.mock.calls.at(0)?.[0];
+      expect(created?.title).toBe(`关于《${BOOK.title}》的笔记`);
+      expect(created?.document.schemaVersion).toBe(1);
+    });
+    expect(await screen.findByText('笔记页面')).toBeVisible();
+  });
+
+  it('opens a quote locator even when its source annotation was deleted', async () => {
+    const reader = new FakeReader();
+    const target = {
+      annotationId: 'deleted-annotation',
+      locator: {
+        version: 1 as const,
+        format: 'epub' as const,
+        chapterHref: 'one.xhtml',
+        cfi: 'epubcfi(/6/2!/4/2,/1:0,/1:8)',
+      },
+    };
+    render(
+      <MemoryRouter
+        initialEntries={[
+          {
+            pathname: '/reader/book-1',
+            state: { readerNavigation: target },
+          },
+        ]}
+      >
+        <Routes>
+          <Route
+            element={
+              <ReaderPage
+                services={{
+                  annotationRepository: createAnnotationRepository(),
+                  repository: createRepository(),
+                  settingsRepository: createSettingsRepository(),
+                  source: { read: () => Promise.resolve(new ArrayBuffer(1)) },
+                  createReader: () => reader,
+                }}
+              />
+            }
+            path="/reader/:bookId"
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('button', { name: '第一章' });
+    expect(reader.goTo).toHaveBeenCalledWith(target.locator);
   });
 });

@@ -47,6 +47,10 @@ async fn apply_migrations(connection: &mut SqliteConnection) {
         .execute(include_str!("../migrations/0005_annotation_notes.sql"))
         .await
         .expect("annotation notes migration should apply");
+    connection
+        .execute(include_str!("../migrations/0006_notes.sql"))
+        .await
+        .expect("notes migration should apply");
 }
 
 #[tokio::test]
@@ -104,6 +108,20 @@ async fn reader_settings_and_position_persist_and_follow_book_lifecycle() {
     .execute(&mut connection)
     .await
     .expect("annotation and note should be created");
+    sqlx::query(
+        r#"INSERT INTO notes (
+          id, title, content_json, plain_text, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, 6, 6)"#,
+    )
+    .bind("note-1")
+    .bind("Reader note")
+    .bind(
+        r#"{"schemaVersion":1,"content":{"type":"doc","content":[{"type":"bookQuote","attrs":{"bookId":"reader-book","annotationId":"annotation-1","quote":"selected text","chapter":"EPUB/one.xhtml","locator":{"version":1,"format":"epub","chapterHref":"EPUB/one.xhtml","cfi":"epubcfi(/6/2!/4/2,/1:0,/1:4)"}}}]}}"#,
+    )
+    .bind("selected text")
+    .execute(&mut connection)
+    .await
+    .expect("independent note should be created");
 
     connection.close().await.expect("database should close");
     let mut reopened = connect(&path).await;
@@ -131,6 +149,13 @@ async fn reader_settings_and_position_persist_and_follow_book_lifecycle() {
         .expect("annotation should survive reopen")
         .get::<String, _>("note_text");
     assert_eq!(note, "first note");
+    let note_document = sqlx::query("SELECT content_json FROM notes WHERE id = ?")
+        .bind("note-1")
+        .fetch_one(&mut reopened)
+        .await
+        .expect("note document should survive reopen")
+        .get::<String, _>("content_json");
+    assert!(note_document.contains("selected text"));
 
     sqlx::query("DELETE FROM books WHERE id = ?")
         .bind("reader-book")
@@ -149,6 +174,15 @@ async fn reader_settings_and_position_persist_and_follow_book_lifecycle() {
         .expect("annotations should be queryable")
         .get::<i64, _>("count");
     assert_eq!(annotation_count, 0);
+    let note_count = sqlx::query("SELECT COUNT(*) AS count FROM notes")
+        .fetch_one(&mut reopened)
+        .await
+        .expect("independent notes should be queryable")
+        .get::<i64, _>("count");
+    assert_eq!(
+        note_count, 1,
+        "book deletion must not delete note snapshots"
+    );
     reopened.close().await.expect("database should close again");
     std::fs::remove_file(path).expect("test database should be removable");
 }

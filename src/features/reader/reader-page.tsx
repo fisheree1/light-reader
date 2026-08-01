@@ -6,8 +6,8 @@ import {
   Highlighter,
   RotateCcw,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { EmptyState } from '../../components/common/empty-state';
 import { Button } from '../../components/ui/button';
@@ -18,6 +18,7 @@ import { AnnotationSidebar } from '../annotations/components/annotation-sidebar'
 import { SelectionToolbar } from '../annotations/components/selection-toolbar';
 import { ReaderTableOfContents } from './components/reader-table-of-contents';
 import { ReaderSettingsDialog } from './components/reader-settings-dialog';
+import { parseReaderNavigationState } from './domain/reader-navigation';
 import { useReader } from './hooks/use-reader';
 import {
   readerServices,
@@ -38,6 +39,12 @@ function isEditingTarget(target: EventTarget | null) {
 
 export function ReaderPage({ services = readerServices }: ReaderPageProps) {
   const { bookId = '' } = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const navigationTarget = useMemo(
+    () => parseReaderNavigationState(location.state),
+    [location.state],
+  );
   const {
     book,
     activeAnnotationId,
@@ -51,6 +58,7 @@ export function ReaderPage({ services = readerServices }: ReaderPageProps) {
     error,
     goToChapter,
     hostRef,
+    insertAnnotationIntoNote,
     locator,
     navigationError,
     nextPage,
@@ -65,7 +73,7 @@ export function ReaderPage({ services = readerServices }: ReaderPageProps) {
     toc,
     unresolvedAnnotationIds,
     updateAnnotationNote,
-  } = useReader(bookId, services);
+  } = useReader(bookId, services, navigationTarget);
   const [isTocOpen, setIsTocOpen] = useState(true);
   const [isAnnotationSidebarOpen, setIsAnnotationSidebarOpen] = useState(true);
   const activeAnnotation =
@@ -270,6 +278,10 @@ export function ReaderPage({ services = readerServices }: ReaderPageProps) {
             setActiveAnnotationId(null);
           }}
           onDelete={deleteAnnotation}
+          onInsertIntoNote={async (annotationId) => {
+            const note = await insertAnnotationIntoNote(annotationId);
+            await navigate(`/notes?noteId=${encodeURIComponent(note.id)}`);
+          }}
           onSave={updateAnnotationNote}
         />
       ) : null}

@@ -19,6 +19,8 @@ import type {
 } from '../../../reader-engines/types';
 import { useReaderSettingsStore } from '../../../stores/reader-settings-store';
 import type { Book } from '../../library/domain/book';
+import { NoteService } from '../../notes/services/note-service';
+import type { ReaderNavigationTarget } from '../domain/reader-navigation';
 import type { ReaderServices } from '../services/reader-services';
 
 type ReaderPhase = 'error' | 'loading' | 'ready';
@@ -30,7 +32,11 @@ const initialLocator: BookLocator = {
 };
 const relocationSaveDelay = 600;
 
-export function useReader(bookId: string, services: ReaderServices) {
+export function useReader(
+  bookId: string,
+  services: ReaderServices,
+  navigationTarget: ReaderNavigationTarget | null = null,
+) {
   const [attempt, setAttempt] = useState(0);
   const [book, setBook] = useState<Book | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -118,7 +124,7 @@ export function useReader(bookId: string, services: ReaderServices) {
         reader.applyDisplaySettings(
           resolveReaderSettings(globalSettings, override),
         );
-        if (readingState) {
+        if (!navigationTarget && readingState) {
           await reader.goTo(readingState.locator);
           setLocator(readingState.locator);
         }
@@ -135,6 +141,7 @@ export function useReader(bookId: string, services: ReaderServices) {
             if (!isCancelled()) setActiveAnnotationId(annotationId);
           },
         );
+        let navigationTargetLocated = false;
         try {
           const restored = await annotationService.restore(bookId);
           if (!isCancelled()) {
@@ -148,6 +155,21 @@ export function useReader(bookId: string, services: ReaderServices) {
                 new AppError('ANNOTATION_RESTORE_PARTIAL').userMessage,
               );
             }
+            if (
+              navigationTarget &&
+              restored.annotations.some(
+                (annotation) => annotation.id === navigationTarget.annotationId,
+              )
+            ) {
+              const located = await annotationService.navigateTo(
+                navigationTarget.annotationId,
+              );
+              if (located) {
+                navigationTargetLocated = true;
+                setActiveAnnotationId(navigationTarget.annotationId);
+                setLocator(await reader.getCurrentLocator());
+              }
+            }
           }
         } catch (reason) {
           if (!isCancelled()) {
@@ -155,6 +177,10 @@ export function useReader(bookId: string, services: ReaderServices) {
               asAppError(reason, 'ANNOTATION_READ_FAILED').userMessage,
             );
           }
+        }
+        if (navigationTarget && !navigationTargetLocated && !isCancelled()) {
+          await reader.goTo(navigationTarget.locator);
+          setLocator(navigationTarget.locator);
         }
         unsubscribe = reader.subscribeToRelocation((nextLocator) => {
           if (isCancelled()) return;
@@ -184,7 +210,7 @@ export function useReader(bookId: string, services: ReaderServices) {
       annotationServiceRef.current = null;
       void reader?.close();
     };
-  }, [attempt, bookId, hydrateSettings, services]);
+  }, [attempt, bookId, hydrateSettings, navigationTarget, services]);
 
   const runNavigation = useCallback(
     async (action: (reader: EbookReader) => Promise<void>) => {
@@ -307,6 +333,23 @@ export function useReader(bookId: string, services: ReaderServices) {
     return located;
   }, []);
 
+  const insertAnnotationIntoNote = useCallback(
+    async (annotationId: string) => {
+      if (!services.noteRepository || !book) {
+        throw new AppError('NOTE_WRITE_FAILED');
+      }
+      const annotation = annotations.find((item) => item.id === annotationId);
+      if (!annotation) throw new AppError('ANNOTATION_NOT_FOUND');
+      try {
+        const service = new NoteService(services.noteRepository);
+        return await service.createFromAnnotation(annotation, book.title);
+      } catch (reason) {
+        throw asAppError(reason, 'NOTE_WRITE_FAILED');
+      }
+    },
+    [annotations, book, services.noteRepository],
+  );
+
   const goToChapter = useCallback(
     (chapterHref: string) =>
       runNavigation((reader) =>
@@ -352,6 +395,7 @@ export function useReader(bookId: string, services: ReaderServices) {
     error,
     goToChapter,
     hostRef,
+    insertAnnotationIntoNote,
     locator,
     navigationError,
     nextPage,

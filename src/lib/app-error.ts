@@ -21,6 +21,10 @@ export const appErrorMessages = {
   ANNOTATION_RENDER_FAILED: '高亮已保存，但暂时无法定位原文。',
   ANNOTATION_LOCATE_FAILED: '无法定位原文，EPUB 内容可能已发生变化。',
   ANNOTATION_RESTORE_PARTIAL: '部分高亮无法定位原文，数据仍已保留。',
+  NOTE_READ_FAILED: '无法加载笔记，请稍后重试。',
+  NOTE_WRITE_FAILED: '无法保存笔记，编辑内容已保留。',
+  NOTE_NOT_FOUND: '这条笔记已经不存在。',
+  NOTE_DOCUMENT_INVALID: '笔记内容损坏，已使用空白文档安全打开。',
   UNKNOWN: '发生了意外错误，请重试。',
 } as const;
 

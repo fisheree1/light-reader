@@ -156,4 +156,35 @@ test('creates a highlight with a note and restores both after reopening', async 
     page.getByText('这是 LightReader 自制的无版权测试内容。', { exact: true }),
   ).toBeVisible();
   await expect(page.getByText('E2E 自制批注', { exact: true })).toBeVisible();
+  const importedReaderUrl = page.url();
+
+  await page
+    .getByText('这是 LightReader 自制的无版权测试内容。', { exact: true })
+    .locator('..')
+    .click();
+  await page.getByRole('button', { name: '插入笔记' }).click();
+  await expect(page).toHaveURL(/\/notes\?noteId=/);
+  await expect(
+    page.getByRole('textbox', { name: '笔记标题', exact: true }),
+  ).toHaveValue('关于《Web 测试 EPUB》的笔记');
+  const quote = page.getByRole('button', {
+    name: /返回《Web 测试 EPUB》中的引用/,
+  });
+  await expect(quote).toBeVisible();
+
+  const editor = page.getByRole('textbox', { name: '笔记正文' });
+  await editor.click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('E2E 独立笔记正文');
+  await expect(page.getByText('已保存')).toBeVisible();
+
+  await page.reload();
+  await expect(
+    page.getByText('E2E 独立笔记正文', { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole('button', { name: /返回《Web 测试 EPUB》中的引用/ })
+    .click();
+  await expect(page).toHaveURL(importedReaderUrl);
+  await expect(page.getByRole('button', { name: '第一章' })).toBeVisible();
 });

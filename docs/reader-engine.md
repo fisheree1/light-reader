@@ -19,6 +19,8 @@ ReaderPage / useReader
   -> AnnotationService
      -> AnnotationRepository
      -> EbookReader highlight operations
+  -> NoteService
+     -> NoteRepository
 ```
 
 React does not import Foliate or Tauri modules. Custom elements, upstream event
@@ -93,6 +95,11 @@ and pressed feedback.
 Migration `0004_annotations.sql` creates `annotations`; immutable migration
 `0005_annotation_notes.sql` adds `note_text`. No DOM selector, page number,
 Foliate object, or book content BLOB is persisted.
+
+An Annotation can create an independent note containing a `BookQuoteNode`
+snapshot. Clicking that node routes back with its versioned locator. The reader
+opens the locator even when the source Annotation has since been deleted; when
+the Annotation still exists, the restored highlight is activated as well.
 
 ## Lifecycle and navigation
 

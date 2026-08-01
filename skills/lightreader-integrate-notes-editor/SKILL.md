@@ -11,6 +11,7 @@ description: Integrate or evolve LightReader's local-first note editor with Tipt
 2. Confirm the task explicitly authorizes installing Tiptap; it is intentionally absent from the project skeleton.
 3. Read [note-model.md](references/note-model.md) before creating a migration or persistence format.
 4. Load `$lightreader-extend-feature` for page/UI work and `$lightreader-evolve-data-platform` for schema or Repository changes.
+5. Load the project-local [$lightreader-verify-efficiently](../lightreader-verify-efficiently/SKILL.md) before selecting final verification commands.
 
 Decide whether the task needs plain notes, book-linked notes, annotation-linked notes, or all three. Do not build collaboration or cloud sync unless explicitly requested.
 
@@ -50,4 +51,4 @@ Never store editor instances, HTML DOM, selection objects, or transaction object
 - Component-test typing, formatting, toolbar state, keyboard use, failed save, retry, and unmount flush.
 - Repository-test document round trips and annotation/book links.
 - Add E2E for the smallest create-edit-reload flow.
-- Run standard project gates and native/database checks when persistence changes.
+- Use the project-local `$lightreader-verify-efficiently` Skill to run focused editor, persistence, and E2E evidence without repeating unaffected project or native checks.
