@@ -5,6 +5,7 @@ import {
   type EbookReader,
   type ReaderTocItem,
   type RelocationListener,
+  type ReaderDisplayOptions,
 } from './types';
 
 interface FoliateSection {
@@ -25,6 +26,10 @@ interface FoliateViewElement extends HTMLElement {
   next(): Promise<void>;
   open(source: Blob): Promise<void>;
   prev(): Promise<void>;
+  renderer?: {
+    setAttribute(name: string, value: string): void;
+    setStyles?(styles: string): void;
+  };
 }
 
 type ViewModuleLoader = () => Promise<unknown>;
@@ -89,6 +94,28 @@ function mapRelocation(value: unknown): BookLocator | null {
   });
 }
 
+const themeColors = {
+  light: { background: '#ffffff', foreground: '#202124', link: '#315b9d' },
+  sepia: { background: '#f4ecd8', foreground: '#433a2e', link: '#795c2f' },
+  dark: { background: '#171717', foreground: '#e8e5df', link: '#9bbcff' },
+} as const;
+
+function getReaderStyles(settings: ReaderDisplayOptions): string {
+  const colors = themeColors[settings.theme];
+  const colorScheme = settings.theme === 'dark' ? 'dark' : 'light';
+  return `
+    :root { color-scheme: ${colorScheme}; }
+    html, body {
+      background: ${colors.background} !important;
+      color: ${colors.foreground} !important;
+      font-size: ${String(settings.fontSize)}px !important;
+    }
+    body { line-height: ${String(settings.lineHeight)} !important; }
+    p, li, blockquote, dd { line-height: ${String(settings.lineHeight)} !important; }
+    a:link, a:visited { color: ${colors.link} !important; }
+  `;
+}
+
 export class FoliateEbookReader implements EbookReader {
   private readonly listeners = new Set<RelocationListener>();
   private readonly loadViewModule: ViewModuleLoader;
@@ -142,6 +169,17 @@ export class FoliateEbookReader implements EbookReader {
 
   getTableOfContents(): ReaderTocItem[] {
     return mapTableOfContents(this.view?.book?.toc);
+  }
+
+  applyDisplaySettings(settings: ReaderDisplayOptions): void {
+    const renderer = this.requireView().renderer;
+    if (!renderer) throw new AppError('READER_SETTINGS_WRITE_FAILED');
+    renderer.setAttribute(
+      'max-inline-size',
+      `${String(settings.contentWidth)}px`,
+    );
+    renderer.setAttribute('margin', `${String(settings.margin)}px`);
+    renderer.setStyles?.(getReaderStyles(settings));
   }
 
   async goTo(value: BookLocator): Promise<void> {

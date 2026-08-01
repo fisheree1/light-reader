@@ -92,3 +92,30 @@ test('verifies the import interaction through the Web mock adapter', async ({
   await page.getByRole('button', { name: '导入 EPUB' }).click();
   await expect(page.getByRole('status')).toContainText('已经在书架');
 });
+
+test('persists global reading settings and a per-book override', async ({
+  page,
+}) => {
+  await page.goto('/settings');
+  await page.getByLabel('阅读主题').selectOption('sepia');
+  await page.getByLabel('字号').fill('22');
+  await page.getByRole('button', { name: '保存全局设置' }).click();
+  await expect(page.getByText('阅读设置已保存')).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByLabel('阅读主题')).toHaveValue('sepia');
+  await expect(page.getByLabel('字号')).toHaveValue('22');
+
+  await page.goto('/library');
+  await page.getByRole('button', { name: '导入 EPUB' }).click();
+  await page.getByRole('button', { name: /Web 测试 EPUB/ }).click();
+  await expect(page.getByRole('button', { name: '第一章' })).toBeVisible();
+
+  await page.getByRole('button', { name: '阅读设置' }).click();
+  await page.getByLabel('为本书使用单独设置').check();
+  await page.getByLabel('阅读主题').selectOption('dark');
+  await page.getByRole('button', { name: '保存设置' }).click();
+  await page.getByRole('button', { name: '阅读设置' }).click();
+  await expect(page.getByLabel('为本书使用单独设置')).toBeChecked();
+  await expect(page.getByLabel('阅读主题')).toHaveValue('dark');
+});

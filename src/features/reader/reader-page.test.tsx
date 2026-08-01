@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import type { BookRepository } from '../../database/repositories/book-repository';
+import type { ReaderSettingsRepository } from '../../database/repositories/reader-settings-repository';
+import { defaultReaderSettings } from './domain/reader-settings';
 import type {
   BookLocator,
   EbookReader,
@@ -35,6 +37,7 @@ const BOOK: Book = {
 };
 
 class FakeReader implements EbookReader {
+  readonly applyDisplaySettings = vi.fn();
   readonly close = vi.fn(() => Promise.resolve());
   readonly goTo = vi.fn(() => Promise.resolve());
   readonly nextPage = vi.fn(() => Promise.resolve());
@@ -74,6 +77,19 @@ class FakeReader implements EbookReader {
   }
 }
 
+function createSettingsRepository(): ReaderSettingsRepository {
+  return {
+    getGlobal: () => Promise.resolve(defaultReaderSettings),
+    saveGlobal: (settings) => Promise.resolve(settings),
+    getBookOverride: () => Promise.resolve(null),
+    saveBookOverride: (_bookId, settings) => Promise.resolve(settings),
+    deleteBookOverride: () => Promise.resolve(),
+    getReadingState: () => Promise.resolve(null),
+    saveReadingState: (bookId, locator) =>
+      Promise.resolve({ bookId, locator, updatedAt: 1 }),
+  };
+}
+
 function createRepository(book: Book | null = BOOK): BookRepository {
   return {
     create: (value) => Promise.resolve(value),
@@ -103,6 +119,7 @@ describe('ReaderPage', () => {
     const reader = new FakeReader();
     renderReader({
       repository: createRepository(),
+      settingsRepository: createSettingsRepository(),
       source: { read: () => new Promise(() => undefined) },
       createReader: () => reader,
     });
@@ -116,6 +133,7 @@ describe('ReaderPage', () => {
     const reader = new FakeReader();
     renderReader({
       repository: createRepository(),
+      settingsRepository: createSettingsRepository(),
       source: { read: () => Promise.resolve(new ArrayBuffer(1)) },
       createReader: () => reader,
     });
@@ -153,6 +171,7 @@ describe('ReaderPage', () => {
     let attempt = 0;
     renderReader({
       repository: createRepository(),
+      settingsRepository: createSettingsRepository(),
       source: {
         read: () => {
           attempt += 1;
@@ -175,6 +194,7 @@ describe('ReaderPage', () => {
     const reader = new FakeReader();
     const rendered = renderReader({
       repository: createRepository(),
+      settingsRepository: createSettingsRepository(),
       source: { read: () => Promise.resolve(new ArrayBuffer(1)) },
       createReader: () => reader,
     });
@@ -183,6 +203,74 @@ describe('ReaderPage', () => {
     rendered.unmount();
     await waitFor(() => {
       expect(reader.close).toHaveBeenCalledOnce();
+    });
+  });
+
+  it('restores and debounces persistence of the reading position', async () => {
+    const reader = new FakeReader();
+    const settingsRepository = createSettingsRepository();
+    vi.spyOn(settingsRepository, 'getReadingState').mockResolvedValue({
+      bookId: BOOK.id,
+      locator: { version: 1, format: 'epub', progression: 0.31 },
+      updatedAt: 1,
+    });
+    const saveReadingState = vi.spyOn(settingsRepository, 'saveReadingState');
+    renderReader({
+      repository: createRepository(),
+      settingsRepository,
+      source: { read: () => Promise.resolve(new ArrayBuffer(1)) },
+      createReader: () => reader,
+    });
+
+    await screen.findByRole('button', { name: '第一章' });
+    expect(reader.goTo).toHaveBeenCalledWith({
+      version: 1,
+      format: 'epub',
+      progression: 0.31,
+    });
+    reader.emit({ version: 1, format: 'epub', progression: 0.63 });
+    reader.emit({ version: 1, format: 'epub', progression: 0.64 });
+
+    await waitFor(
+      () => {
+        expect(saveReadingState).toHaveBeenCalledTimes(1);
+        expect(saveReadingState).toHaveBeenCalledWith(BOOK.id, {
+          version: 1,
+          format: 'epub',
+          progression: 0.64,
+        });
+      },
+      { timeout: 1200 },
+    );
+  });
+
+  it('saves a per-book reading override and applies it to the engine', async () => {
+    const user = userEvent.setup();
+    const reader = new FakeReader();
+    const settingsRepository = createSettingsRepository();
+    const saveBookOverride = vi.spyOn(settingsRepository, 'saveBookOverride');
+    renderReader({
+      repository: createRepository(),
+      settingsRepository,
+      source: { read: () => Promise.resolve(new ArrayBuffer(1)) },
+      createReader: () => reader,
+    });
+
+    await screen.findByRole('button', { name: '第一章' });
+    await user.click(screen.getByRole('button', { name: '阅读设置' }));
+    await user.click(screen.getByLabelText('为本书使用单独设置'));
+    await user.selectOptions(screen.getByLabelText('阅读主题'), 'dark');
+    await user.click(screen.getByRole('button', { name: '保存设置' }));
+
+    await waitFor(() => {
+      expect(saveBookOverride).toHaveBeenCalledWith(BOOK.id, {
+        ...defaultReaderSettings,
+        theme: 'dark',
+      });
+      expect(reader.applyDisplaySettings).toHaveBeenLastCalledWith({
+        ...defaultReaderSettings,
+        theme: 'dark',
+      });
     });
   });
 });

@@ -10,7 +10,10 @@ export interface SqlDatabase {
 }
 
 export function getDatabase(): Promise<SqlDatabase> {
-  databasePromise ??= Database.load(DATABASE_URL);
+  databasePromise ??= Database.load(DATABASE_URL).then(async (database) => {
+    await database.execute('PRAGMA foreign_keys = ON');
+    return database;
+  });
   return databasePromise;
 }
 

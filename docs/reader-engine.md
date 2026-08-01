@@ -14,6 +14,8 @@ ReaderPage / useReader
   -> ReaderBookSource
      -> TauriBookFileStorage (AppData)
   -> BookRepository
+  -> ReaderSettingsRepository
+     -> SQLite (desktop) / localStorage test adapter (Web)
 ```
 
 React does not import Foliate or Tauri modules. Custom elements, upstream event
@@ -40,18 +42,39 @@ interface BookLocator {
 
 Foliate `relocate` details are validated and converted before leaving the
 adapter. DOM `Range`, section objects and upstream progress objects are not
-exposed or persisted. This slice keeps the current locator in local React state;
-database persistence is intentionally deferred.
+exposed or persisted. The current locator stays in local React state for
+rendering and is written to `reading_states` through `ReaderSettingsRepository`.
+Writes are debounced by 600 ms, the final pending value is flushed on teardown,
+and a saved locator is restored before relocation persistence is subscribed.
+This prevents the renderer's initial relocation from overwriting a saved value.
+
+## Reading appearance
+
+`EbookReader.applyDisplaySettings()` accepts engine-neutral light, sepia and dark
+themes plus font size, line height, content width and margin. The Foliate adapter
+is the only layer that translates these values into paginator attributes and
+book-document CSS.
+
+Migration `0003_reader_settings.sql` adds:
+
+- `reader_settings`: one validated global preference row;
+- `book_reader_settings`: nullable per-property overrides keyed by book;
+- `reading_states`: versioned locator JSON keyed by book.
+
+The effective value is `global + per-book override`. SQLite remains the source
+of truth; Zustand holds only the currently open book's resolved UI state. Book
+overrides and positions cascade when their book is removed.
 
 ## Lifecycle and navigation
 
 1. Resolve the `Book` through `BookRepository`.
 2. Read its managed EPUB once through `ReaderBookSource`.
-3. Mount one `foliate-view`, open the EPUB Blob and move to body text.
-4. Map the EPUB TOC into nested `ReaderTocItem` values.
-5. Translate relocation events into locators.
-6. Navigate using CFI first, then chapter href, then total progression.
-7. On source change or unmount, remove listeners, unload sections, close the
+3. Load global settings, the optional book override and saved locator.
+4. Mount one `foliate-view`, open the EPUB Blob and apply resolved appearance.
+5. Restore the saved locator and map the EPUB TOC into nested `ReaderTocItem` values.
+6. Translate later relocation events into locators and debounce persistence.
+7. Navigate using CFI first, then chapter href, then total progression.
+8. On source change or unmount, remove listeners, unload sections, close the
    renderer and detach the custom element. `close()` is idempotent.
 
 Vite excludes Foliate's dormant PDF, MOBI, FB2, CBZ, search and TTS dynamic

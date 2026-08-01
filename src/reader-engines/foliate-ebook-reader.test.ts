@@ -13,6 +13,12 @@ interface FakeFoliateView extends HTMLElement {
   next: () => Promise<void>;
   open: (source: Blob) => Promise<void>;
   prev: () => Promise<void>;
+  renderer: {
+    setAttribute: ReturnType<
+      typeof vi.fn<(name: string, value: string) => void>
+    >;
+    setStyles: ReturnType<typeof vi.fn<(styles: string) => void>>;
+  };
 }
 
 function createFakeView(): FakeFoliateView {
@@ -34,6 +40,10 @@ function createFakeView(): FakeFoliateView {
   element.next = vi.fn(() => Promise.resolve());
   element.open = vi.fn(() => Promise.resolve());
   element.prev = vi.fn(() => Promise.resolve());
+  element.renderer = {
+    setAttribute: vi.fn<(name: string, value: string) => void>(),
+    setStyles: vi.fn<(styles: string) => void>(),
+  };
   return element;
 }
 
@@ -57,6 +67,21 @@ describe('FoliateEbookReader', () => {
     expect(host.firstElementChild).toBe(view);
     expect(view.open).toHaveBeenCalledWith(expect.any(File));
     expect(view.init).toHaveBeenCalledWith({ showTextStart: true });
+    reader.applyDisplaySettings({
+      theme: 'sepia',
+      fontSize: 20,
+      lineHeight: 1.8,
+      contentWidth: 680,
+      margin: 40,
+    });
+    expect(view.renderer.setAttribute).toHaveBeenCalledWith(
+      'max-inline-size',
+      '680px',
+    );
+    expect(view.renderer.setAttribute).toHaveBeenCalledWith('margin', '40px');
+    expect(view.renderer.setStyles).toHaveBeenCalledWith(
+      expect.stringContaining('background: #f4ecd8'),
+    );
     expect(reader.getTableOfContents()).toEqual([
       {
         href: 'one.xhtml',

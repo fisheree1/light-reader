@@ -19,10 +19,19 @@ export interface ReaderTocItem {
 
 export type RelocationListener = (locator: BookLocator) => void;
 
+export interface ReaderDisplayOptions {
+  contentWidth: number;
+  fontSize: number;
+  lineHeight: number;
+  margin: number;
+  theme: 'light' | 'sepia' | 'dark';
+}
+
 /** Engine-neutral lifecycle used by the reader feature. */
 export interface EbookReader {
   mount(host: HTMLElement): void;
   open(source: ArrayBuffer): Promise<void>;
+  applyDisplaySettings(settings: ReaderDisplayOptions): void;
   getTableOfContents(): ReaderTocItem[];
   goTo(locator: BookLocator): Promise<void>;
   previousPage(): Promise<void>;

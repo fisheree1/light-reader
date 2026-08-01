@@ -11,6 +11,9 @@ export const appErrorMessages = {
   BOOK_NOT_FOUND: '这本书不在书架中，可能已经被移除。',
   READER_OPEN_FAILED: '无法打开这本 EPUB，请确认文件仍然完整。',
   READER_NAVIGATION_FAILED: '无法跳转到指定阅读位置。',
+  READER_SETTINGS_READ_FAILED: '无法加载阅读设置，将使用默认排版。',
+  READER_SETTINGS_WRITE_FAILED: '无法保存阅读设置，请稍后重试。',
+  READING_STATE_WRITE_FAILED: '无法保存当前阅读位置。',
   UNKNOWN: '发生了意外错误，请重试。',
 } as const;
 

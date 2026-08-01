@@ -13,6 +13,7 @@ import { Button } from '../../components/ui/button';
 import { IconButton } from '../../components/ui/icon-button';
 import { cn } from '../../lib/cn';
 import { ReaderTableOfContents } from './components/reader-table-of-contents';
+import { ReaderSettingsDialog } from './components/reader-settings-dialog';
 import { useReader } from './hooks/use-reader';
 import {
   readerServices,
@@ -35,15 +36,20 @@ export function ReaderPage({ services = readerServices }: ReaderPageProps) {
   const { bookId = '' } = useParams();
   const {
     book,
+    bookOverride,
+    clearBookSettings,
+    effectiveSettings,
     error,
     goToChapter,
     hostRef,
     locator,
     navigationError,
     nextPage,
+    persistenceError,
     phase,
     previousPage,
     retry,
+    saveBookSettings,
     toc,
   } = useReader(bookId, services);
   const [isTocOpen, setIsTocOpen] = useState(true);
@@ -95,6 +101,13 @@ export function ReaderPage({ services = readerServices }: ReaderPageProps) {
             </p>
           ) : null}
         </div>
+        <ReaderSettingsDialog
+          bookOverride={bookOverride}
+          disabled={phase !== 'ready'}
+          effectiveSettings={effectiveSettings}
+          onClear={clearBookSettings}
+          onSave={saveBookSettings}
+        />
         <span
           aria-label={`阅读进度 ${String(progress)}%`}
           className="text-muted-foreground w-12 text-right text-xs tabular-nums"
@@ -160,6 +173,15 @@ export function ReaderPage({ services = readerServices }: ReaderPageProps) {
               role="alert"
             >
               {navigationError}
+            </div>
+          ) : null}
+
+          {persistenceError ? (
+            <div
+              className="border-destructive/30 bg-background text-destructive absolute top-3 left-1/2 -translate-x-1/2 rounded-md border px-3 py-2 text-sm shadow"
+              role="alert"
+            >
+              {persistenceError}
             </div>
           ) : null}
 

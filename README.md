@@ -1,10 +1,10 @@
 # 轻阅笔记（LightReader）
 
-轻阅笔记是一个以本地优先方式管理电子书、阅读进度与阅读笔记的桌面应用。当前 MVP 已支持 EPUB 导入、书架持久化，并可使用 Foliate JS 打开正文、通过目录或前后翻页导航和生成基础阅读位置。
+轻阅笔记是一个以本地优先方式管理电子书、阅读进度与阅读笔记的桌面应用。当前 MVP 已支持 EPUB 导入、书架持久化，并可使用 Foliate JS 阅读正文、调整主题与排版、恢复上次阅读位置。
 
 ## 当前阶段
 
-当前完成了 EPUB 导入、书架持久化和基础阅读闭环。支持格式目前仅为 EPUB；阅读位置当前只在阅读会话中生成，尚未写入数据库。高亮、批注、搜索及笔记能力仍未实现。
+当前完成了 EPUB 导入、书架持久化和基础阅读闭环。支持格式目前仅为 EPUB；全局阅读设置、单书覆盖与版本化阅读位置均持久化到本地 SQLite。高亮、批注、搜索及笔记能力仍未实现。
 
 ## 技术栈
 
@@ -107,7 +107,7 @@ pnpm tauri:build
 src/
 ├── app/                  # 路由、Provider、桌面布局
 ├── components/           # 通用组件与基础 UI
-├── database/             # SQL 客户端、Book Repository 与记录映射
+├── database/             # SQL 客户端、Book/阅读设置 Repository 与记录映射
 ├── features/             # 按业务能力组织的功能模块
 ├── reader-engines/       # 阅读引擎抽象与 Foliate adapter
 ├── storage/              # 存储抽象和受控 EPUB 文件存储
@@ -125,7 +125,7 @@ EPUB 导入的依赖边界、回滚策略和路径约束见 [`docs/epub-import.m
 
 ## EPUB 数据与文件位置
 
-- SQLite 数据库：Tauri 应用配置目录中的 `light-reader.db`；迁移 `0002_create_books.sql` 创建 `books` 表。
+- SQLite 数据库：Tauri 应用配置目录中的 `light-reader.db`；`0002_create_books.sql` 创建 `books` 表，`0003_reader_settings.sql` 创建全局设置、单书覆盖和阅读位置表。
 - EPUB：Tauri `AppData/light-reader/books/<book-id>/book.epub`。
 - 封面：Tauri `AppData/light-reader/covers/<book-id>.<ext>`；无可用封面时显示内置默认封面。
 - 临时导入：Tauri `AppData/light-reader/tmp/<book-id>/`，成功或失败后清理。
@@ -140,15 +140,16 @@ EPUB 导入的依赖边界、回滚策略和路径约束见 [`docs/epub-import.m
 - 嵌套目录展示与章节跳转；
 - 按钮及左右方向键翻页；
 - CFI、章节 href 和 0～1 总进度组成的版本化 locator；
+- 明亮、羊皮纸和深色正文主题；
+- 字号、行高、正文宽度和页边距设置；
+- 设置页的全局阅读偏好，以及阅读页的单书覆盖；
+- 阅读位置防抖写入 SQLite，并在再次打开图书时恢复；
 - 加载、文件缺失、损坏 EPUB 和导航错误状态；
 - 离开页面时卸载章节、撤销资源并销毁 Foliate renderer。
-
-locator 尚未持久化，关闭应用后不会恢复上次阅读位置。
 
 ## 当前未实现
 
 - PDF 阅读
-- 阅读位置持久化与跨会话恢复
 - 高亮
 - 批注
 - 书签

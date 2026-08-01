@@ -16,6 +16,12 @@ pub fn run() {
             sql: include_str!("../migrations/0002_create_books.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 3,
+            description: "create reader settings and reading states",
+            sql: include_str!("../migrations/0003_reader_settings.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
