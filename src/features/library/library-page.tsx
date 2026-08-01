@@ -1,21 +1,99 @@
-import { BookOpen } from 'lucide-react';
+import { BookOpen, CircleAlert } from 'lucide-react';
 
 import { EmptyState } from '../../components/common/empty-state';
+import { Button } from '../../components/ui/button';
+import { cn } from '../../lib/cn';
+import { BookCard } from './components/book-card';
+import { ImportBookButton } from './components/import-book-button';
+import { useLibrary } from './hooks/use-library';
+import {
+  libraryServices,
+  type LibraryServices,
+} from './services/library-services';
 
-export function LibraryPage() {
+interface LibraryPageProps {
+  services?: LibraryServices;
+}
+
+export function LibraryPage({ services = libraryServices }: LibraryPageProps) {
+  const library = useLibrary(services);
+
   return (
     <div>
-      <header className="mb-6">
-        <h1 className="text-2xl font-semibold">书架</h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          你的本地图书将在这里显示。
-        </p>
+      <header className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">书架</h1>
+          <p className="text-muted-foreground mt-1 text-sm">
+            本地图书保存在应用受控目录中，目前支持 EPUB。
+          </p>
+        </div>
+        <ImportBookButton
+          isImporting={library.isImporting}
+          onImport={() => {
+            void library.importEpub();
+          }}
+        />
       </header>
-      <EmptyState
-        description="项目骨架已经就绪，图书导入和 EPUB 阅读能力将在后续任务中接入。"
-        icon={<BookOpen size={28} />}
-        title="书架还是空的"
-      />
+
+      {library.notice ? (
+        <div
+          aria-live="polite"
+          className={cn(
+            'mb-5 rounded-md border px-4 py-3 text-sm',
+            library.notice.kind === 'error'
+              ? 'border-destructive/30 bg-destructive/10 text-destructive'
+              : 'bg-surface text-foreground',
+          )}
+          role={library.notice.kind === 'error' ? 'alert' : 'status'}
+        >
+          {library.notice.message}
+        </div>
+      ) : null}
+
+      {library.isLoading ? (
+        <div
+          aria-live="polite"
+          className="text-muted-foreground py-16 text-center text-sm"
+        >
+          正在加载书架…
+        </div>
+      ) : library.loadError ? (
+        <EmptyState
+          action={
+            <Button
+              onClick={() => {
+                void library.loadBooks();
+              }}
+              variant="secondary"
+            >
+              重试
+            </Button>
+          }
+          description={library.loadError}
+          icon={<CircleAlert size={28} />}
+          title="书架加载失败"
+        />
+      ) : library.books.length === 0 ? (
+        <EmptyState
+          description="点击右上角“导入 EPUB”，把本地图书添加到书架。"
+          icon={<BookOpen size={28} />}
+          title="书架还是空的"
+        />
+      ) : (
+        <section
+          aria-label="书籍"
+          className="grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+        >
+          {library.books.map((book) => (
+            <BookCard
+              key={book.id}
+              book={book}
+              onOpen={library.showReaderUnavailable}
+              services={services}
+            />
+          ))}
+        </section>
+      )}
     </div>
   );
 }

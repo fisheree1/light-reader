@@ -4,7 +4,12 @@ const DATABASE_URL = 'sqlite:light-reader.db';
 
 let databasePromise: Promise<Database> | undefined;
 
-export function getDatabase(): Promise<Database> {
+export interface SqlDatabase {
+  execute(query: string, bindValues?: unknown[]): Promise<unknown>;
+  select<T>(query: string, bindValues?: unknown[]): Promise<T>;
+}
+
+export function getDatabase(): Promise<SqlDatabase> {
   databasePromise ??= Database.load(DATABASE_URL);
   return databasePromise;
 }

@@ -1,0 +1,125 @@
+import type { BookRepository } from '../../../database/repositories/book-repository';
+import type { FileDialogAdapter } from '../../../platform/dialog/file-dialog-adapter';
+import type { ContentHasher } from '../../../platform/crypto/content-hasher';
+import type {
+  BookFileStorage,
+  StagedBookFiles,
+} from '../../../storage/book-file-storage';
+import { AppError, asAppError, isAppError } from '../../../lib/app-error';
+import { bookSchema, type Book } from '../domain/book';
+import type { EpubMetadataParser } from './epub-metadata-parser';
+
+export type ImportBookResult =
+  | { status: 'cancelled' }
+  | { status: 'created'; book: Book }
+  | { status: 'duplicate'; book: Book };
+
+export interface BookImporter {
+  importEpub(): Promise<ImportBookResult>;
+}
+
+interface BookImportDependencies {
+  dialog: FileDialogAdapter;
+  fileStorage: BookFileStorage;
+  hasher: ContentHasher;
+  idGenerator?: () => string;
+  metadataParser: EpubMetadataParser;
+  now?: () => number;
+  repository: BookRepository;
+}
+
+export class BookImportService implements BookImporter {
+  private readonly dependencies: BookImportDependencies;
+  private readonly idGenerator: () => string;
+  private readonly now: () => number;
+
+  constructor(dependencies: BookImportDependencies) {
+    this.dependencies = dependencies;
+    this.idGenerator = dependencies.idGenerator ?? (() => crypto.randomUUID());
+    this.now = dependencies.now ?? Date.now;
+  }
+
+  async importEpub(): Promise<ImportBookResult> {
+    let selected;
+    try {
+      selected = await this.dependencies.dialog.selectEpub();
+    } catch (error) {
+      throw new AppError('UNKNOWN', { cause: error });
+    }
+    if (!selected) return { status: 'cancelled' };
+    if (!selected.fileName.toLowerCase().endsWith('.epub')) {
+      throw new AppError('UNSUPPORTED_FILE_TYPE');
+    }
+
+    let source: Uint8Array;
+    try {
+      source = await this.dependencies.fileStorage.readSource(selected.path);
+    } catch (error) {
+      throw new AppError('FILE_READ_FAILED', { cause: error });
+    }
+
+    const fileHash = await this.dependencies.hasher.sha256(source);
+    const duplicate = await this.dependencies.repository.findByHash(fileHash);
+    if (duplicate) return { status: 'duplicate', book: duplicate };
+
+    const parsed = await this.dependencies.metadataParser.parse(
+      source,
+      selected.fileName,
+    );
+    const id = this.idGenerator();
+    const timestamp = this.now();
+
+    let staged: StagedBookFiles;
+    try {
+      staged = await this.dependencies.fileStorage.stage(
+        id,
+        source,
+        parsed.cover,
+      );
+    } catch (error) {
+      throw new AppError('FILE_WRITE_FAILED', { cause: error });
+    }
+
+    try {
+      // Finalize files before inserting the row so the database never points at a
+      // missing EPUB. If the database write fails, rollback removes the finalized
+      // files. A crash can only leave an orphan file, never a broken shelf record.
+      const committed = await this.dependencies.fileStorage.commit(staged);
+      const book = bookSchema.parse({
+        id,
+        title: parsed.metadata.title,
+        author: parsed.metadata.creators.join(', ') || null,
+        format: 'epub',
+        filePath: committed.bookPath,
+        fileHash,
+        coverPath: committed.coverPath,
+        metadata: parsed.metadata,
+        fileSize: source.byteLength,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
+
+      try {
+        return {
+          status: 'created',
+          book: await this.dependencies.repository.create(book),
+        };
+      } catch (error) {
+        await this.dependencies.fileStorage.rollback(staged);
+        await this.dependencies.repository.delete(id).catch(() => undefined);
+
+        if (isAppError(error) && error.code === 'DUPLICATE_BOOK') {
+          const racedDuplicate =
+            await this.dependencies.repository.findByHash(fileHash);
+          if (racedDuplicate) {
+            return { status: 'duplicate', book: racedDuplicate };
+          }
+        }
+        throw asAppError(error, 'DATABASE_WRITE_FAILED');
+      }
+    } catch (error) {
+      await this.dependencies.fileStorage.rollback(staged);
+      throw asAppError(error, 'FILE_WRITE_FAILED');
+    }
+  }
+}

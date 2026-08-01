@@ -1,10 +1,10 @@
 # 轻阅笔记（LightReader）
 
-轻阅笔记是一个计划以本地优先方式管理电子书、阅读进度与阅读笔记的桌面应用。本仓库当前只包含可运行的工程骨架，用于验证 React/Vite 前端、Tauri 2 原生壳、基础导航、主题和 SQLite 插件链路。
+轻阅笔记是一个以本地优先方式管理电子书、阅读进度与阅读笔记的桌面应用。当前 MVP 已支持从系统文件选择器导入 EPUB、提取基础元数据与封面，并将受控文件和书架记录持久化到本地。
 
 ## 当前阶段
 
-当前为基础设施阶段：业务页面仅是路由占位内容，数据库仅有 `app_meta` 健康检查表。请不要把当前界面视为产品设计稿，也不要在没有迁移的情况下扩展数据库。
+当前完成了第一条业务切片：EPUB 导入与书架持久化。支持格式目前仅为 EPUB；正文阅读、真实阅读进度及笔记能力仍未实现。请不要在没有新增编号迁移的情况下扩展数据库。
 
 ## 技术栈
 
@@ -74,7 +74,13 @@ pnpm exec playwright install chromium
 pnpm test:e2e
 ```
 
-当前 Playwright 用例运行在 Vite Web 页面上，覆盖启动、导航和主题切换。未来需要验证 Tauri 原生窗口时，可在独立任务中接入平台 WebDriver（例如 macOS/Linux 上的 `tauri-driver` 方案），不要把原生驱动和浏览器用例混在同一配置中。
+当前 Playwright 用例运行在 Vite Web 页面上，覆盖启动、导航、主题、预置书架和 mock 导入交互。Web 模式使用确定性的 mock importer；真实系统文件选择、受控文件复制和 SQLite 持久化只在 Tauri 运行时启用。未来需要验证 Tauri 原生窗口时，可在独立任务中接入平台 WebDriver，不要把原生驱动和浏览器用例混在同一配置中。
+
+仅运行 EPUB 导入相关单元和 UI 测试：
+
+```bash
+pnpm exec vitest run src/features/library src/storage src/database
+```
 
 ## 构建
 
@@ -100,10 +106,10 @@ pnpm tauri:build
 src/
 ├── app/                  # 路由、Provider、桌面布局
 ├── components/           # 通用组件与基础 UI
-├── database/             # SQL 客户端、Repository 边界与未来 Schema
+├── database/             # SQL 客户端、Book Repository 与记录映射
 ├── features/             # 按业务能力组织的功能模块
 ├── reader-engines/       # 阅读引擎抽象
-├── storage/              # 平台无关存储抽象
+├── storage/              # 存储抽象和受控 EPUB 文件存储
 ├── stores/               # 仅存放跨页面 UI 状态
 ├── styles/               # 全局主题与 Tailwind 入口
 └── test/                 # 测试环境配置
@@ -114,14 +120,25 @@ docs/                     # 后续架构文档
 
 React 组件不能直接调用 Tauri API。文件与平台能力通过 Adapter/Service 隔离，持久化业务数据通过 Repository 隔离；这让 Web 测试和未来实现替换保持可控。
 
+EPUB 导入的依赖边界、回滚策略和路径约束见 [`docs/epub-import.md`](docs/epub-import.md)。
+
+## EPUB 数据与文件位置
+
+- SQLite 数据库：Tauri 应用配置目录中的 `light-reader.db`；迁移 `0002_create_books.sql` 创建 `books` 表。
+- EPUB：Tauri `AppData/light-reader/books/<book-id>/book.epub`。
+- 封面：Tauri `AppData/light-reader/covers/<book-id>.<ext>`；无可用封面时显示内置默认封面。
+- 临时导入：Tauri `AppData/light-reader/tmp/<book-id>/`，成功或失败后清理。
+
+数据库只保存元数据、SHA-256 哈希和应用生成的相对路径，不保存 EPUB/封面 BLOB，也不把原始外部绝对路径作为长期依赖。不同操作系统的 AppData 绝对位置由 Tauri 决定。
+
 ## 当前未实现
 
 - EPUB 阅读与 EPUB 阅读引擎
 - PDF 阅读
+- 真实阅读进度
 - 高亮
 - 批注
 - 笔记编辑器
-- 正式数据库 Schema 与业务 Repository
 - 云同步
 - Foliate JS、PDF.js 与 Tiptap 依赖
 
@@ -146,3 +163,7 @@ React 组件不能直接调用 Tauri API。文件与平台能力通过 Adapter/S
 ### 数据库在哪里
 
 SQL 插件将 `light-reader.db` 放在应用配置目录中。它是本地运行时数据，已被 Git 忽略，不应提交到仓库。
+
+### 为什么浏览器模式不会打开系统文件选择器
+
+浏览器 E2E 使用 mock adapter 验证书架交互，避免依赖原生对话框。请使用 `pnpm tauri:dev` 验证真实 EPUB 导入。

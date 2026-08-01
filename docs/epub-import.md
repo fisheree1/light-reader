@@ -1,0 +1,69 @@
+# EPUB import architecture
+
+LightReader imports EPUB files through application boundaries rather than from a
+React component:
+
+```text
+LibraryPage / useLibrary
+  -> BookImportService
+     -> FileDialogAdapter
+     -> ContentHasher
+     -> EpubMetadataParser
+     -> BookFileStorage
+     -> BookRepository
+```
+
+The browser E2E suite supplies a local-storage repository and a deterministic
+mock importer. The Tauri application composes the real dialog, AppData file
+storage and SQLite repository. This keeps unit and browser tests independent of
+native dialogs without changing production behavior.
+
+## Import and rollback
+
+The import service follows this order:
+
+1. select and read the source file;
+2. verify its `.epub` extension and EPUB ZIP structure;
+3. hash the content and stop before copying when that hash already exists;
+4. parse metadata and an optional raster cover;
+5. write the EPUB and cover to a generated temporary directory;
+6. atomically rename the EPUB to its generated final path;
+7. insert the validated `Book` through `BookRepository`;
+8. remove temporary files.
+
+Files are finalized before the database insert so a database row never points
+to a missing EPUB. If the insert fails, the service removes the final directory,
+cover and any staging data. A process crash in the narrow interval between file
+rename and database insert can leave an unreferenced file, but cannot create a
+broken shelf record. A future maintenance task can safely remove such orphaned
+directories.
+
+Cover extraction is best effort. A missing, unsupported or unwritable cover does
+not fail the book import; the shelf renders its built-in default cover instead.
+
+## Persistent data
+
+Migration `0002_create_books.sql` creates `books`. It stores the domain ID,
+display metadata, SHA-256 hash, file size, timestamps and generated relative
+paths. `file_hash` is unique and is the duplicate-import identity. EPUB content
+and cover bytes are never stored as SQLite BLOBs.
+
+All database rows and decoded `metadata_json` values are validated with Zod at
+the repository boundary before becoming domain objects.
+
+## Managed files and permissions
+
+Paths are generated from an application UUID and are relative to Tauri's
+`AppData` directory:
+
+```text
+light-reader/
+├── books/<book-id>/book.epub
+├── covers/<book-id>.<jpeg|png|webp|gif>
+└── tmp/<book-id>/...
+```
+
+The selected source path is used only for the initial read authorized by the
+system dialog. It is not persisted. Filesystem write, rename and cleanup scopes
+remain limited to `$APPDATA/light-reader/**`; the application does not receive
+general filesystem access.
