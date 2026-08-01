@@ -9,6 +9,10 @@ export const appErrorMessages = {
   DATABASE_READ_FAILED: '无法加载书架，请稍后重试。',
   DATABASE_WRITE_FAILED: '无法保存书籍信息，请稍后重试。',
   BOOK_NOT_FOUND: '这本书不在书架中，可能已经被移除。',
+  BOOK_UPDATE_FAILED: '无法更新书籍信息，请稍后重试。',
+  BOOK_DELETE_FAILED: '无法安全删除这本书，原有数据已尽量恢复。',
+  BOOK_FILE_DELETE_FAILED: '无法清理书籍文件，请检查文件权限后重试。',
+  BOOK_FILE_RESTORE_FAILED: '删除失败，且书籍文件无法自动恢复。',
   READER_OPEN_FAILED: '无法打开这本 EPUB，请确认文件仍然完整。',
   READER_NAVIGATION_FAILED: '无法跳转到指定阅读位置。',
   READER_SETTINGS_READ_FAILED: '无法加载阅读设置，将使用默认排版。',
@@ -25,6 +29,8 @@ export const appErrorMessages = {
   NOTE_WRITE_FAILED: '无法保存笔记，编辑内容已保留。',
   NOTE_NOT_FOUND: '这条笔记已经不存在。',
   NOTE_DOCUMENT_INVALID: '笔记内容损坏，已使用空白文档安全打开。',
+  SEARCH_FAILED: '无法完成本地搜索，请稍后重试。',
+  SEARCH_INDEX_FAILED: '无法更新本地搜索索引，请稍后重试。',
   UNKNOWN: '发生了意外错误，请重试。',
 } as const;
 

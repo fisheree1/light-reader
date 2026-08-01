@@ -134,3 +134,44 @@ export function findBookQuoteReferences(
   visit(document.content);
   return references;
 }
+
+export function removeBookQuoteReferences(
+  document: NoteDocument,
+  bookId: string,
+): { document: NoteDocument; removedCount: number } {
+  let removedCount = 0;
+  const visit = (node: NoteContentNode): NoteContentNode | null => {
+    if (node.type === 'bookQuote') {
+      const reference = bookQuoteReferenceSchema.safeParse(node.attrs);
+      if (reference.success && reference.data.bookId === bookId) {
+        removedCount += 1;
+        return null;
+      }
+    }
+    if (!node.content) return node;
+    const content = node.content.flatMap((child) => {
+      const retained = visit(child);
+      return retained ? [retained] : [];
+    });
+    return { ...node, content };
+  };
+
+  const content = visit(document.content);
+  const safeContent =
+    content?.type === 'doc'
+      ? {
+          ...content,
+          content: content.content?.length
+            ? content.content
+            : [{ type: 'paragraph' }],
+        }
+      : { type: 'doc', content: [{ type: 'paragraph' }] };
+
+  return {
+    document: noteDocumentSchema.parse({
+      schemaVersion: document.schemaVersion,
+      content: safeContent,
+    }),
+    removedCount,
+  };
+}

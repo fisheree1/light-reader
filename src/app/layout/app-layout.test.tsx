@@ -11,6 +11,7 @@ describe('AppLayout', () => {
     expect(navigation).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '书架' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '笔记' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '搜索' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '设置' })).toBeInTheDocument();
   });
 });

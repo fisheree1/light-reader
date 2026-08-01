@@ -9,15 +9,27 @@ export interface BookStoragePaths {
   stagingDirectory: string;
 }
 
+export interface BookDeletionPaths {
+  originalBookDirectory: string;
+  originalCoverPath: string | null;
+  quarantineBookDirectory: string;
+  quarantineCoverPath: string | null;
+  quarantineDirectory: string;
+}
+
 const safeGeneratedId = /^[a-zA-Z0-9-]+$/;
+
+function requireSafeGeneratedId(value: string, label: string): void {
+  if (!safeGeneratedId.test(value)) {
+    throw new Error(`${label} contains unsafe path characters.`);
+  }
+}
 
 export function createBookStoragePaths(
   bookId: string,
   coverExtension: CoverExtension | null,
 ): BookStoragePaths {
-  if (!safeGeneratedId.test(bookId)) {
-    throw new Error('Book ID contains unsafe path characters.');
-  }
+  requireSafeGeneratedId(bookId, 'Book ID');
 
   const stagingDirectory = `light-reader/tmp/${bookId}`;
   const finalDirectory = `light-reader/books/${bookId}`;
@@ -33,6 +45,38 @@ export function createBookStoragePaths(
     finalCoverPath: coverExtension
       ? `light-reader/covers/${bookId}.${coverExtension}`
       : null,
+  };
+}
+
+export function createBookDeletionPaths(
+  bookId: string,
+  bookPath: string,
+  coverPath: string | null,
+  deletionId: string,
+): BookDeletionPaths {
+  requireSafeGeneratedId(bookId, 'Book ID');
+  requireSafeGeneratedId(deletionId, 'Deletion ID');
+  const originalBookDirectory = `light-reader/books/${bookId}`;
+  if (bookPath !== `${originalBookDirectory}/book.epub`) {
+    throw new Error('Book file is outside its managed directory.');
+  }
+
+  let quarantineCoverPath: string | null = null;
+  if (coverPath) {
+    const match = new RegExp(
+      `^light-reader/covers/${bookId}\\.(gif|jpeg|png|webp)$`,
+    ).exec(coverPath);
+    if (!match) throw new Error('Cover file is outside its managed directory.');
+    quarantineCoverPath = `light-reader/trash/${deletionId}/cover.${match[1]}`;
+  }
+
+  const quarantineDirectory = `light-reader/trash/${deletionId}`;
+  return {
+    originalBookDirectory,
+    originalCoverPath: coverPath,
+    quarantineBookDirectory: `${quarantineDirectory}/book`,
+    quarantineCoverPath,
+    quarantineDirectory,
   };
 }
 

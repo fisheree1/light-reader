@@ -1,4 +1,5 @@
 import {
+  createBookDeletionPaths,
   createBookStoragePaths,
   fallbackTitleFromFileName,
   fileNameFromPath,
@@ -24,5 +25,49 @@ describe('book path helpers', () => {
   it('normalizes source display names without using them as target paths', () => {
     expect(fileNameFromPath('C:\\Books\\Example.epub')).toBe('Example.epub');
     expect(fallbackTitleFromFileName(' Example.epub ')).toBe('Example');
+  });
+
+  it('stages deletion only inside application-managed paths', () => {
+    expect(
+      createBookDeletionPaths(
+        'book-1',
+        'light-reader/books/book-1/book.epub',
+        'light-reader/covers/book-1.webp',
+        'delete-1',
+      ),
+    ).toEqual({
+      originalBookDirectory: 'light-reader/books/book-1',
+      originalCoverPath: 'light-reader/covers/book-1.webp',
+      quarantineBookDirectory: 'light-reader/trash/delete-1/book',
+      quarantineCoverPath: 'light-reader/trash/delete-1/cover.webp',
+      quarantineDirectory: 'light-reader/trash/delete-1',
+    });
+  });
+
+  it('rejects external or mismatched paths during deletion', () => {
+    expect(() =>
+      createBookDeletionPaths(
+        'book-1',
+        '/Users/example/book.epub',
+        null,
+        'delete-1',
+      ),
+    ).toThrow('managed directory');
+    expect(() =>
+      createBookDeletionPaths(
+        'book-1',
+        'light-reader/books/book-1/book.epub',
+        'light-reader/covers/book-2.webp',
+        'delete-1',
+      ),
+    ).toThrow('managed directory');
+    expect(() =>
+      createBookDeletionPaths(
+        'book-1',
+        'light-reader/books/book-1/book.epub',
+        null,
+        '../trash',
+      ),
+    ).toThrow('unsafe path');
   });
 });

@@ -156,7 +156,7 @@ export function useReader(
               );
             }
             if (
-              navigationTarget &&
+              navigationTarget?.annotationId &&
               restored.annotations.some(
                 (annotation) => annotation.id === navigationTarget.annotationId,
               )

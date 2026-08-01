@@ -1,10 +1,18 @@
 import { isTauri } from '@tauri-apps/api/core';
 
 import type { BookRepository } from '../../../database/repositories/book-repository';
+import { SqliteLibraryRepository } from '../../../database/repositories/sqlite-library-repository';
 import { SqliteBookRepository } from '../../../database/repositories/sqlite-book-repository';
+import { SqliteNoteRepository } from '../../../database/repositories/sqlite-note-repository';
+import { WebLibraryRepository } from '../../../database/repositories/web-library-repository';
+import { WebNoteRepository } from '../../../database/repositories/web-note-repository';
+import { WebReaderSettingsRepository } from '../../../database/repositories/web-reader-settings-repository';
 import { WebCryptoContentHasher } from '../../../platform/crypto/content-hasher';
 import { TauriFileDialogAdapter } from '../../../platform/dialog/file-dialog-adapter';
-import { TauriBookFileStorage } from '../../../storage/book-file-storage';
+import {
+  TauriBookFileStorage,
+  WebBookFileDeletionStorage,
+} from '../../../storage/book-file-storage';
 import { bookSchema, type Book } from '../domain/book';
 import {
   BookImportService,
@@ -12,10 +20,15 @@ import {
   type ImportBookResult,
 } from './book-import-service';
 import { FflateEpubMetadataParser } from './epub-metadata-parser';
+import {
+  type LibraryManagement,
+  LibraryManagementService,
+} from './library-management-service';
 
 export interface LibraryServices {
   importer: BookImporter;
   loadCoverUrl(path: string): Promise<string | null>;
+  management: LibraryManagement;
   releaseCoverUrl(url: string): void;
   repository: BookRepository;
 }
@@ -97,9 +110,16 @@ class WebMockBookImporter implements BookImporter {
 
 function createTauriLibraryServices(): LibraryServices {
   const repository = new SqliteBookRepository();
+  const libraryRepository = new SqliteLibraryRepository();
   const fileStorage = new TauriBookFileStorage();
   return {
     repository,
+    management: new LibraryManagementService(
+      libraryRepository,
+      repository,
+      new SqliteNoteRepository(),
+      fileStorage,
+    ),
     importer: new BookImportService({
       dialog: new TauriFileDialogAdapter(),
       fileStorage,
@@ -119,8 +139,20 @@ function createTauriLibraryServices(): LibraryServices {
 
 function createWebLibraryServices(): LibraryServices {
   const repository = new WebBookRepository();
+  const noteRepository = new WebNoteRepository();
+  const libraryRepository = new WebLibraryRepository(
+    repository,
+    noteRepository,
+    new WebReaderSettingsRepository(),
+  );
   return {
     repository,
+    management: new LibraryManagementService(
+      libraryRepository,
+      repository,
+      noteRepository,
+      new WebBookFileDeletionStorage(),
+    ),
     importer: new WebMockBookImporter(repository),
     loadCoverUrl: () => Promise.resolve(null),
     releaseCoverUrl: () => undefined,

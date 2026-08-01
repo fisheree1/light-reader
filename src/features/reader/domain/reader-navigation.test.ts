@@ -15,6 +15,23 @@ describe('reader navigation state', () => {
     expect(parseReaderNavigationState({ readerNavigation: target })).toEqual(
       target,
     );
+    expect(
+      parseReaderNavigationState({
+        readerNavigation: {
+          locator: {
+            version: 1,
+            format: 'epub',
+            chapterHref: 'two.xhtml',
+          },
+        },
+      }),
+    ).toEqual({
+      locator: {
+        version: 1,
+        format: 'epub',
+        chapterHref: 'two.xhtml',
+      },
+    });
     expect(parseReaderNavigationState({ readerNavigation: {} })).toBeNull();
   });
 });

@@ -4,6 +4,7 @@ import {
   createNoteDocument,
   extractPlainText,
   findBookQuoteReferences,
+  removeBookQuoteReferences,
 } from './note';
 
 const reference = {
@@ -52,5 +53,49 @@ describe('note domain', () => {
     expect(findBookQuoteReferences(document)[0]?.quote).toBe(
       '保留下来的原文快照',
     );
+  });
+
+  it('removes only references for the deleted book and preserves note text', () => {
+    const retainedReference = {
+      ...reference,
+      bookId: 'book-2',
+      annotationId: 'annotation-2',
+    };
+    const document = createNoteDocument({
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          content: [{ type: 'text', text: '不能丢失的笔记正文' }],
+        },
+        createBookQuoteNode(reference),
+        createBookQuoteNode(retainedReference),
+      ],
+    });
+
+    const result = removeBookQuoteReferences(document, 'book-1');
+
+    expect(result.removedCount).toBe(1);
+    expect(extractPlainText(result.document)).toBe(
+      '不能丢失的笔记正文 保留下来的原文快照',
+    );
+    expect(findBookQuoteReferences(result.document)).toEqual([
+      retainedReference,
+    ]);
+  });
+
+  it('keeps an empty note document valid after its only quote is removed', () => {
+    const document = createNoteDocument({
+      type: 'doc',
+      content: [createBookQuoteNode(reference)],
+    });
+
+    expect(removeBookQuoteReferences(document, 'book-1')).toEqual({
+      document: {
+        schemaVersion: 1,
+        content: { type: 'doc', content: [{ type: 'paragraph' }] },
+      },
+      removedCount: 1,
+    });
   });
 });

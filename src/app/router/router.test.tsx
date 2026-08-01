@@ -7,6 +7,7 @@ describe('application routes', () => {
   it.each([
     ['/library', '书架'],
     ['/notes', '笔记'],
+    ['/search', '搜索'],
     ['/settings', '设置'],
   ])('renders %s', async (path, heading) => {
     render(<RouterProvider router={createTestRouter([path])} />);

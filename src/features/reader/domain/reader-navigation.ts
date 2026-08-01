@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { bookLocatorSchema } from '../../../reader-engines/types';
 
 export const readerNavigationTargetSchema = z.object({
-  annotationId: z.string().trim().min(1).max(128),
+  annotationId: z.string().trim().min(1).max(128).optional(),
   locator: bookLocatorSchema,
 });
 

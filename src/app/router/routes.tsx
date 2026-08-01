@@ -18,6 +18,14 @@ export const routes: RouteObject[] = [
           return { Component: NotesPage };
         },
       },
+      {
+        path: 'search',
+        lazy: async () => {
+          const { SearchPage } =
+            await import('../../features/search/search-page');
+          return { Component: SearchPage };
+        },
+      },
       { path: 'settings', element: <SettingsPage /> },
       { path: '*', element: <Navigate replace to="/library" /> },
     ],

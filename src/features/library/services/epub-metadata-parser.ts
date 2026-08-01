@@ -14,7 +14,7 @@ export interface EpubMetadataParser {
   parse(data: Uint8Array, sourceFileName: string): Promise<ParsedEpub>;
 }
 
-function parseXml(xml: string, label: string): Document {
+export function parseXml(xml: string, label: string): Document {
   const document = new DOMParser().parseFromString(xml, 'application/xml');
   if (document.querySelector('parsererror')) {
     throw new AppError('INVALID_EPUB', {
@@ -38,7 +38,7 @@ function allText(document: Document, localName: string): string[] {
     .filter(Boolean);
 }
 
-function normalizeArchivePath(path: string): string | null {
+export function normalizeArchivePath(path: string): string | null {
   if (/^[a-z]+:/i.test(path) || path.startsWith('/') || path.includes('\\')) {
     return null;
   }
@@ -56,7 +56,10 @@ function normalizeArchivePath(path: string): string | null {
   return normalized.join('/');
 }
 
-function resolveArchiveHref(opfPath: string, href: string): string | null {
+export function resolveArchiveHref(
+  opfPath: string,
+  href: string,
+): string | null {
   const withoutFragment = href.split(/[?#]/, 1)[0] ?? '';
   let decoded: string;
   try {
@@ -68,6 +71,54 @@ function resolveArchiveHref(opfPath: string, href: string): string | null {
     ? opfPath.slice(0, opfPath.lastIndexOf('/') + 1)
     : '';
   return normalizeArchivePath(`${directory}${decoded}`);
+}
+
+export interface EpubPackage {
+  opf: Document;
+  opfPath: string;
+}
+
+export function readEpubPackage(data: Uint8Array): EpubPackage {
+  if (data.length < 4 || data[0] !== 0x50 || data[1] !== 0x4b) {
+    throw new AppError('INVALID_EPUB');
+  }
+
+  const bootstrapEntries: Partial<Record<string, Uint8Array>> = unzipSync(
+    data,
+    {
+      filter: ({ name }) =>
+        name === 'mimetype' || name === 'META-INF/container.xml',
+    },
+  );
+  const mimetype = bootstrapEntries.mimetype;
+  const container = bootstrapEntries['META-INF/container.xml'];
+  if (
+    !mimetype ||
+    strFromU8(mimetype).trim() !== 'application/epub+zip' ||
+    !container
+  ) {
+    throw new AppError('INVALID_EPUB');
+  }
+
+  const containerDocument = parseXml(strFromU8(container), 'container');
+  const rootfile = containerDocument
+    .getElementsByTagNameNS('*', 'rootfile')
+    .item(0);
+  const opfPathValue = rootfile?.getAttribute('full-path');
+  const opfPath = opfPathValue ? normalizeArchivePath(opfPathValue) : null;
+  if (!opfPath) throw new AppError('INVALID_EPUB');
+
+  const opfEntries: Partial<Record<string, Uint8Array>> = unzipSync(data, {
+    filter: ({ name }) => name === opfPath,
+  });
+  const opfData = opfEntries[opfPath];
+  if (!opfData) throw new AppError('INVALID_EPUB');
+
+  const opf = parseXml(strFromU8(opfData), 'package');
+  if (!opf.getElementsByTagNameNS('*', 'package').length) {
+    throw new AppError('INVALID_EPUB');
+  }
+  return { opf, opfPath };
 }
 
 function coverExtension(mediaType: string): ExtractedCover['extension'] | null {
@@ -133,48 +184,8 @@ function extractCover(
 
 export class FflateEpubMetadataParser implements EpubMetadataParser {
   parse(data: Uint8Array, sourceFileName: string): Promise<ParsedEpub> {
-    if (data.length < 4 || data[0] !== 0x50 || data[1] !== 0x4b) {
-      return Promise.reject(new AppError('INVALID_EPUB'));
-    }
-
     try {
-      const bootstrapEntries: Partial<Record<string, Uint8Array>> = unzipSync(
-        data,
-        {
-          filter: ({ name }) =>
-            name === 'mimetype' || name === 'META-INF/container.xml',
-        },
-      );
-      const mimetype = bootstrapEntries.mimetype;
-      const container = bootstrapEntries['META-INF/container.xml'];
-      if (
-        !mimetype ||
-        strFromU8(mimetype).trim() !== 'application/epub+zip' ||
-        !container
-      ) {
-        throw new AppError('INVALID_EPUB');
-      }
-
-      const containerDocument = parseXml(strFromU8(container), 'container');
-      const rootfiles = containerDocument.getElementsByTagNameNS(
-        '*',
-        'rootfile',
-      );
-      const rootfile = rootfiles.item(0);
-      const opfPathValue = rootfile?.getAttribute('full-path');
-      const opfPath = opfPathValue ? normalizeArchivePath(opfPathValue) : null;
-      if (!opfPath) throw new AppError('INVALID_EPUB');
-
-      const opfEntries: Partial<Record<string, Uint8Array>> = unzipSync(data, {
-        filter: ({ name }) => name === opfPath,
-      });
-      const opfData = opfEntries[opfPath];
-      if (!opfData) throw new AppError('INVALID_EPUB');
-
-      const opf = parseXml(strFromU8(opfData), 'package');
-      if (!opf.getElementsByTagNameNS('*', 'package').length) {
-        throw new AppError('INVALID_EPUB');
-      }
+      const { opf, opfPath } = readEpubPackage(data);
 
       const metadata: EpubMetadata = {
         title:

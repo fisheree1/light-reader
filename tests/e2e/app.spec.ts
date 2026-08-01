@@ -13,10 +13,113 @@ test('starts and navigates between the scaffold pages', async ({ page }) => {
     page.getByRole('heading', { level: 1, name: '笔记' }),
   ).toBeVisible();
 
+  await page.getByRole('link', { name: '搜索' }).click();
+  await expect(
+    page.getByRole('heading', { level: 1, name: '搜索' }),
+  ).toBeVisible();
+
   await page.getByRole('link', { name: '设置' }).click();
   await expect(
     page.getByRole('heading', { level: 1, name: '设置' }),
   ).toBeVisible();
+});
+
+test('searches notes, highlights, and EPUB content entirely in Web mocks', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const book = {
+      id: 'search-book',
+      title: '本地搜索测试书',
+      author: 'LightReader',
+      format: 'epub',
+      filePath: 'light-reader/books/search-book/book.epub',
+      fileHash: 'e'.repeat(64),
+      coverPath: null,
+      metadata: {
+        title: '本地搜索测试书',
+        creators: ['LightReader'],
+        language: 'zh-CN',
+        publisher: null,
+        description: null,
+        identifier: null,
+      },
+      fileSize: 256,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    localStorage.setItem('light-reader-web-books', JSON.stringify([book]));
+    localStorage.setItem(
+      'light-reader-web-notes',
+      JSON.stringify([
+        {
+          id: 'search-note',
+          title: '中文搜索笔记',
+          document: {
+            schemaVersion: 1,
+            content: {
+              type: 'doc',
+              content: [
+                {
+                  type: 'paragraph',
+                  content: [{ type: 'text', text: '只保存在本机的内容' }],
+                },
+              ],
+            },
+          },
+          plainText: '只保存在本机的内容',
+          documentRecovered: false,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ]),
+    );
+    localStorage.setItem(
+      'light-reader-web-annotations',
+      JSON.stringify([
+        {
+          id: 'search-annotation',
+          bookId: 'search-book',
+          text: 'important local highlight',
+          textBefore: null,
+          textAfter: null,
+          chapterHref: 'one.xhtml',
+          locator: {
+            version: 1,
+            format: 'epub',
+            chapterHref: 'one.xhtml',
+            cfi: 'epubcfi(/6/2!/4/2)',
+          },
+          color: 'yellow',
+          noteText: null,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ]),
+    );
+  });
+
+  await page.goto('/search');
+  const input = page.getByRole('searchbox', { name: '搜索本地内容' });
+
+  await input.fill('中文搜索');
+  await page.getByRole('button', { name: '搜索', exact: true }).click();
+  await expect(page.getByText('中文搜索笔记', { exact: true })).toBeVisible();
+
+  await input.fill('local highlight');
+  await page.getByRole('button', { name: '搜索', exact: true }).click();
+  await expect(
+    page.getByText('important local highlight', { exact: true }),
+  ).toBeVisible();
+
+  await input.fill('无版权');
+  await page.getByRole('button', { name: '搜索', exact: true }).click();
+  await expect(
+    page.getByText(/LightReader 自制的无版权测试内容/),
+  ).toBeVisible();
+  await page.getByRole('button', { name: /第一章/ }).click();
+  await expect(page).toHaveURL(/\/reader\/search-book$/);
+  await expect(page.getByRole('button', { name: '第一章' })).toBeVisible();
 });
 
 test('switches theme', async ({ page }) => {
@@ -58,11 +161,11 @@ test('shows a persisted book from preloaded Web data', async ({ page }) => {
   await page.goto('/library');
 
   await expect(
-    page.getByRole('button', { name: /预置测试图书/ }),
+    page.getByRole('button', { name: '打开《预置测试图书》' }),
   ).toBeVisible();
   await expect(page.getByText('未知作者')).toBeVisible();
 
-  await page.getByRole('button', { name: /预置测试图书/ }).click();
+  await page.getByRole('button', { name: '打开《预置测试图书》' }).click();
   await expect(page).toHaveURL(/\/reader\/preloaded-book$/);
   await expect(
     page.getByRole('heading', { level: 1, name: '预置测试图书' }),
@@ -86,7 +189,7 @@ test('verifies the import interaction through the Web mock adapter', async ({
 
   await expect(page.getByRole('status')).toContainText('已导入书架');
   await expect(
-    page.getByRole('button', { name: /Web 测试 EPUB/ }),
+    page.getByRole('button', { name: '打开《Web 测试 EPUB》' }),
   ).toBeVisible();
 
   await page.getByRole('button', { name: '导入 EPUB' }).click();
@@ -108,7 +211,7 @@ test('persists global reading settings and a per-book override', async ({
 
   await page.goto('/library');
   await page.getByRole('button', { name: '导入 EPUB' }).click();
-  await page.getByRole('button', { name: /Web 测试 EPUB/ }).click();
+  await page.getByRole('button', { name: '打开《Web 测试 EPUB》' }).click();
   await expect(page.getByRole('button', { name: '第一章' })).toBeVisible();
 
   await page.getByRole('button', { name: '阅读设置' }).click();
@@ -125,7 +228,7 @@ test('creates a highlight with a note and restores both after reopening', async 
 }) => {
   await page.goto('/library');
   await page.getByRole('button', { name: '导入 EPUB' }).click();
-  await page.getByRole('button', { name: /Web 测试 EPUB/ }).click();
+  await page.getByRole('button', { name: '打开《Web 测试 EPUB》' }).click();
   await expect(page.getByRole('button', { name: '第一章' })).toBeVisible();
 
   await expect.poll(() => page.frames().length).toBeGreaterThan(1);
@@ -151,7 +254,7 @@ test('creates a highlight with a note and restores both after reopening', async 
   await page.getByRole('button', { name: '关闭批注' }).click();
   await page.getByRole('link', { name: '返回书架' }).click();
 
-  await page.getByRole('button', { name: /Web 测试 EPUB/ }).click();
+  await page.getByRole('button', { name: '打开《Web 测试 EPUB》' }).click();
   await expect(
     page.getByText('这是 LightReader 自制的无版权测试内容。', { exact: true }),
   ).toBeVisible();
@@ -187,4 +290,134 @@ test('creates a highlight with a note and restores both after reopening', async 
     .click();
   await expect(page).toHaveURL(importedReaderUrl);
   await expect(page.getByRole('button', { name: '第一章' })).toBeVisible();
+});
+
+test('manages favorites, tags, sorting, and protected deletion locally', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const createBook = (
+      id: string,
+      title: string,
+      createdAt: number,
+      fileHash: string,
+    ) => ({
+      id,
+      title,
+      author: null,
+      format: 'epub',
+      filePath: `light-reader/books/${id}/book.epub`,
+      fileHash,
+      coverPath: null,
+      metadata: {
+        title,
+        creators: [],
+        language: 'zh-CN',
+        publisher: null,
+        description: null,
+        identifier: null,
+      },
+      fileSize: 128,
+      createdAt,
+      updatedAt: createdAt,
+    });
+    localStorage.setItem(
+      'light-reader-web-books',
+      JSON.stringify([
+        createBook('book-z', 'Zulu', 20, 'b'.repeat(64)),
+        createBook('book-a', 'Alpha', 10, 'a'.repeat(64)),
+      ]),
+    );
+    localStorage.setItem(
+      'light-reader-web-notes',
+      JSON.stringify([
+        {
+          id: 'protected-note',
+          title: '保留引用',
+          document: {
+            schemaVersion: 1,
+            content: {
+              type: 'doc',
+              content: [
+                {
+                  type: 'bookQuote',
+                  attrs: {
+                    bookId: 'book-z',
+                    annotationId: 'annotation-z',
+                    quote: '离线引用快照',
+                    chapter: '第一章',
+                    locator: {
+                      version: 1,
+                      format: 'epub',
+                      chapterHref: 'one.xhtml',
+                      cfi: 'epubcfi(/6/2!/4/2,/1:0,/1:4)',
+                    },
+                  },
+                },
+              ],
+            },
+          },
+          plainText: '离线引用快照',
+          documentRecovered: false,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ]),
+    );
+  });
+
+  await page.goto('/library');
+  await page.getByLabel('书架排序').selectOption('title');
+  const openButtons = page
+    .getByRole('region', { name: '书籍' })
+    .getByRole('button', { name: /^打开/ });
+  await expect(openButtons).toHaveCount(2);
+  await expect(openButtons.nth(0)).toHaveAccessibleName('打开《Alpha》');
+  await expect(openButtons.nth(1)).toHaveAccessibleName('打开《Zulu》');
+
+  await page.getByRole('button', { name: '收藏《Zulu》' }).click();
+  await expect(
+    page.getByRole('button', { name: '取消收藏《Zulu》' }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: '管理《Zulu》' }).click();
+  await page.getByLabel('标签').fill('技术, 待读');
+  await page.getByRole('button', { name: '保存标签' }).click();
+  await page.getByRole('button', { name: '关闭书籍管理' }).click();
+  await expect(page.getByRole('status')).toContainText('标签已保存');
+
+  await page.getByRole('searchbox', { name: '搜索书架' }).fill('技术');
+  await expect(
+    page.getByRole('button', { name: '打开《Zulu》' }),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: '打开《Alpha》' })).toHaveCount(
+    0,
+  );
+  await page.getByRole('searchbox', { name: '搜索书架' }).clear();
+
+  await page.getByRole('button', { name: '管理《Zulu》' }).click();
+  await page.getByRole('button', { name: /删除文件但保留笔记引用/ }).click();
+  await expect(
+    page.getByRole('heading', { name: '确认删除《Zulu》？' }),
+  ).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        localStorage.getItem('light-reader-web-books')?.includes('book-z'),
+      ),
+    )
+    .toBe(true);
+  await page.getByRole('button', { name: '确认删除' }).click();
+  await expect(page.getByRole('status')).toContainText('笔记引用快照已保留');
+  await expect(page.getByRole('button', { name: '打开《Zulu》' })).toHaveCount(
+    0,
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        localStorage
+          .getItem('light-reader-web-notes')
+          ?.includes('离线引用快照'),
+      ),
+    )
+    .toBe(true);
 });

@@ -4,6 +4,7 @@ import {
   NotebookPen,
   PanelLeftClose,
   PanelLeftOpen,
+  Search,
   Settings,
   Sun,
 } from 'lucide-react';
@@ -16,6 +17,7 @@ import { useAppStore } from '../../stores/app-store';
 const navigationItems = [
   { icon: BookOpen, label: '书架', to: '/library' },
   { icon: NotebookPen, label: '笔记', to: '/notes' },
+  { icon: Search, label: '搜索', to: '/search' },
   { icon: Settings, label: '设置', to: '/settings' },
 ] as const;
 

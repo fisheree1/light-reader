@@ -40,6 +40,18 @@ pub fn run() {
             sql: include_str!("../migrations/0006_notes.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 7,
+            description: "create local full-text search indexes",
+            sql: include_str!("../migrations/0007_local_search.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 8,
+            description: "add library favorites and book tags",
+            sql: include_str!("../migrations/0008_library_management.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
