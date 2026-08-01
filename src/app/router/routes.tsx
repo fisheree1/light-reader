@@ -2,6 +2,7 @@ import { Navigate, type RouteObject } from 'react-router-dom';
 
 import { LibraryPage } from '../../features/library/library-page';
 import { NotesPage } from '../../features/notes/notes-page';
+import { ReaderPage } from '../../features/reader/reader-page';
 import { SettingsPage } from '../../features/settings/settings-page';
 import { AppLayout } from '../layout/app-layout';
 
@@ -17,4 +18,5 @@ export const routes: RouteObject[] = [
       { path: '*', element: <Navigate replace to="/library" /> },
     ],
   },
+  { path: '/reader/:bookId', element: <ReaderPage /> },
 ];

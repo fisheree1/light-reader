@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 
 import type { BookRepository } from '../../database/repositories/book-repository';
 import { AppError } from '../../lib/app-error';
@@ -72,9 +73,17 @@ function createServices(
   };
 }
 
+function renderLibrary(services: LibraryServices) {
+  return render(
+    <MemoryRouter>
+      <LibraryPage services={services} />
+    </MemoryRouter>,
+  );
+}
+
 describe('LibraryPage', () => {
   it('shows the empty shelf', async () => {
-    render(<LibraryPage services={createServices()} />);
+    renderLibrary(createServices());
 
     expect(
       await screen.findByRole('heading', { name: '书架还是空的' }),
@@ -84,20 +93,14 @@ describe('LibraryPage', () => {
 
   it('shows a loading state while books are loading', () => {
     const neverResolves = new Promise<Book[]>(() => undefined);
-    render(
-      <LibraryPage services={createServices({ list: () => neverResolves })} />,
-    );
+    renderLibrary(createServices({ list: () => neverResolves }));
 
     expect(screen.getByText('正在加载书架…')).toBeInTheDocument();
   });
 
   it('renders persisted book cards and fallback author/cover', async () => {
-    render(
-      <LibraryPage
-        services={createServices({
-          list: () => Promise.resolve([createBook()]),
-        })}
-      />,
+    renderLibrary(
+      createServices({ list: () => Promise.resolve([createBook()]) }),
     );
 
     expect(
@@ -110,9 +113,7 @@ describe('LibraryPage', () => {
   it('disables the import button while an import is pending', async () => {
     const user = userEvent.setup();
     const pending = new Promise<ImportBookResult>(() => undefined);
-    render(
-      <LibraryPage services={createServices({ importEpub: () => pending })} />,
-    );
+    renderLibrary(createServices({ importEpub: () => pending }));
     await screen.findByRole('heading', { name: '书架还是空的' });
 
     await user.click(screen.getByRole('button', { name: '导入 EPUB' }));
@@ -121,7 +122,7 @@ describe('LibraryPage', () => {
 
   it('adds a successfully imported book immediately', async () => {
     const user = userEvent.setup();
-    render(<LibraryPage services={createServices()} />);
+    renderLibrary(createServices());
     await screen.findByRole('heading', { name: '书架还是空的' });
 
     await user.click(screen.getByRole('button', { name: '导入 EPUB' }));
@@ -135,14 +136,12 @@ describe('LibraryPage', () => {
   it('shows duplicate feedback without adding another card', async () => {
     const user = userEvent.setup();
     const duplicate = createBook();
-    render(
-      <LibraryPage
-        services={createServices({
-          list: () => Promise.resolve([duplicate]),
-          importEpub: () =>
-            Promise.resolve({ status: 'duplicate', book: duplicate }),
-        })}
-      />,
+    renderLibrary(
+      createServices({
+        list: () => Promise.resolve([duplicate]),
+        importEpub: () =>
+          Promise.resolve({ status: 'duplicate', book: duplicate }),
+      }),
     );
     await screen.findByRole('button', { name: /一本很长/ });
 
@@ -156,18 +155,16 @@ describe('LibraryPage', () => {
     const user = userEvent.setup();
     let attempts = 0;
     const book = createBook();
-    render(
-      <LibraryPage
-        services={createServices({
-          importEpub: () => {
-            attempts += 1;
-            if (attempts === 1) {
-              return Promise.reject(new AppError('INVALID_EPUB'));
-            }
-            return Promise.resolve({ status: 'created', book });
-          },
-        })}
-      />,
+    renderLibrary(
+      createServices({
+        importEpub: () => {
+          attempts += 1;
+          if (attempts === 1) {
+            return Promise.reject(new AppError('INVALID_EPUB'));
+          }
+          return Promise.resolve({ status: 'created', book });
+        },
+      }),
     );
     await screen.findByRole('heading', { name: '书架还是空的' });
 

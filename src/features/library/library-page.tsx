@@ -1,4 +1,5 @@
 import { BookOpen, CircleAlert } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 import { EmptyState } from '../../components/common/empty-state';
 import { Button } from '../../components/ui/button';
@@ -17,6 +18,7 @@ interface LibraryPageProps {
 
 export function LibraryPage({ services = libraryServices }: LibraryPageProps) {
   const library = useLibrary(services);
+  const navigate = useNavigate();
 
   return (
     <div>
@@ -88,7 +90,9 @@ export function LibraryPage({ services = libraryServices }: LibraryPageProps) {
             <BookCard
               key={book.id}
               book={book}
-              onOpen={library.showReaderUnavailable}
+              onOpen={(selectedBook) => {
+                void navigate(`/reader/${encodeURIComponent(selectedBook.id)}`);
+              }}
               services={services}
             />
           ))}

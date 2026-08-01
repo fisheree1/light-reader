@@ -40,6 +40,7 @@ export interface BookFileStorage {
   commit(staged: StagedBookFiles): Promise<CommittedBookFiles>;
   rollback(staged: StagedBookFiles): Promise<void>;
   readCover(path: string): Promise<Uint8Array>;
+  readManagedBook(path: string): Promise<Uint8Array>;
 }
 
 async function removeIfPresent(path: string, recursive = false) {
@@ -132,6 +133,10 @@ export class TauriBookFileStorage implements BookFileStorage {
   }
 
   async readCover(path: string): Promise<Uint8Array> {
+    return readFile(path, { baseDir: BaseDirectory.AppData });
+  }
+
+  async readManagedBook(path: string): Promise<Uint8Array> {
     return readFile(path, { baseDir: BaseDirectory.AppData });
   }
 }

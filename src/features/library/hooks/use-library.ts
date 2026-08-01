@@ -76,13 +76,6 @@ export function useLibrary(services: LibraryServices) {
     }
   }, [services]);
 
-  const showReaderUnavailable = useCallback((book: Book) => {
-    setNotice({
-      kind: 'info',
-      message: `《${book.title}》已保存在本地，阅读功能尚未实现。`,
-    });
-  }, []);
-
   return {
     books,
     importEpub,
@@ -91,6 +84,5 @@ export function useLibrary(services: LibraryServices) {
     loadBooks,
     loadError,
     notice,
-    showReaderUnavailable,
   };
 }

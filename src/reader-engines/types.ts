@@ -1,13 +1,33 @@
-export interface BookLocator {
-  chapterHref?: string;
-  cfi?: string;
-  progression?: number;
+import { z } from 'zod';
+
+export const bookLocatorSchema = z.object({
+  version: z.literal(1),
+  format: z.literal('epub'),
+  chapterHref: z.string().trim().min(1).optional(),
+  cfi: z.string().trim().min(1).optional(),
+  progression: z.number().min(0).max(1).optional(),
+});
+
+/** Stable, serializable reading position. Never store DOM or Foliate objects. */
+export type BookLocator = z.infer<typeof bookLocatorSchema>;
+
+export interface ReaderTocItem {
+  href: string;
+  label: string;
+  subitems: ReaderTocItem[];
 }
 
-/** Contract shared by future EPUB or PDF reader engine adapters. */
+export type RelocationListener = (locator: BookLocator) => void;
+
+/** Engine-neutral lifecycle used by the reader feature. */
 export interface EbookReader {
+  mount(host: HTMLElement): void;
   open(source: ArrayBuffer): Promise<void>;
+  getTableOfContents(): ReaderTocItem[];
   goTo(locator: BookLocator): Promise<void>;
+  previousPage(): Promise<void>;
+  nextPage(): Promise<void>;
   getCurrentLocator(): Promise<BookLocator>;
+  subscribeToRelocation(listener: RelocationListener): () => void;
   close(): Promise<void>;
 }

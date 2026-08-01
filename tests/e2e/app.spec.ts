@@ -61,6 +61,17 @@ test('shows a persisted book from preloaded Web data', async ({ page }) => {
     page.getByRole('button', { name: /预置测试图书/ }),
   ).toBeVisible();
   await expect(page.getByText('未知作者')).toBeVisible();
+
+  await page.getByRole('button', { name: /预置测试图书/ }).click();
+  await expect(page).toHaveURL(/\/reader\/preloaded-book$/);
+  await expect(
+    page.getByRole('heading', { level: 1, name: '预置测试图书' }),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: '第一章' })).toBeVisible();
+  await page.getByRole('button', { name: '第二章' }).click();
+  await expect(page.getByRole('button', { name: '下一页' })).toBeEnabled();
+  await page.getByRole('link', { name: '返回书架' }).click();
+  await expect(page).toHaveURL(/\/library$/);
 });
 
 test('verifies the import interaction through the Web mock adapter', async ({

@@ -8,6 +8,9 @@ export const appErrorMessages = {
   METADATA_PARSE_FAILED: '无法解析这本 EPUB 的图书信息。',
   DATABASE_READ_FAILED: '无法加载书架，请稍后重试。',
   DATABASE_WRITE_FAILED: '无法保存书籍信息，请稍后重试。',
+  BOOK_NOT_FOUND: '这本书不在书架中，可能已经被移除。',
+  READER_OPEN_FAILED: '无法打开这本 EPUB，请确认文件仍然完整。',
+  READER_NAVIGATION_FAILED: '无法跳转到指定阅读位置。',
   UNKNOWN: '发生了意外错误，请重试。',
 } as const;
 

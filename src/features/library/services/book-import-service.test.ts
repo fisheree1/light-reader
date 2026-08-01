@@ -113,6 +113,10 @@ class FakeStorage implements BookFileStorage {
   readCover(): Promise<Uint8Array> {
     return Promise.resolve(new Uint8Array());
   }
+
+  readManagedBook(): Promise<Uint8Array> {
+    return Promise.resolve(new Uint8Array());
+  }
 }
 
 class FakeDialog implements FileDialogAdapter {
