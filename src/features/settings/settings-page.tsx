@@ -10,15 +10,20 @@ import {
 } from '../reader/domain/reader-settings';
 import { readerServices } from '../reader/services/reader-services';
 import { useReaderSettingsStore } from '../../stores/reader-settings-store';
+import { BackupSettings } from '../backup/components/backup-settings';
+import type { BackupManager } from '../backup/services/backup-service';
+import { backupManager as defaultBackupManager } from '../backup/services/backup-services';
 
 type HealthStatus = 'idle' | 'checking' | 'healthy' | 'error';
 type SaveStatus = 'idle' | 'loading' | 'saving' | 'saved' | 'error';
 
 interface SettingsPageProps {
+  backupManager?: BackupManager;
   settingsRepository?: ReaderSettingsRepository;
 }
 
 export function SettingsPage({
+  backupManager = defaultBackupManager,
   settingsRepository = readerServices.settingsRepository,
 }: SettingsPageProps) {
   const [healthStatus, setHealthStatus] = useState<HealthStatus>('idle');
@@ -116,6 +121,8 @@ export function SettingsPage({
           </div>
         </div>
       </section>
+
+      <BackupSettings manager={backupManager} />
 
       {import.meta.env.DEV ? (
         <section className="bg-surface mt-4 rounded-lg border p-5">

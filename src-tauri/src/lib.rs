@@ -1,6 +1,8 @@
 use log::LevelFilter;
 use tauri_plugin_sql::{Migration, MigrationKind};
 
+mod backup;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let migrations = vec![
@@ -55,6 +57,11 @@ pub fn run() {
     ];
 
     tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![
+            backup::create_database_snapshot,
+            backup::inspect_database_snapshot,
+            backup::restore_database_snapshot
+        ])
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(

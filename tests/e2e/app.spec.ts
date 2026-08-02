@@ -129,6 +129,20 @@ test('switches theme', async ({ page }) => {
   await expect(page.locator('html')).toHaveClass(/dark/);
 });
 
+test('shows the desktop-only backup boundary in Web settings', async ({
+  page,
+}) => {
+  await page.goto('/settings');
+
+  await expect(
+    page.getByRole('heading', { name: '数据导出与备份' }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/数据库备份仅在 Tauri 桌面应用中可用/),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: '导出备份' })).toHaveCount(0);
+});
+
 test('shows a persisted book from preloaded Web data', async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem(

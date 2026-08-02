@@ -31,6 +31,12 @@ export const appErrorMessages = {
   NOTE_DOCUMENT_INVALID: '笔记内容损坏，已使用空白文档安全打开。',
   SEARCH_FAILED: '无法完成本地搜索，请稍后重试。',
   SEARCH_INDEX_FAILED: '无法更新本地搜索索引，请稍后重试。',
+  BACKUP_EXPORT_FAILED: '无法创建备份，请检查磁盘空间后重试。',
+  BACKUP_FILE_READ_FAILED: '无法读取所选备份文件。',
+  BACKUP_FILE_WRITE_FAILED: '无法写入备份文件，请检查保存位置。',
+  BACKUP_INVALID: '备份文件已损坏，或不是有效的 LightReader 备份。',
+  BACKUP_VERSION_UNSUPPORTED: '此备份版本与当前 LightReader 不兼容。',
+  BACKUP_RESTORE_FAILED: '无法恢复备份，原有数据已保留。',
   UNKNOWN: '发生了意外错误，请重试。',
 } as const;
 

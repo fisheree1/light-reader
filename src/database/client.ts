@@ -17,6 +17,15 @@ export function getDatabase(): Promise<SqlDatabase> {
   return databasePromise;
 }
 
+export async function closeDatabaseForMaintenance(): Promise<void> {
+  const activeDatabase = databasePromise;
+  databasePromise = undefined;
+  const database = activeDatabase
+    ? await activeDatabase
+    : Database.get(DATABASE_URL);
+  await database.close(DATABASE_URL);
+}
+
 interface AppMetaRow {
   value: string;
 }

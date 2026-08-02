@@ -1,10 +1,10 @@
 # 轻阅笔记（LightReader）
 
-轻阅笔记是一个以本地优先方式管理电子书、阅读进度与阅读笔记的桌面应用。当前 MVP 已支持 EPUB 导入、可搜索与排序的持久化书架、收藏与标签，并可使用 Foliate JS 阅读正文、调整主题与排版、恢复上次阅读位置、创建持久化高亮和文字批注、用 Tiptap 编写带原文引用的独立笔记，以及在本机搜索笔记、高亮和 EPUB 正文。
+轻阅笔记是一个以本地优先方式管理电子书、阅读进度与阅读笔记的桌面应用。当前 MVP 已支持 EPUB 导入、可搜索与排序的持久化书架、收藏与标签、版本化本地备份与恢复，并可使用 Foliate JS 阅读正文、调整主题与排版、恢复上次阅读位置、创建持久化高亮和文字批注、用 Tiptap 编写带原文引用的独立笔记，以及在本机搜索笔记、高亮和 EPUB 正文。
 
 ## 当前阶段
 
-当前完成了 EPUB 导入、书架持久化和管理、基础阅读、高亮、轻量文字批注、独立笔记和本地全文搜索闭环。书架可按书名、作者或标签搜索，按最近阅读、添加时间或标题排序，并支持收藏、标签和两种安全删除模式。支持格式目前仅为 EPUB；阅读设置、位置、高亮、批注、版本化 Tiptap JSON 笔记和派生搜索索引均持久化到本地 SQLite。高亮可以创建引用笔记，点击有效引用块或搜索结果可返回对应 EPUB 位置。
+当前完成了 EPUB 导入、书架持久化和管理、基础阅读、高亮、轻量文字批注、独立笔记、本地全文搜索和数据库备份恢复闭环。书架可按书名、作者或标签搜索，按最近阅读、添加时间或标题排序，并支持收藏、标签和两种安全删除模式。支持格式目前仅为 EPUB；阅读设置、位置、高亮、批注、版本化 Tiptap JSON 笔记和派生搜索索引均持久化到本地 SQLite，并可导出为 `.lightreader-backup` 后在兼容版本中恢复。
 
 ## 技术栈
 
@@ -98,6 +98,13 @@ pnpm exec vitest run src/features/library src/storage/book-paths.test.ts src/dat
 cargo test --manifest-path src-tauri/Cargo.toml --test books_migration library_metadata_persists_sorts_and_follows_book_lifecycle
 ```
 
+仅运行备份相关测试：
+
+```bash
+pnpm exec vitest run src/features/backup src/features/settings/settings-page.test.tsx
+cargo test --manifest-path src-tauri/Cargo.toml backup::tests
+```
+
 ## 构建
 
 构建 Web 资源：
@@ -136,7 +143,7 @@ docs/                     # 后续架构文档
 
 React 组件不能直接调用 Tauri API。文件与平台能力通过 Adapter/Service 隔离，持久化业务数据通过 Repository 隔离；这让 Web 测试和未来实现替换保持可控。
 
-EPUB 导入的依赖边界、回滚策略和路径约束见 [`docs/epub-import.md`](docs/epub-import.md)。书架管理、删除事务和引用保护见 [`docs/library-management.md`](docs/library-management.md)。阅读器生命周期、定位模型和内容安全策略见 [`docs/reader-engine.md`](docs/reader-engine.md)。笔记文档、自动保存和引用块约定见 [`docs/notes-editor.md`](docs/notes-editor.md)。FTS5 表、章节抽取和索引重建策略见 [`docs/local-search.md`](docs/local-search.md)。
+EPUB 导入的依赖边界、回滚策略和路径约束见 [`docs/epub-import.md`](docs/epub-import.md)。书架管理、删除事务和引用保护见 [`docs/library-management.md`](docs/library-management.md)。数据库快照、备份格式与恢复事务见 [`docs/data-backup.md`](docs/data-backup.md)。阅读器生命周期、定位模型和内容安全策略见 [`docs/reader-engine.md`](docs/reader-engine.md)。笔记文档、自动保存和引用块约定见 [`docs/notes-editor.md`](docs/notes-editor.md)。FTS5 表、章节抽取和索引重建策略见 [`docs/local-search.md`](docs/local-search.md)。
 
 ## EPUB 数据与文件位置
 
@@ -160,6 +167,14 @@ EPUB 导入的依赖边界、回滚策略和路径约束见 [`docs/epub-import.m
 - “删除文件但保留笔记引用”删除书籍和随书数据，同时保留独立笔记中的引用快照。书籍不存在后，该快照不能再跳回原文。
 
 Tauri 文件删除采用应用受控隔离区：先原子重命名 EPUB 目录和封面，再执行 SQLite 事务；事务失败会把文件移回原位置，事务成功后才移除隔离文件。任何目标路径都必须匹配应用生成的 `light-reader/books/<id>` 和 `light-reader/covers/<id>.<ext>`，不会删除用户提供的任意路径。
+
+## 数据备份与恢复
+
+设置页可以把书籍元数据、收藏和标签、阅读设置与进度、高亮、批注、笔记以及本地搜索索引导出为一个 `.lightreader-backup` 文件。备份只在 Tauri 桌面环境可用，完全本地执行，不调用外部 API。
+
+导出使用 SQLite `VACUUM INTO` 生成一致性快照，不直接复制正在运行的 `light-reader.db`。导入会先检查固定归档结构、文件大小、SQLite 文件头、SHA-256、备份格式版本、数据库 Schema 版本、完整性和记录计数，验证完成后才显示“确认恢复”。恢复在单个 SQLite 事务中替换规范数据；约束、计数或写入失败会回滚，保留恢复前数据。
+
+备份不包含 EPUB 和封面二进制文件。恢复书籍元数据后，只有当前设备上仍存在对应受控文件的书籍才能正常打开。格式和安全边界详见 [`docs/data-backup.md`](docs/data-backup.md)。
 
 ## EPUB 基础阅读
 
@@ -186,8 +201,7 @@ Tauri 文件删除采用应用受控隔离区：先原子重命名 EPUB 目录�
 - PDF 阅读
 - 书签
 - 跨设备协作编辑
-- 笔记导出
-- 批注导出
+- 独立笔记和批注的通用格式导出
 - AI 总结
 - 云同步
 - PDF.js
@@ -217,6 +231,10 @@ SQL 插件将 `light-reader.db` 放在应用配置目录中。它是本地运行
 ### 为什么浏览器模式不会打开系统文件选择器
 
 浏览器 E2E 使用 mock adapter 验证书架交互，避免依赖原生对话框。请使用 `pnpm tauri:dev` 验证真实 EPUB 导入。
+
+### 备份是否包含 EPUB 文件
+
+不包含。`.lightreader-backup` 保存数据库内容，包括书籍元数据、阅读数据、高亮、批注和笔记；EPUB 与封面仍保存在应用受控目录。若要迁移到另一台设备，需要另外复制合法拥有的 EPUB 文件。
 
 ### 为什么 Foliate JS 使用 Git 提交而不是版本号
 
