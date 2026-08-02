@@ -2,6 +2,7 @@ export const appErrorMessages = {
   USER_CANCELLED: '',
   UNSUPPORTED_FILE_TYPE: '目前只支持导入 EPUB 文件。',
   INVALID_EPUB: '这个文件不是有效的 EPUB，或文件已经损坏。',
+  EPUB_TOO_LARGE: 'EPUB 文件过大或压缩结构异常，无法安全导入。',
   DUPLICATE_BOOK: '这本书已经在书架中了。',
   FILE_READ_FAILED: '无法读取所选文件，请检查文件是否仍然可用。',
   FILE_WRITE_FAILED: '无法保存图书文件，请检查磁盘空间后重试。',

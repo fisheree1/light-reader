@@ -23,7 +23,7 @@ function createManager(): BackupManager {
       }),
     prepareImport: () =>
       Promise.resolve({ backup: prepared, status: 'prepared' }),
-    restoreBackup: () => Promise.resolve(),
+    restoreBackup: () => Promise.resolve({ status: 'restored' }),
   };
 }
 
@@ -73,6 +73,21 @@ describe('BackupSettings', () => {
     expect(
       await screen.findByRole('heading', { name: '备份已通过恢复前验证' }),
     ).toBeVisible();
+  });
+
+  it('states that data changed when restore committed but reopening failed', async () => {
+    const user = userEvent.setup();
+    const manager = createManager();
+    vi.spyOn(manager, 'restoreBackup').mockResolvedValue({
+      status: 'restored-reopen-required',
+    });
+    render(<BackupSettings manager={manager} />);
+
+    await user.click(screen.getByRole('button', { name: '导入备份' }));
+    await user.click(screen.getByRole('button', { name: '确认恢复' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('数据已经恢复');
+    expect(screen.getByRole('alert')).toHaveTextContent('重新启动应用');
   });
 
   it('disables native backup actions in Web preview', () => {

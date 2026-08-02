@@ -65,4 +65,23 @@ describe('FflateEpubContentParser', () => {
       } satisfies Partial<AppError>,
     );
   });
+
+  it('rejects a highly compressed oversized chapter before extraction', async () => {
+    await expect(
+      parser.parse(
+        createEpubFixture({
+          chapters: [
+            {
+              id: 'bomb',
+              href: 'bomb.xhtml',
+              title: 'Compressed chapter',
+              text: 'x'.repeat(2 * 1024 * 1024),
+            },
+          ],
+        }),
+      ),
+    ).rejects.toMatchObject({
+      code: 'EPUB_TOO_LARGE',
+    } satisfies Partial<AppError>);
+  });
 });

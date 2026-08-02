@@ -8,6 +8,7 @@ import type {
 import { AppError, asAppError, isAppError } from '../../../lib/app-error';
 import { bookSchema, type Book } from '../domain/book';
 import type { EpubMetadataParser } from './epub-metadata-parser';
+import { assertEpubFileSize, MAX_EPUB_FILE_SIZE } from './epub-limits';
 
 export type ImportBookResult =
   | { status: 'cancelled' }
@@ -26,16 +27,19 @@ interface BookImportDependencies {
   metadataParser: EpubMetadataParser;
   now?: () => number;
   repository: BookRepository;
+  maxFileSize?: number;
 }
 
 export class BookImportService implements BookImporter {
   private readonly dependencies: BookImportDependencies;
   private readonly idGenerator: () => string;
+  private readonly maxFileSize: number;
   private readonly now: () => number;
 
   constructor(dependencies: BookImportDependencies) {
     this.dependencies = dependencies;
     this.idGenerator = dependencies.idGenerator ?? (() => crypto.randomUUID());
+    this.maxFileSize = dependencies.maxFileSize ?? MAX_EPUB_FILE_SIZE;
     this.now = dependencies.now ?? Date.now;
   }
 
@@ -53,8 +57,14 @@ export class BookImportService implements BookImporter {
 
     let source: Uint8Array;
     try {
+      assertEpubFileSize(
+        await this.dependencies.fileStorage.getSourceSize(selected.path),
+        this.maxFileSize,
+      );
       source = await this.dependencies.fileStorage.readSource(selected.path);
+      assertEpubFileSize(source.byteLength, this.maxFileSize);
     } catch (error) {
+      if (isAppError(error)) throw error;
       throw new AppError('FILE_READ_FAILED', { cause: error });
     }
 

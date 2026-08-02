@@ -5,6 +5,7 @@ import {
   readFile,
   remove,
   rename,
+  stat,
   writeFile,
 } from '@tauri-apps/plugin-fs';
 
@@ -56,6 +57,7 @@ export interface BookFileDeletionStorage {
 }
 
 export interface BookFileStorage {
+  getSourceSize(path: string): Promise<number>;
   readSource(path: string): Promise<Uint8Array>;
   stage(
     bookId: string,
@@ -77,6 +79,10 @@ async function removeIfPresent(path: string, recursive = false) {
 export class TauriBookFileStorage
   implements BookFileStorage, BookFileDeletionStorage
 {
+  async getSourceSize(path: string): Promise<number> {
+    return (await stat(path)).size;
+  }
+
   async readSource(path: string): Promise<Uint8Array> {
     return readFile(path);
   }

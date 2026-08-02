@@ -7,6 +7,7 @@ import {
   preparedBackupSchema,
   type BackupExportResult,
   type BackupPrepareResult,
+  type BackupRestoreResult,
   type DatabaseBackupSummary,
   type PreparedBackup,
 } from '../domain/backup';
@@ -17,7 +18,7 @@ export interface BackupManager {
   discardPreparedBackup(backup: PreparedBackup): Promise<void>;
   exportBackup(): Promise<BackupExportResult>;
   prepareImport(): Promise<BackupPrepareResult>;
-  restoreBackup(backup: PreparedBackup): Promise<void>;
+  restoreBackup(backup: PreparedBackup): Promise<BackupRestoreResult>;
 }
 
 interface BackupServiceOptions {
@@ -132,7 +133,7 @@ export class BackupService implements BackupManager {
     }
   }
 
-  async restoreBackup(value: PreparedBackup): Promise<void> {
+  async restoreBackup(value: PreparedBackup): Promise<BackupRestoreResult> {
     const backup = preparedBackupSchema.parse(value);
     if (backup.schemaVersion !== CURRENT_DATABASE_SCHEMA_VERSION) {
       throw new AppError('BACKUP_VERSION_UNSUPPORTED');
@@ -140,18 +141,21 @@ export class BackupService implements BackupManager {
     try {
       const restored = await this.platform.restoreSnapshot(backup.token);
       if (
-        !summariesMatch(restored, {
+        !summariesMatch(restored.summary, {
           counts: backup.counts,
           schemaVersion: backup.schemaVersion,
         })
       ) {
-        throw new AppError('BACKUP_RESTORE_FAILED');
+        return { status: 'restored-verification-required' };
       }
+      if (restored.databaseState === 'reopen-required') {
+        return { status: 'restored-reopen-required' };
+      }
+      await this.platform.cleanupSnapshot(backup.token).catch(() => undefined);
+      return { status: 'restored' };
     } catch (error) {
       if (isAppError(error)) throw error;
       throw new AppError('BACKUP_RESTORE_FAILED', { cause: error });
-    } finally {
-      await this.platform.cleanupSnapshot(backup.token).catch(() => undefined);
     }
   }
 

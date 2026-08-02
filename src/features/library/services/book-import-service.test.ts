@@ -13,6 +13,7 @@ import type {
 import type { Book } from '../domain/book';
 import { BookImportService } from './book-import-service';
 import type { EpubMetadataParser, ParsedEpub } from './epub-metadata-parser';
+import { MAX_EPUB_FILE_SIZE } from './epub-limits';
 
 const HASH = 'a'.repeat(64);
 const STAGED: StagedBookFiles = {
@@ -92,10 +93,17 @@ class FakeRepository implements BookRepository {
 
 class FakeStorage implements BookFileStorage {
   commitFailure = false;
+  readCount = 0;
   rollbackCount = 0;
+  sourceSize = 3;
   stageCount = 0;
 
+  getSourceSize(): Promise<number> {
+    return Promise.resolve(this.sourceSize);
+  }
+
   readSource(): Promise<Uint8Array> {
+    this.readCount += 1;
     return Promise.resolve(new Uint8Array([1, 2, 3]));
   }
 
@@ -209,6 +217,17 @@ describe('BookImportService', () => {
       status: 'duplicate',
       book: { id: 'existing-book' },
     });
+    expect(fileStorage.stageCount).toBe(0);
+  });
+
+  it('rejects an oversized EPUB before reading it into memory', async () => {
+    const { fileStorage, subject } = createSubject();
+    fileStorage.sourceSize = MAX_EPUB_FILE_SIZE + 1;
+
+    await expect(subject.importEpub()).rejects.toMatchObject({
+      code: 'EPUB_TOO_LARGE',
+    } satisfies Partial<AppError>);
+    expect(fileStorage.readCount).toBe(0);
     expect(fileStorage.stageCount).toBe(0);
   });
 

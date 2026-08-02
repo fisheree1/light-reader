@@ -19,6 +19,7 @@
     "fs:allow-read-file",
     "fs:allow-rename",
     "fs:allow-remove",
+    "fs:allow-stat",
     "fs:allow-write-file",
     "sql:default",
     {

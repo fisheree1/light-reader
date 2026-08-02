@@ -4,6 +4,13 @@ import type { EpubMetadata } from '../domain/book';
 import { AppError, isAppError } from '../../../lib/app-error';
 import { fallbackTitleFromFileName } from '../../../storage/book-paths';
 import type { ExtractedCover } from '../../../storage/book-file-storage';
+import {
+  assertEpubFileSize,
+  createLimitedEpubZipFilter,
+  MAX_EPUB_CONTAINER_SIZE,
+  MAX_EPUB_COVER_SIZE,
+  MAX_EPUB_PACKAGE_SIZE,
+} from './epub-limits';
 
 export interface ParsedEpub {
   cover: ExtractedCover | null;
@@ -79,6 +86,7 @@ export interface EpubPackage {
 }
 
 export function readEpubPackage(data: Uint8Array): EpubPackage {
+  assertEpubFileSize(data.byteLength);
   if (data.length < 4 || data[0] !== 0x50 || data[1] !== 0x4b) {
     throw new AppError('INVALID_EPUB');
   }
@@ -86,8 +94,13 @@ export function readEpubPackage(data: Uint8Array): EpubPackage {
   const bootstrapEntries: Partial<Record<string, Uint8Array>> = unzipSync(
     data,
     {
-      filter: ({ name }) =>
-        name === 'mimetype' || name === 'META-INF/container.xml',
+      filter: createLimitedEpubZipFilter({
+        include: (name) =>
+          name === 'mimetype' || name === 'META-INF/container.xml',
+        maxEntrySize: (name) =>
+          name === 'mimetype' ? 256 : MAX_EPUB_CONTAINER_SIZE,
+        maxSelectedBytes: MAX_EPUB_CONTAINER_SIZE + 256,
+      }),
     },
   );
   const mimetype = bootstrapEntries.mimetype;
@@ -109,7 +122,11 @@ export function readEpubPackage(data: Uint8Array): EpubPackage {
   if (!opfPath) throw new AppError('INVALID_EPUB');
 
   const opfEntries: Partial<Record<string, Uint8Array>> = unzipSync(data, {
-    filter: ({ name }) => name === opfPath,
+    filter: createLimitedEpubZipFilter({
+      include: (name) => name === opfPath,
+      maxEntrySize: () => MAX_EPUB_PACKAGE_SIZE,
+      maxSelectedBytes: MAX_EPUB_PACKAGE_SIZE,
+    }),
   });
   const opfData = opfEntries[opfPath];
   if (!opfData) throw new AppError('INVALID_EPUB');
@@ -172,7 +189,11 @@ function extractCover(
     const coverEntries: Partial<Record<string, Uint8Array>> = unzipSync(
       archive,
       {
-        filter: ({ name }) => name === coverPath,
+        filter: createLimitedEpubZipFilter({
+          include: (name) => name === coverPath,
+          maxEntrySize: () => MAX_EPUB_COVER_SIZE,
+          maxSelectedBytes: MAX_EPUB_COVER_SIZE,
+        }),
       },
     );
     const data = coverEntries[coverPath];

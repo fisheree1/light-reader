@@ -16,6 +16,7 @@ import {
 import {
   databaseBackupSummarySchema,
   type DatabaseBackupSummary,
+  type DatabaseRestoreOutcome,
 } from '../../features/backup/domain/backup';
 import { fileNameFromPath } from '../../storage/book-paths';
 
@@ -33,7 +34,7 @@ export interface BackupPlatform {
   inspectSnapshot(snapshotId: string): Promise<DatabaseBackupSummary>;
   readExternal(path: string): Promise<Uint8Array>;
   readSnapshot(snapshotId: string): Promise<Uint8Array>;
-  restoreSnapshot(snapshotId: string): Promise<DatabaseBackupSummary>;
+  restoreSnapshot(snapshotId: string): Promise<DatabaseRestoreOutcome>;
   stageSnapshot(snapshotId: string, database: Uint8Array): Promise<void>;
   writeExternal(path: string, archive: Uint8Array): Promise<void>;
 }
@@ -60,6 +61,26 @@ async function invokeSummary(
 
 export class TauriBackupPlatform implements BackupPlatform {
   readonly available = true;
+  private readonly closeDatabase: () => Promise<void>;
+  private readonly reopenDatabase: () => Promise<unknown>;
+  private readonly restoreNative: (
+    snapshotId: string,
+  ) => Promise<DatabaseBackupSummary>;
+
+  constructor(
+    dependencies: {
+      closeDatabase?: () => Promise<void>;
+      reopenDatabase?: () => Promise<unknown>;
+      restoreNative?: (snapshotId: string) => Promise<DatabaseBackupSummary>;
+    } = {},
+  ) {
+    this.closeDatabase =
+      dependencies.closeDatabase ?? closeDatabaseForMaintenance;
+    this.reopenDatabase = dependencies.reopenDatabase ?? getDatabase;
+    this.restoreNative =
+      dependencies.restoreNative ??
+      ((snapshotId) => invokeSummary('restore_database_snapshot', snapshotId));
+  }
 
   async chooseExportPath(
     defaultFileName: string,
@@ -120,19 +141,22 @@ export class TauriBackupPlatform implements BackupPlatform {
     });
   }
 
-  async restoreSnapshot(snapshotId: string): Promise<DatabaseBackupSummary> {
-    await closeDatabaseForMaintenance();
+  async restoreSnapshot(snapshotId: string): Promise<DatabaseRestoreOutcome> {
+    await this.closeDatabase();
     let restored: DatabaseBackupSummary | undefined;
     let restoreError: unknown;
     try {
-      restored = await invokeSummary('restore_database_snapshot', snapshotId);
+      restored = await this.restoreNative(snapshotId);
     } catch (error) {
       restoreError = error;
     }
 
     try {
-      await getDatabase();
+      await this.reopenDatabase();
     } catch (reopenError) {
+      if (restored) {
+        return { summary: restored, databaseState: 'reopen-required' };
+      }
       throw new AggregateError(
         restoreError ? [restoreError, reopenError] : [reopenError],
         'Unable to reopen the LightReader database after restore.',
@@ -145,7 +169,7 @@ export class TauriBackupPlatform implements BackupPlatform {
       });
     }
     if (!restored) throw new Error('Restore completed without a summary.');
-    return restored;
+    return { summary: restored, databaseState: 'ready' };
   }
 
   async stageSnapshot(snapshotId: string, database: Uint8Array): Promise<void> {
@@ -200,7 +224,7 @@ export class UnavailableBackupPlatform implements BackupPlatform {
     return this.unavailable();
   }
 
-  restoreSnapshot(): Promise<DatabaseBackupSummary> {
+  restoreSnapshot(): Promise<DatabaseRestoreOutcome> {
     return this.unavailable();
   }
 

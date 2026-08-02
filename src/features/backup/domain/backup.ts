@@ -25,6 +25,16 @@ export const databaseBackupSummarySchema = z
 
 export type DatabaseBackupSummary = z.infer<typeof databaseBackupSummarySchema>;
 
+export type DatabaseRestoreOutcome = {
+  databaseState: 'ready' | 'reopen-required';
+  summary: DatabaseBackupSummary;
+};
+
+export type BackupRestoreResult =
+  | { status: 'restored' }
+  | { status: 'restored-reopen-required' }
+  | { status: 'restored-verification-required' };
+
 export const backupManifestSchema = z
   .object({
     appVersion: z.string().trim().min(1).max(100),

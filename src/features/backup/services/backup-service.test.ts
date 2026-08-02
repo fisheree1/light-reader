@@ -6,6 +6,7 @@ import type { ContentHasher } from '../../../platform/crypto/content-hasher';
 import {
   CURRENT_DATABASE_SCHEMA_VERSION,
   type DatabaseBackupSummary,
+  type DatabaseRestoreOutcome,
 } from '../domain/backup';
 import { BackupService } from './backup-service';
 
@@ -35,6 +36,10 @@ class FakeBackupPlatform implements BackupPlatform {
   stagedDatabase: Uint8Array = new Uint8Array();
   cleanupTokens: string[] = [];
   restoreFailure = false;
+  restoreOutcome: DatabaseRestoreOutcome = {
+    databaseState: 'ready',
+    summary,
+  };
 
   chooseExportPath(): Promise<SelectedBackupFile | null> {
     return Promise.resolve(this.exportSelection);
@@ -65,10 +70,10 @@ class FakeBackupPlatform implements BackupPlatform {
     return Promise.resolve(database);
   }
 
-  restoreSnapshot(): Promise<DatabaseBackupSummary> {
+  restoreSnapshot(): Promise<DatabaseRestoreOutcome> {
     return this.restoreFailure
       ? Promise.reject(new Error('restore failed'))
-      : Promise.resolve(summary);
+      : Promise.resolve(this.restoreOutcome);
   }
 
   stageSnapshot(_snapshotId: string, value: Uint8Array): Promise<void> {
@@ -130,13 +135,13 @@ describe('BackupService', () => {
     if (prepared.status !== 'prepared') throw new Error('backup not prepared');
     platform.cleanupTokens = [];
 
-    await expect(
-      service.restoreBackup(prepared.backup),
-    ).resolves.toBeUndefined();
+    await expect(service.restoreBackup(prepared.backup)).resolves.toEqual({
+      status: 'restored',
+    });
     expect(platform.cleanupTokens).toEqual(['snapshot-1']);
   });
 
-  it('maps restore failure without retaining temporary database files', async () => {
+  it('keeps the staged database when restore fails so the operation can be retried', async () => {
     const { platform, service } = createSubject();
     await service.exportBackup();
     const prepared = await service.prepareImport();
@@ -147,7 +152,44 @@ describe('BackupService', () => {
     await expect(service.restoreBackup(prepared.backup)).rejects.toMatchObject({
       code: 'BACKUP_RESTORE_FAILED',
     });
-    expect(platform.cleanupTokens).toEqual(['snapshot-1']);
+    expect(platform.cleanupTokens).toEqual([]);
+  });
+
+  it('reports a committed restore that needs an application restart', async () => {
+    const { platform, service } = createSubject();
+    await service.exportBackup();
+    const prepared = await service.prepareImport();
+    if (prepared.status !== 'prepared') throw new Error('backup not prepared');
+    platform.cleanupTokens = [];
+    platform.restoreOutcome = {
+      databaseState: 'reopen-required',
+      summary,
+    };
+
+    await expect(service.restoreBackup(prepared.backup)).resolves.toEqual({
+      status: 'restored-reopen-required',
+    });
+    expect(platform.cleanupTokens).toEqual([]);
+  });
+
+  it('reports a committed restore whose returned summary needs verification', async () => {
+    const { platform, service } = createSubject();
+    await service.exportBackup();
+    const prepared = await service.prepareImport();
+    if (prepared.status !== 'prepared') throw new Error('backup not prepared');
+    platform.cleanupTokens = [];
+    platform.restoreOutcome = {
+      databaseState: 'ready',
+      summary: {
+        ...summary,
+        counts: { ...summary.counts, notes: summary.counts.notes + 1 },
+      },
+    };
+
+    await expect(service.restoreBackup(prepared.backup)).resolves.toEqual({
+      status: 'restored-verification-required',
+    });
+    expect(platform.cleanupTokens).toEqual([]);
   });
 
   it('returns quietly when a file dialog is cancelled', async () => {

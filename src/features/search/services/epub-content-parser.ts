@@ -6,6 +6,11 @@ import {
   resolveArchiveHref,
 } from '../../library/services/epub-metadata-parser';
 import { AppError, isAppError } from '../../../lib/app-error';
+import {
+  createLimitedEpubZipFilter,
+  MAX_EPUB_CHAPTER_SIZE,
+  MAX_EPUB_SELECTED_CHAPTER_BYTES,
+} from '../../library/services/epub-limits';
 
 export interface EpubContentParser {
   parse(data: Uint8Array): Promise<BookContentChapter[]>;
@@ -99,7 +104,11 @@ export class FflateEpubContentParser implements EpubContentParser {
         spineEntries.map((entry) => entry.archivePath),
       );
       const entries: Partial<Record<string, Uint8Array>> = unzipSync(data, {
-        filter: ({ name }) => requestedPaths.has(name),
+        filter: createLimitedEpubZipFilter({
+          include: (name) => requestedPaths.has(name),
+          maxEntrySize: () => MAX_EPUB_CHAPTER_SIZE,
+          maxSelectedBytes: MAX_EPUB_SELECTED_CHAPTER_BYTES,
+        }),
       });
 
       const chapters: BookContentChapter[] = [];

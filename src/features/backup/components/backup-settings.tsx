@@ -13,6 +13,8 @@ type BackupStatus =
   | 'idle'
   | 'preparing'
   | 'restored'
+  | 'restored-reopen-required'
+  | 'restored-verification-required'
   | 'restoring';
 
 interface BackupSettingsProps {
@@ -78,12 +80,17 @@ export function BackupSettings({ manager }: BackupSettingsProps) {
     setStatus('restoring');
     setMessage('');
     try {
-      await manager.restoreBackup(prepared);
+      const result = await manager.restoreBackup(prepared);
       updatePrepared(null);
-      setStatus('restored');
-      setMessage('备份恢复完成。重新进入书架或笔记页即可查看恢复的数据。');
+      setStatus(result.status);
+      if (result.status === 'restored') {
+        setMessage('备份恢复完成。重新进入书架或笔记页即可查看恢复的数据。');
+      } else if (result.status === 'restored-reopen-required') {
+        setMessage('数据已经恢复，但数据库连接无法重开；请重新启动应用。');
+      } else {
+        setMessage('数据已经恢复，但摘要复核异常；请重启应用并检查数据。');
+      }
     } catch (error) {
-      updatePrepared(null);
       setStatus('error');
       setMessage(asAppError(error, 'BACKUP_RESTORE_FAILED').userMessage);
     }
@@ -173,9 +180,18 @@ export function BackupSettings({ manager }: BackupSettingsProps) {
         className={
           status === 'error'
             ? 'text-destructive mt-4 text-sm'
-            : 'text-muted-foreground mt-4 text-sm'
+            : status === 'restored-reopen-required' ||
+                status === 'restored-verification-required'
+              ? 'text-destructive mt-4 text-sm'
+              : 'text-muted-foreground mt-4 text-sm'
         }
-        role={status === 'error' ? 'alert' : 'status'}
+        role={
+          status === 'error' ||
+          status === 'restored-reopen-required' ||
+          status === 'restored-verification-required'
+            ? 'alert'
+            : 'status'
+        }
       >
         {message}
       </p>
