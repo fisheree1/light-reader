@@ -24,7 +24,22 @@ export type BookRecord = z.infer<typeof bookRecordSchema>;
 
 export function mapBookRecord(value: unknown): Book {
   const record = bookRecordSchema.parse(value);
-  const metadata = epubMetadataSchema.parse(JSON.parse(record.metadata_json));
+  let metadata;
+  try {
+    metadata = epubMetadataSchema.parse(JSON.parse(record.metadata_json));
+  } catch {
+    // Metadata is descriptive and must not make an otherwise valid managed book
+    // disappear from the shelf. Preserve the authoritative columns and allow a
+    // later metadata repair instead of crashing the whole list query.
+    metadata = epubMetadataSchema.parse({
+      title: record.title,
+      creators: record.author ? [record.author] : [],
+      language: null,
+      publisher: null,
+      description: null,
+      identifier: null,
+    });
+  }
 
   return bookSchema.parse({
     id: record.id,

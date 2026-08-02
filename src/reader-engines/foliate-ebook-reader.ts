@@ -215,6 +215,7 @@ export class FoliateEbookReader implements EbookReader {
   private readonly highlightIdsByCfi = new Map<string, string>();
   private readonly sectionCleanups = new Map<Document, () => void>();
   private view: FoliateViewElement | null = null;
+  private lifecycleVersion = 0;
 
   constructor(
     loadViewModule: ViewModuleLoader = loadFoliateView,
@@ -235,15 +236,21 @@ export class FoliateEbookReader implements EbookReader {
     if (!this.host) throw new AppError('READER_OPEN_FAILED');
 
     await this.close();
+    const lifecycleVersion = this.lifecycleVersion;
+    let openingView: FoliateViewElement | null = null;
     try {
       const [, { Overlayer }] = await Promise.all([
         this.loadViewModule(),
         import('foliate-js/overlayer.js'),
       ]);
+      if (lifecycleVersion !== this.lifecycleVersion) {
+        throw new AppError('READER_OPEN_FAILED');
+      }
       this.highlightDraw = makeInteractiveHighlight((rects, options) =>
         Overlayer.highlight(rects, options),
       );
       const view = this.viewFactory();
+      openingView = view;
       this.view = view;
       view.addEventListener('relocate', this.handleRelocation);
       view.addEventListener('external-link', this.blockExternalLink);
@@ -258,9 +265,17 @@ export class FoliateEbookReader implements EbookReader {
           type: 'application/epub+zip',
         }),
       );
+      if (lifecycleVersion !== this.lifecycleVersion) {
+        throw new AppError('READER_OPEN_FAILED');
+      }
       await view.init({ showTextStart: true });
+      if (lifecycleVersion !== this.lifecycleVersion) {
+        throw new AppError('READER_OPEN_FAILED');
+      }
     } catch (error) {
-      await this.close();
+      if (openingView && this.view === openingView) {
+        this.disposeView(openingView);
+      }
       throw new AppError('READER_OPEN_FAILED', { cause: error });
     }
   }
@@ -413,27 +428,55 @@ export class FoliateEbookReader implements EbookReader {
   }
 
   close(): Promise<void> {
+    this.lifecycleVersion += 1;
     const view = this.view;
-    if (view) {
-      view.removeEventListener('relocate', this.handleRelocation);
-      view.removeEventListener('external-link', this.blockExternalLink);
-      view.removeEventListener('load', this.handleSectionLoad);
-      view.removeEventListener('draw-annotation', this.handleDrawAnnotation);
-      view.removeEventListener('create-overlay', this.handleCreateOverlay);
-      view.removeEventListener('show-annotation', this.handleShowAnnotation);
-      for (const cleanup of this.sectionCleanups.values()) cleanup();
-      this.sectionCleanups.clear();
-      for (const section of view.book?.sections ?? []) section.unload?.();
-      view.book?.destroy?.();
-      view.close();
-      view.remove();
-      this.view = null;
-    }
+    if (view) this.disposeView(view);
     this.currentLocator = { version: 1, format: 'epub', progression: 0 };
     this.lastSelection = null;
     this.highlights.clear();
     this.highlightIdsByCfi.clear();
+    this.highlightDraw = null;
     return Promise.resolve();
+  }
+
+  private disposeView(view: FoliateViewElement): void {
+    if (this.view === view) this.view = null;
+    view.removeEventListener('relocate', this.handleRelocation);
+    view.removeEventListener('external-link', this.blockExternalLink);
+    view.removeEventListener('load', this.handleSectionLoad);
+    view.removeEventListener('draw-annotation', this.handleDrawAnnotation);
+    view.removeEventListener('create-overlay', this.handleCreateOverlay);
+    view.removeEventListener('show-annotation', this.handleShowAnnotation);
+    for (const cleanup of this.sectionCleanups.values()) {
+      try {
+        cleanup();
+      } catch {
+        // Continue releasing the remaining renderer resources.
+      }
+    }
+    this.sectionCleanups.clear();
+    for (const section of view.book?.sections ?? []) {
+      try {
+        section.unload?.();
+      } catch {
+        // A broken section must not prevent the book from closing.
+      }
+    }
+    try {
+      view.book?.destroy?.();
+    } catch {
+      // Continue with view cleanup.
+    }
+    try {
+      view.close();
+    } catch {
+      // Detaching the custom element remains safe and idempotent.
+    }
+    try {
+      view.remove();
+    } catch {
+      this.host?.replaceChildren();
+    }
   }
 
   private readonly handleRelocation: EventListener = (event) => {

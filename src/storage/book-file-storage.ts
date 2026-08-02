@@ -187,6 +187,17 @@ export class TauriBookFileStorage
         baseDir: BaseDirectory.AppData,
         recursive: true,
       });
+      await writeFile(
+        paths.journalPath,
+        new TextEncoder().encode(
+          JSON.stringify({
+            version: 1,
+            bookId: paths.bookId,
+            coverPath: paths.originalCoverPath,
+          }),
+        ),
+        { baseDir: BaseDirectory.AppData },
+      );
       if (
         await exists(paths.originalBookDirectory, {
           baseDir: BaseDirectory.AppData,

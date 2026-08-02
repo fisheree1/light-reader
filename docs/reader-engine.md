@@ -112,8 +112,10 @@ the Annotation still exists, the restored highlight is activated as well.
 7. Translate later relocation events into locators and debounce persistence.
 8. Navigate using CFI first, then chapter href, then total progression.
 9. On source change or unmount, remove selection/overlay/navigation listeners,
-   unload sections, close the
-   renderer and detach the custom element. `close()` is idempotent.
+   unload sections, close the renderer and detach the custom element. `close()`
+   is idempotent. Each React session owns a nested host, and the adapter uses a
+   lifecycle generation token so a delayed open from a rapidly abandoned book
+   cannot mount over the current book.
 
 Vite excludes Foliate's dormant PDF, MOBI, FB2, CBZ, search and TTS dynamic
 modules from this EPUB-only build. Fixed-layout EPUB and the EPUB ZIP loader stay

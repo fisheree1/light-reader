@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import Database from '@tauri-apps/plugin-sql';
 
 const DATABASE_URL = 'sqlite:light-reader.db';
@@ -10,10 +11,18 @@ export interface SqlDatabase {
 }
 
 export function getDatabase(): Promise<SqlDatabase> {
-  databasePromise ??= Database.load(DATABASE_URL).then(async (database) => {
-    await database.execute('PRAGMA foreign_keys = ON');
-    return database;
-  });
+  if (!databasePromise) {
+    const initialization = invoke('prepare_database_migration')
+      .then(() => Database.load(DATABASE_URL))
+      .then(async (database) => {
+        await database.execute('PRAGMA foreign_keys = ON');
+        return database;
+      });
+    databasePromise = initialization;
+    void initialization.catch(() => {
+      if (databasePromise === initialization) databasePromise = undefined;
+    });
+  }
   return databasePromise;
 }
 

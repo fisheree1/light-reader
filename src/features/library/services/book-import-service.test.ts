@@ -50,9 +50,15 @@ function createBook(overrides: Partial<Book> = {}): Book {
 
 class FakeRepository implements BookRepository {
   books: Book[] = [];
+  commitThenFail = false;
+  failDelete = false;
   failCreate = false;
 
   create(book: Book): Promise<Book> {
+    if (this.commitThenFail) {
+      this.books.push(book);
+      return Promise.reject(new AppError('DATABASE_WRITE_FAILED'));
+    }
     if (this.failCreate) {
       return Promise.reject(new AppError('DATABASE_WRITE_FAILED'));
     }
@@ -78,6 +84,7 @@ class FakeRepository implements BookRepository {
   }
 
   delete(id: string): Promise<void> {
+    if (this.failDelete) return Promise.reject(new Error('delete failed'));
     this.books = this.books.filter((book) => book.id !== id);
     return Promise.resolve();
   }
@@ -243,5 +250,17 @@ describe('BookImportService', () => {
     } satisfies Partial<AppError>);
     expect(fileStorage.rollbackCount).toBeGreaterThan(0);
     expect(repository.books).toEqual([]);
+  });
+
+  it('retains finalized files when an inserted row cannot be compensated', async () => {
+    const { fileStorage, repository, subject } = createSubject();
+    repository.commitThenFail = true;
+    repository.failDelete = true;
+
+    await expect(subject.importEpub()).rejects.toMatchObject({
+      code: 'DATABASE_WRITE_FAILED',
+    } satisfies Partial<AppError>);
+    expect(repository.books).toHaveLength(1);
+    expect(fileStorage.rollbackCount).toBe(0);
   });
 });

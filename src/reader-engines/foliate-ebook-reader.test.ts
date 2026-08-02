@@ -154,6 +154,23 @@ describe('FoliateEbookReader', () => {
     expect(host).toBeEmptyDOMElement();
   });
 
+  it('continues renderer cleanup when one section unload throws', async () => {
+    const view = createFakeView();
+    view.book.sections[0] = {
+      id: 'one.xhtml',
+      unload: vi.fn(() => {
+        throw new Error('section already detached');
+      }),
+    };
+    const { host, reader } = createReader(view);
+    await reader.open(new ArrayBuffer(1));
+
+    await expect(reader.close()).resolves.toBeUndefined();
+    expect(view.book.destroy).toHaveBeenCalledOnce();
+    expect(view.close).toHaveBeenCalledOnce();
+    expect(host).toBeEmptyDOMElement();
+  });
+
   it('maps an upstream open failure and removes the partial view', async () => {
     const view = createFakeView();
     view.open = vi.fn(() => Promise.reject(new Error('corrupt EPUB')));
@@ -164,6 +181,36 @@ describe('FoliateEbookReader', () => {
     } satisfies Partial<AppError>);
     expect(host).toBeEmptyDOMElement();
     expect(view.close).toHaveBeenCalledOnce();
+  });
+
+  it('cancels an obsolete open before it can mount a delayed Foliate view', async () => {
+    let finishModuleLoad: (() => void) | undefined;
+    const view = createFakeView();
+    const viewFactory = vi.fn(() => view);
+    const reader = new FoliateEbookReader(
+      () =>
+        new Promise((resolve) => {
+          finishModuleLoad = () => {
+            resolve(undefined);
+          };
+        }),
+      viewFactory,
+    );
+    const host = document.createElement('div');
+    reader.mount(host);
+
+    const opening = reader.open(new ArrayBuffer(1));
+    await vi.waitFor(() => {
+      expect(finishModuleLoad).toBeDefined();
+    });
+    await reader.close();
+    finishModuleLoad?.();
+
+    await expect(opening).rejects.toMatchObject({
+      code: 'READER_OPEN_FAILED',
+    } satisfies Partial<AppError>);
+    expect(viewFactory).not.toHaveBeenCalled();
+    expect(host).toBeEmptyDOMElement();
   });
 
   it('maps document selection into text, context, and a range CFI', async () => {

@@ -7,6 +7,17 @@ use std::{
 
 static NEXT_DATABASE_ID: AtomicU64 = AtomicU64::new(0);
 
+const MIGRATIONS: [&str; 8] = [
+    include_str!("../migrations/0001_initial.sql"),
+    include_str!("../migrations/0002_create_books.sql"),
+    include_str!("../migrations/0003_reader_settings.sql"),
+    include_str!("../migrations/0004_annotations.sql"),
+    include_str!("../migrations/0005_annotation_notes.sql"),
+    include_str!("../migrations/0006_notes.sql"),
+    include_str!("../migrations/0007_local_search.sql"),
+    include_str!("../migrations/0008_library_management.sql"),
+];
+
 fn temporary_database_path() -> PathBuf {
     let nonce = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -34,38 +45,87 @@ async fn apply_migrations(connection: &mut SqliteConnection) {
         .execute("PRAGMA foreign_keys = ON")
         .await
         .expect("foreign keys should be enabled");
+    for migration in MIGRATIONS {
+        connection
+            .execute(migration)
+            .await
+            .expect("migration should apply in order");
+    }
+}
+
+#[tokio::test]
+async fn all_migrations_apply_to_a_fresh_database() {
+    let path = temporary_database_path();
+    let mut connection = connect(&path).await;
+    apply_migrations(&mut connection).await;
+
+    let required_tables: i64 = sqlx::query_scalar(
+        r#"SELECT COUNT(*) FROM sqlite_schema
+        WHERE type = 'table' AND name IN (
+          'app_meta', 'books', 'reader_settings', 'book_reader_settings',
+          'reading_states', 'annotations', 'notes', 'book_tags',
+          'book_content_index'
+        )"#,
+    )
+    .fetch_one(&mut connection)
+    .await
+    .expect("fresh schema should be inspectable");
+    let foreign_key_failures: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM pragma_foreign_key_check")
+            .fetch_one(&mut connection)
+            .await
+            .expect("fresh schema foreign keys should validate");
+    assert_eq!(required_tables, 9);
+    assert_eq!(foreign_key_failures, 0);
+
+    connection.close().await.expect("database should close");
+    std::fs::remove_file(path).expect("test database should be removable");
+}
+
+#[tokio::test]
+async fn old_database_upgrades_sequentially_without_losing_records() {
+    let path = temporary_database_path();
+    let mut connection = connect(&path).await;
     connection
-        .execute(include_str!("../migrations/0001_initial.sql"))
+        .execute("PRAGMA foreign_keys = ON")
         .await
-        .expect("initial migration should apply");
-    connection
-        .execute(include_str!("../migrations/0002_create_books.sql"))
-        .await
-        .expect("books migration should apply");
-    connection
-        .execute(include_str!("../migrations/0003_reader_settings.sql"))
-        .await
-        .expect("reader settings migration should apply");
-    connection
-        .execute(include_str!("../migrations/0004_annotations.sql"))
-        .await
-        .expect("annotations migration should apply");
-    connection
-        .execute(include_str!("../migrations/0005_annotation_notes.sql"))
-        .await
-        .expect("annotation notes migration should apply");
-    connection
-        .execute(include_str!("../migrations/0006_notes.sql"))
-        .await
-        .expect("notes migration should apply");
-    connection
-        .execute(include_str!("../migrations/0007_local_search.sql"))
-        .await
-        .expect("local search migration should apply");
-    connection
-        .execute(include_str!("../migrations/0008_library_management.sql"))
-        .await
-        .expect("library management migration should apply");
+        .expect("foreign keys should enable");
+    for migration in &MIGRATIONS[..2] {
+        connection
+            .execute(*migration)
+            .await
+            .expect("old migration should apply");
+    }
+    insert_book(&mut connection, "upgrade-book", "升级前图书", 'u', 10).await;
+
+    for migration in &MIGRATIONS[2..] {
+        connection
+            .execute(*migration)
+            .await
+            .expect("next migration should apply");
+    }
+
+    let upgraded: (String, i64) =
+        sqlx::query_as("SELECT title, favorite FROM books WHERE id = 'upgrade-book'")
+            .fetch_one(&mut connection)
+            .await
+            .expect("pre-upgrade book should survive");
+    assert_eq!(upgraded, ("升级前图书".to_string(), 0));
+    sqlx::query(
+        "INSERT INTO notes (id, title, content_json, plain_text, created_at, updated_at) VALUES ('upgrade-note', '升级笔记', '{}', '可搜索内容', 1, 1)",
+    )
+    .execute(&mut connection)
+    .await
+    .expect("new table and FTS trigger should work after upgrade");
+    let indexed: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM notes_fts WHERE notes_fts MATCH '\"可搜索内容\"'")
+            .fetch_one(&mut connection)
+            .await
+            .expect("upgraded FTS should contain new note");
+    assert_eq!(indexed, 1);
+
+    connection.close().await.expect("database should close");
+    std::fs::remove_file(path).expect("test database should be removable");
 }
 
 async fn insert_book(
@@ -454,6 +514,12 @@ async fn reader_settings_and_position_persist_and_follow_book_lifecycle() {
         note_count, 1,
         "book deletion must not delete note snapshots"
     );
+    let retained_snapshot: String =
+        sqlx::query_scalar("SELECT content_json FROM notes WHERE id = 'note-1'")
+            .fetch_one(&mut reopened)
+            .await
+            .expect("quote snapshot should remain after its annotation cascades");
+    assert!(retained_snapshot.contains("selected text"));
     reopened.close().await.expect("database should close again");
     std::fs::remove_file(path).expect("test database should be removable");
 }

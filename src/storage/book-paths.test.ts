@@ -36,6 +36,8 @@ describe('book path helpers', () => {
         'delete-1',
       ),
     ).toEqual({
+      bookId: 'book-1',
+      journalPath: 'light-reader/trash/delete-1/deletion.json',
       originalBookDirectory: 'light-reader/books/book-1',
       originalCoverPath: 'light-reader/covers/book-1.webp',
       quarantineBookDirectory: 'light-reader/trash/delete-1/book',

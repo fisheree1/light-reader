@@ -1,6 +1,10 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sqlx::{sqlite::SqliteConnectOptions, Connection, Executor, SqliteConnection};
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tauri::{AppHandle, Manager};
 
 pub const CURRENT_SCHEMA_VERSION: i64 = 8;
@@ -93,6 +97,14 @@ async fn inspect_database(path: &Path) -> Result<DatabaseBackupSummary, String> 
     if integrity != "ok" {
         return Err("backup database failed integrity check".to_string());
     }
+    let foreign_key_failures: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM pragma_foreign_key_check")
+            .fetch_one(&mut connection)
+            .await
+            .map_err(|error| error.to_string())?;
+    if foreign_key_failures != 0 {
+        return Err("backup database failed foreign key validation".to_string());
+    }
 
     let schema_version: i64 = sqlx::query_scalar(
         "SELECT COALESCE(MAX(version), 0) FROM _sqlx_migrations WHERE success = 1",
@@ -148,6 +160,111 @@ async fn inspect_database(path: &Path) -> Result<DatabaseBackupSummary, String> 
     })
 }
 
+async fn current_schema_version(path: &Path) -> Result<i64, String> {
+    if !path.is_file() {
+        return Ok(0);
+    }
+    let mut connection = connect(path, false).await?;
+    let migration_table_exists: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = '_sqlx_migrations'",
+    )
+    .fetch_one(&mut connection)
+    .await
+    .map_err(|error| error.to_string())?;
+    if migration_table_exists == 0 {
+        return Ok(0);
+    }
+    sqlx::query_scalar("SELECT COALESCE(MAX(version), 0) FROM _sqlx_migrations WHERE success = 1")
+        .fetch_one(&mut connection)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+async fn verify_sqlite_integrity(path: &Path) -> Result<(), String> {
+    let mut connection = connect(path, false).await?;
+    let integrity: String = sqlx::query_scalar("PRAGMA integrity_check")
+        .fetch_one(&mut connection)
+        .await
+        .map_err(|error| error.to_string())?;
+    if integrity != "ok" {
+        return Err("database safety snapshot failed integrity check".to_string());
+    }
+    Ok(())
+}
+
+fn migration_snapshot_directory(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map(|directory| directory.join("light-reader").join("migration-snapshots"))
+        .map_err(|error| error.to_string())
+}
+
+async fn create_migration_snapshot(
+    source: &Path,
+    destination_directory: &Path,
+) -> Result<Option<PathBuf>, String> {
+    let version = current_schema_version(source).await?;
+    if version > CURRENT_SCHEMA_VERSION {
+        return Err("database schema is newer than this LightReader build".to_string());
+    }
+    if !source.is_file() || version == CURRENT_SCHEMA_VERSION {
+        return Ok(None);
+    }
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_millis();
+    let destination =
+        destination_directory.join(format!("before-schema-{version}-{timestamp}.sqlite"));
+    create_snapshot(source, &destination).await?;
+    verify_sqlite_integrity(&destination).await?;
+    prune_migration_snapshots(destination_directory, 3)?;
+    Ok(Some(destination))
+}
+
+fn prune_migration_snapshots(directory: &Path, keep: usize) -> Result<(), String> {
+    let mut snapshots = fs::read_dir(directory)
+        .map_err(|error| error.to_string())?
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .is_some_and(|name| name.starts_with("before-schema-") && name.ends_with(".sqlite"))
+        })
+        .collect::<Vec<_>>();
+    snapshots.sort_by_key(|entry| {
+        entry
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .unwrap_or(UNIX_EPOCH)
+    });
+    let remove_count = snapshots.len().saturating_sub(keep);
+    for entry in snapshots.into_iter().take(remove_count) {
+        fs::remove_file(entry.path()).map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+fn cleanup_stale_backup_snapshots(app_data: &Path) {
+    let directory = app_data.join("light-reader").join("backup");
+    let Ok(entries) = fs::read_dir(directory) else {
+        return;
+    };
+    let maximum_age = std::time::Duration::from_secs(7 * 24 * 60 * 60);
+    for entry in entries.filter_map(Result::ok) {
+        let stale = entry
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .ok()
+            .and_then(|modified| SystemTime::now().duration_since(modified).ok())
+            .is_some_and(|age| age > maximum_age);
+        if stale && entry.path().is_dir() {
+            fs::remove_dir_all(entry.path()).ok();
+        }
+    }
+}
+
 async fn create_snapshot(source: &Path, destination: &Path) -> Result<(), String> {
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
@@ -165,6 +282,174 @@ async fn create_snapshot(source: &Path, destination: &Path) -> Result<(), String
         .await
         .map_err(|error| error.to_string())?;
     Ok(())
+}
+
+fn safe_generated_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DeletionJournal {
+    book_id: String,
+    cover_path: Option<String>,
+    version: u8,
+}
+
+fn validate_journal_cover(book_id: &str, cover_path: &str) -> Result<String, String> {
+    for extension in ["gif", "jpeg", "png", "webp"] {
+        if cover_path == format!("light-reader/covers/{book_id}.{extension}") {
+            return Ok(extension.to_string());
+        }
+    }
+    Err("deletion journal contains an unsafe cover path".to_string())
+}
+
+async fn reconcile_deletion_journals_at(app_data: &Path, database: &Path) -> Result<(), String> {
+    let trash = app_data.join("light-reader").join("trash");
+    if !trash.is_dir() || !database.is_file() {
+        return Ok(());
+    }
+    let mut connection = connect(database, false).await?;
+    let books_table_exists: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = 'books'",
+    )
+    .fetch_one(&mut connection)
+    .await
+    .map_err(|error| error.to_string())?;
+    if books_table_exists == 0 {
+        return Ok(());
+    }
+
+    for entry in fs::read_dir(&trash).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let quarantine = entry.path();
+        if !quarantine.is_dir() {
+            continue;
+        }
+        let journal_data = match fs::read(quarantine.join("deletion.json")) {
+            Ok(data) => data,
+            Err(_) => continue,
+        };
+        let journal: DeletionJournal =
+            serde_json::from_slice(&journal_data).map_err(|error| error.to_string())?;
+        if journal.version != 1 || !safe_generated_id(&journal.book_id) {
+            return Err("deletion journal is invalid".to_string());
+        }
+        let book_exists: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM books WHERE id = ?")
+            .bind(&journal.book_id)
+            .fetch_one(&mut connection)
+            .await
+            .map_err(|error| error.to_string())?;
+        if book_exists == 0 {
+            fs::remove_dir_all(&quarantine).map_err(|error| error.to_string())?;
+            continue;
+        }
+
+        let quarantined_book = quarantine.join("book");
+        if quarantined_book.exists() {
+            let restored_book = app_data
+                .join("light-reader")
+                .join("books")
+                .join(&journal.book_id);
+            if restored_book.exists() {
+                return Err("both live and quarantined book files exist".to_string());
+            }
+            if let Some(parent) = restored_book.parent() {
+                fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+            }
+            fs::rename(quarantined_book, restored_book).map_err(|error| error.to_string())?;
+        }
+
+        if let Some(cover_path) = journal.cover_path {
+            let extension = validate_journal_cover(&journal.book_id, &cover_path)?;
+            let quarantined_cover = quarantine.join(format!("cover.{extension}"));
+            if quarantined_cover.exists() {
+                let restored_cover = app_data
+                    .join("light-reader")
+                    .join("covers")
+                    .join(format!("{}.{extension}", journal.book_id));
+                if restored_cover.exists() {
+                    return Err("both live and quarantined cover files exist".to_string());
+                }
+                if let Some(parent) = restored_cover.parent() {
+                    fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+                }
+                fs::rename(quarantined_cover, restored_cover).map_err(|error| error.to_string())?;
+            }
+        }
+        fs::remove_dir_all(&quarantine).map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+async fn reconcile_deletion_journals(app: &AppHandle) -> Result<(), String> {
+    let app_data = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    reconcile_deletion_journals_at(&app_data, &database_path(app)?).await
+}
+
+async fn validate_managed_book_files_at(app_data: &Path, database: &Path) -> Result<(), String> {
+    let mut connection = connect(database, false).await?;
+    let rows: Vec<(String, String, Option<String>, i64)> =
+        sqlx::query_as("SELECT id, file_path, cover_path, file_size FROM books")
+            .fetch_all(&mut connection)
+            .await
+            .map_err(|error| error.to_string())?;
+    for (id, book_path, cover_path, expected_size) in rows {
+        if !safe_generated_id(&id) {
+            return Err("backup contains an unsafe book id".to_string());
+        }
+        let expected_book_path = format!("light-reader/books/{id}/book.epub");
+        if book_path != expected_book_path {
+            return Err("backup contains a book path outside managed storage".to_string());
+        }
+        let managed_book_path = app_data
+            .join("light-reader")
+            .join("books")
+            .join(&id)
+            .join("book.epub");
+        let book_metadata = fs::metadata(managed_book_path)
+            .map_err(|_| "a book file required by this backup is missing".to_string())?;
+        if expected_size < 0 || book_metadata.len() != expected_size as u64 {
+            return Err("a book file required by this backup has changed".to_string());
+        }
+        if let Some(cover_path) = cover_path {
+            let valid_cover_path = ["gif", "jpeg", "png", "webp"]
+                .iter()
+                .any(|extension| cover_path == format!("light-reader/covers/{id}.{extension}"));
+            if !valid_cover_path {
+                return Err("backup contains a cover path outside managed storage".to_string());
+            }
+            let extension = cover_path
+                .rsplit_once('.')
+                .map(|(_, extension)| extension)
+                .ok_or_else(|| "backup contains an invalid cover path".to_string())?;
+            if !app_data
+                .join("light-reader")
+                .join("covers")
+                .join(format!("{id}.{extension}"))
+                .is_file()
+            {
+                return Err("a cover file required by this backup is missing".to_string());
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn validate_managed_book_files(app: &AppHandle, database: &Path) -> Result<(), String> {
+    let app_data = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    validate_managed_book_files_at(&app_data, database).await
 }
 
 async fn attached_count(
@@ -200,8 +485,11 @@ async fn verify_restored_counts(connection: &mut SqliteConnection) -> Result<(),
     Ok(())
 }
 
-async fn restore_database(source: &Path, destination: &Path) -> Result<(), String> {
-    inspect_database(source).await?;
+async fn restore_database(
+    source: &Path,
+    destination: &Path,
+) -> Result<DatabaseBackupSummary, String> {
+    let source_summary = inspect_database(source).await?;
     let mut connection = connect(destination, false).await?;
     connection
         .execute("PRAGMA foreign_keys = ON")
@@ -268,10 +556,22 @@ async fn restore_database(source: &Path, destination: &Path) -> Result<(), Strin
         .execute("COMMIT")
         .await
         .map_err(|error| error.to_string())?;
-    connection
-        .execute("DETACH DATABASE backup")
-        .await
-        .map_err(|error| error.to_string())?;
+    // COMMIT is the success boundary. A detached database is also released when
+    // this connection is dropped, so a post-commit DETACH failure must not turn
+    // an already-applied restore into a false rollback report.
+    connection.execute("DETACH DATABASE backup").await.ok();
+    Ok(source_summary)
+}
+
+#[tauri::command]
+pub async fn prepare_database_migration(app: AppHandle) -> Result<(), String> {
+    reconcile_deletion_journals(&app).await?;
+    // Prepared backup snapshots abandoned by a crash are pruned conservatively;
+    // never remove a recent directory that another desktop process may own.
+    if let Ok(directory) = app.path().app_data_dir() {
+        cleanup_stale_backup_snapshots(&directory);
+    }
+    create_migration_snapshot(&database_path(&app)?, &migration_snapshot_directory(&app)?).await?;
     Ok(())
 }
 
@@ -286,6 +586,7 @@ pub async fn create_database_snapshot(
     }
     let destination = snapshot_path(&app, &snapshot_id)?;
     create_snapshot(&database_path(&app)?, &destination).await?;
+    validate_managed_book_files(&app, &destination).await?;
     inspect_database(&destination).await
 }
 
@@ -294,7 +595,9 @@ pub async fn inspect_database_snapshot(
     app: AppHandle,
     snapshot_id: String,
 ) -> Result<DatabaseBackupSummary, String> {
-    inspect_database(&snapshot_path(&app, &snapshot_id)?).await
+    let snapshot = snapshot_path(&app, &snapshot_id)?;
+    validate_managed_book_files(&app, &snapshot).await?;
+    inspect_database(&snapshot).await
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -304,8 +607,8 @@ pub async fn restore_database_snapshot(
 ) -> Result<DatabaseBackupSummary, String> {
     let source = snapshot_path(&app, &snapshot_id)?;
     let destination = database_path(&app)?;
-    restore_database(&source, &destination).await?;
-    inspect_database(&destination).await
+    validate_managed_book_files(&app, &source).await?;
+    restore_database(&source, &destination).await
 }
 
 #[cfg(test)]
@@ -551,5 +854,153 @@ mod tests {
 
         fs::remove_file(live_path).expect("live database should be removed");
         fs::remove_file(snapshot_path).expect("snapshot should be removed");
+    }
+
+    #[tokio::test]
+    async fn pre_migration_snapshot_preserves_an_old_database() {
+        let live_path = temporary_path("migration-live");
+        let snapshot_directory = temporary_path("migration-snapshots");
+        let mut live = connect(&live_path, true)
+            .await
+            .expect("old database should open");
+        live.execute(include_str!("../migrations/0001_initial.sql"))
+            .await
+            .expect("initial migration should apply");
+        live.execute(include_str!("../migrations/0002_create_books.sql"))
+            .await
+            .expect("books migration should apply");
+        live.execute(
+            "CREATE TABLE _sqlx_migrations (version INTEGER PRIMARY KEY, success INTEGER NOT NULL)",
+        )
+        .await
+        .expect("migration history should create");
+        live.execute("INSERT INTO _sqlx_migrations VALUES (2, 1)")
+            .await
+            .expect("old schema version should record");
+        sqlx::query(
+            r#"INSERT INTO books (
+              id, title, format, file_path, file_hash, metadata_json,
+              file_size, created_at, updated_at
+            ) VALUES ('old-book', 'Before migration', 'epub',
+              'light-reader/books/old-book/book.epub', ?, ?, 10, 1, 1)"#,
+        )
+        .bind("a".repeat(64))
+        .bind(r#"{"title":"Before migration","creators":[],"language":null,"publisher":null,"description":null,"identifier":null}"#)
+        .execute(&mut live)
+        .await
+        .expect("old book should seed");
+        live.close().await.expect("old database should close");
+
+        let snapshot = create_migration_snapshot(&live_path, &snapshot_directory)
+            .await
+            .expect("migration safety snapshot should succeed")
+            .expect("old database should need a snapshot");
+        let mut copied = connect(&snapshot, false)
+            .await
+            .expect("snapshot should reopen");
+        let title: String = sqlx::query_scalar("SELECT title FROM books WHERE id = 'old-book'")
+            .fetch_one(&mut copied)
+            .await
+            .expect("snapshot should retain old data");
+        assert_eq!(title, "Before migration");
+        copied.close().await.expect("snapshot should close");
+
+        fs::remove_file(live_path).expect("live database should be removed");
+        fs::remove_dir_all(snapshot_directory).expect("snapshot directory should be removed");
+    }
+
+    #[tokio::test]
+    async fn restore_preflight_rejects_missing_managed_book_files() {
+        let database_path = temporary_path("managed-files-database");
+        let app_data = temporary_path("managed-files-appdata");
+        let mut database = apply_schema(&database_path).await;
+        seed_database(&mut database).await;
+        database.close().await.expect("database should close");
+
+        let book_directory = app_data
+            .join("light-reader")
+            .join("books")
+            .join("backup-book");
+        fs::create_dir_all(&book_directory).expect("book directory should create");
+        fs::write(book_directory.join("book.epub"), [0_u8; 10])
+            .expect("managed book should create");
+        validate_managed_book_files_at(&app_data, &database_path)
+            .await
+            .expect("matching managed file should pass");
+
+        fs::remove_file(book_directory.join("book.epub"))
+            .expect("managed book should be removable");
+        assert!(validate_managed_book_files_at(&app_data, &database_path)
+            .await
+            .is_err());
+
+        fs::remove_file(database_path).expect("database should be removed");
+        fs::remove_dir_all(app_data).expect("app data should be removed");
+    }
+
+    #[tokio::test]
+    async fn startup_reconciles_interrupted_book_deletions() {
+        let database_path = temporary_path("deletion-journal-database");
+        let app_data = temporary_path("deletion-journal-appdata");
+        let mut database = apply_schema(&database_path).await;
+        seed_database(&mut database).await;
+        database.close().await.expect("database should close");
+
+        let first_quarantine = app_data
+            .join("light-reader")
+            .join("trash")
+            .join("delete-before-commit");
+        fs::create_dir_all(first_quarantine.join("book")).expect("quarantine should create");
+        fs::write(first_quarantine.join("book").join("book.epub"), [0_u8; 10])
+            .expect("quarantined book should create");
+        fs::write(
+            first_quarantine.join("deletion.json"),
+            r#"{"version":1,"bookId":"backup-book","coverPath":null}"#,
+        )
+        .expect("journal should create");
+
+        reconcile_deletion_journals_at(&app_data, &database_path)
+            .await
+            .expect("uncommitted deletion should restore files");
+        let live_book = app_data
+            .join("light-reader")
+            .join("books")
+            .join("backup-book");
+        assert!(live_book.join("book.epub").is_file());
+        assert!(!first_quarantine.exists());
+
+        let mut database = connect(&database_path, false)
+            .await
+            .expect("database should reopen");
+        database
+            .execute("PRAGMA foreign_keys = ON")
+            .await
+            .expect("foreign keys should enable");
+        database
+            .execute("DELETE FROM books WHERE id = 'backup-book'")
+            .await
+            .expect("book deletion should commit");
+        database.close().await.expect("database should close");
+        let second_quarantine = app_data
+            .join("light-reader")
+            .join("trash")
+            .join("delete-after-commit");
+        fs::create_dir_all(&second_quarantine).expect("second quarantine should exist");
+        fs::rename(&live_book, second_quarantine.join("book"))
+            .expect("live book should move back to quarantine");
+        fs::write(
+            second_quarantine.join("deletion.json"),
+            r#"{"version":1,"bookId":"backup-book","coverPath":null}"#,
+        )
+        .expect("second journal should create");
+
+        reconcile_deletion_journals_at(&app_data, &database_path)
+            .await
+            .expect("committed deletion should clean quarantine");
+        assert!(!second_quarantine.exists());
+        assert!(!live_book.exists());
+
+        fs::remove_file(database_path).expect("database should be removed");
+        fs::remove_dir_all(app_data).expect("app data should be removed");
     }
 }

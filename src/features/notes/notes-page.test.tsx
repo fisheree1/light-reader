@@ -139,6 +139,50 @@ describe('NotesPage', () => {
     expect(screen.getByRole('button', { name: '重试保存' })).toBeVisible();
   });
 
+  it('recovers the synchronous draft journal after an abnormal exit', async () => {
+    const user = userEvent.setup();
+    const { services } = createServices([createNote()]);
+    vi.spyOn(services.noteRepository, 'update').mockRejectedValue(
+      new Error('process terminated before SQLite save'),
+    );
+    const firstRun = renderPage(services);
+
+    const title = await screen.findByLabelText('笔记标题');
+    await user.clear(title);
+    await user.type(title, '异常退出前输入');
+    firstRun.unmount();
+
+    renderPage(services);
+    expect(await screen.findByLabelText('笔记标题')).toHaveValue(
+      '异常退出前输入',
+    );
+    expect(
+      screen.getByText('已恢复上次异常退出前的未保存内容。'),
+    ).toBeVisible();
+  });
+
+  it('does not overwrite recovered corrupt JSON when only the title changes', async () => {
+    const user = userEvent.setup();
+    const { services } = createServices([
+      createNote({ documentRecovered: true, plainText: '原始损坏内容' }),
+    ]);
+    const update = vi.spyOn(services.noteRepository, 'update');
+    renderPage(services);
+
+    const title = await screen.findByLabelText('笔记标题');
+    await user.clear(title);
+    await user.type(title, '只修改标题');
+
+    expect(
+      await screen.findByText(
+        '原笔记内容损坏；请先编辑正文，再保存恢复后的内容。',
+        {},
+        { timeout: 1_800 },
+      ),
+    ).toBeVisible();
+    expect(update).not.toHaveBeenCalled();
+  });
+
   it('searches by title and deletes after confirmation', async () => {
     const user = userEvent.setup();
     const { services, notes } = createServices([

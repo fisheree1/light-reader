@@ -37,8 +37,11 @@ The SQLite snapshot contains book metadata, favorites and tags, global and
 per-book reading settings, reading positions, highlights, annotation comments,
 Tiptap note JSON/plain text, and local FTS indexes. It does not contain managed
 EPUB or cover files because LightReader does not store those binaries in
-SQLite. Restored book rows can open only when their application-managed EPUB
-paths still exist on the current device.
+SQLite. Export and import preflight verify that every book row uses the exact
+application-generated path and that its managed EPUB (plus any recorded cover)
+still exists on the current device; the EPUB byte size must match the database
+record. A database-only backup is rejected rather than restoring broken shelf
+references when those binaries are missing or changed.
 
 ## Consistent export
 
@@ -56,8 +59,9 @@ Import uses the open dialog's runtime file scope, validates the ZIP and
 manifest in TypeScript, and stages only `database.sqlite` inside the app-owned
 backup directory. The native preflight then runs SQLite `integrity_check`,
 checks `_sqlx_migrations`, resolves every required table/column, and recounts
-the data. The UI shows the creation date and counts only after both validation
-layers agree.
+the data. It also validates the managed file references before confirmation.
+The UI shows the creation date and counts only after both validation layers
+agree.
 
 On explicit confirmation, the SQL plugin pool is closed and the native command
 attaches the staged database read-only in practice: restore SQL contains only
@@ -68,6 +72,21 @@ Foreign-key checks and source/destination row counts run before commit. Any
 error executes `ROLLBACK`, and SQLite's journal also protects against process
 interruption. The normal SQL pool is reopened whether restore succeeds or
 fails.
+
+`COMMIT` is the native success boundary. No fallible post-commit inspection is
+used to report failure after data has already changed. Prepared snapshot
+directories abandoned by a process crash are pruned after seven days during a
+later database initialization; recent directories are left alone so another
+desktop process cannot lose an active operation.
+
+## Migration safety snapshots
+
+The SQL plugin is intentionally not preloaded. Before the first
+`Database.load`, a native command checks the current `_sqlx_migrations` version.
+When an older database is present it creates and integrity-checks a `VACUUM
+INTO` copy under `AppData/light-reader/migration-snapshots/`; a snapshot failure
+prevents migrations from starting. The newest three upgrade snapshots are
+retained so upgrades do not create unbounded runtime files.
 
 Only exact schema version `8` and backup format version `1` are currently
 accepted. Future schema support must introduce an explicit compatibility path;

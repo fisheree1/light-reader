@@ -10,6 +10,7 @@
 
 - TypeScript 6（严格模式）、React 19、React Router 7、Vite 8
 - Tauri 2、Rust、SQLite FTS5、Tauri SQL 插件
+- Tauri single-instance 插件（桌面进程级数据目录互斥）
 - Foliate JS（固定官方 Git 提交）
 - Tiptap 3（StarterKit、Markdown、Placeholder、自定义 BookQuoteNode）
 - Zustand、Zod
@@ -76,7 +77,7 @@ pnpm exec playwright install chromium
 pnpm test:e2e
 ```
 
-当前 Playwright 用例运行在 Vite Web 页面上，覆盖启动、导航、主题、预置书架、mock 导入、书架收藏/标签/排序/受保护删除、本地搜索，以及通过 Foliate JS 打开自制 EPUB、选择正文、创建高亮、添加批注、引用到 Tiptap 笔记、刷新恢复和返回原文。Foliate 内容帧相关用例串行运行，以避免本地或受限 CI 主机冷启动模块图时的不稳定竞争。Web 模式使用确定性的 mock importer、localStorage Repository 与无版权 EPUB；真实系统文件选择、受控文件读取和 SQLite FTS5 持久化只在 Tauri 运行时启用。
+当前 Playwright 用例运行在 Vite Web 页面上，覆盖启动、导航、主题、预置书架、mock 导入、书架收藏/标签/排序/受保护删除、本地搜索，以及一条通过真实 Foliate JS 完成排版、位置、高亮、批注、Tiptap 引用、刷新恢复和搜索的发布闭环。Foliate 内容帧相关用例串行运行，以避免本地或受限 CI 主机冷启动模块图时的不稳定竞争。Web 模式使用确定性的 mock importer、localStorage Repository 与无版权 EPUB；真实系统文件选择、受控文件读取、SQLite FTS5 和原生备份恢复只在 Tauri 运行时启用，并与 Web 结果分开报告。
 
 仅运行 EPUB 导入相关单元和 UI 测试：
 
@@ -152,6 +153,7 @@ EPUB 导入的依赖边界、回滚策略和路径约束见 [`docs/epub-import.m
 - 封面：Tauri `AppData/light-reader/covers/<book-id>.<ext>`；无可用封面时显示内置默认封面。
 - 临时导入：Tauri `AppData/light-reader/tmp/<book-id>/`，成功或失败后清理。
 - 删除隔离区：Tauri `AppData/light-reader/trash/<deletion-id>/`；文件先移入隔离区，数据库提交后再清理，以便数据库失败时恢复。
+- 迁移安全快照：Tauri `AppData/light-reader/migration-snapshots/`；升级前使用 `VACUUM INTO` 创建并校验，最多保留三个。
 
 数据库只保存元数据、SHA-256 哈希和应用生成的相对路径，不保存 EPUB/封面 BLOB，也不把原始外部绝对路径作为长期依赖。不同操作系统的 AppData 绝对位置由 Tauri 决定。
 
@@ -172,9 +174,9 @@ Tauri 文件删除采用应用受控隔离区：先原子重命名 EPUB 目录�
 
 设置页可以把书籍元数据、收藏和标签、阅读设置与进度、高亮、批注、笔记以及本地搜索索引导出为一个 `.lightreader-backup` 文件。备份只在 Tauri 桌面环境可用，完全本地执行，不调用外部 API。
 
-导出使用 SQLite `VACUUM INTO` 生成一致性快照，不直接复制正在运行的 `light-reader.db`。导入会先检查固定归档结构、文件大小、SQLite 文件头、SHA-256、备份格式版本、数据库 Schema 版本、完整性和记录计数，验证完成后才显示“确认恢复”。恢复在单个 SQLite 事务中替换规范数据；约束、计数或写入失败会回滚，保留恢复前数据。
+导出使用 SQLite `VACUUM INTO` 生成一致性快照，不直接复制正在运行的 `light-reader.db`。导入会先检查固定归档结构、文件大小、SQLite 文件头、SHA-256、备份格式版本、数据库 Schema 版本、完整性、记录计数，以及每本书的受控 EPUB/封面路径与本机文件状态，验证完成后才显示“确认恢复”。恢复在单个 SQLite 事务中替换规范数据；约束、计数或写入失败会回滚，保留恢复前数据。
 
-备份不包含 EPUB 和封面二进制文件。恢复书籍元数据后，只有当前设备上仍存在对应受控文件的书籍才能正常打开。格式和安全边界详见 [`docs/data-backup.md`](docs/data-backup.md)。
+备份不包含 EPUB 和封面二进制文件。因此它是当前设备的数据备份，不是跨设备书籍包；若备份引用的受控文件缺失、大小变化或路径不安全，预检会拒绝恢复，避免生成无法打开的书架记录。格式和安全边界详见 [`docs/data-backup.md`](docs/data-backup.md)。
 
 ## EPUB 基础阅读
 
@@ -195,6 +197,8 @@ Tauri 文件删除采用应用受控隔离区：先原子重命名 EPUB 目录�
 - 从高亮创建带原文、书籍、章节和 CFI 快照的独立笔记；
 - 加载、文件缺失、损坏 EPUB 和导航错误状态；
 - 离开页面时卸载章节、撤销资源并销毁 Foliate renderer。
+
+独立笔记除串行 SQLite 自动保存外，还会同步写入带数据库基线版本的本地草稿日志。若应用在防抖保存前异常退出，下次启动会恢复草稿；数据库已更新时，旧草稿不会反向覆盖新内容。
 
 ## 当前未实现
 
@@ -234,7 +238,7 @@ SQL 插件将 `light-reader.db` 放在应用配置目录中。它是本地运行
 
 ### 备份是否包含 EPUB 文件
 
-不包含。`.lightreader-backup` 保存数据库内容，包括书籍元数据、阅读数据、高亮、批注和笔记；EPUB 与封面仍保存在应用受控目录。若要迁移到另一台设备，需要另外复制合法拥有的 EPUB 文件。
+不包含。`.lightreader-backup` 保存数据库内容，包括书籍元数据、阅读数据、高亮、批注和笔记；EPUB 与封面仍保存在应用受控目录。恢复前会验证这些文件仍存在且大小匹配，否则安全拒绝。当前格式不能单独完成跨设备书籍迁移。
 
 ### 为什么 Foliate JS 使用 Git 提交而不是版本号
 

@@ -64,6 +64,15 @@ older request cannot complete after and overwrite a newer save. Failed writes
 leave the draft in React-local state, display a retry action and do not mark the
 document as saved.
 
+Async unmount work is not treated as a crash guarantee. Every title/document
+change also updates one validated localStorage draft journal synchronously. The
+journal records the SQLite `updated_at` value it was based on; restart recovery
+uses it only while that base still matches, and a successful Repository save
+clears it. A stale draft therefore cannot overwrite a newer database record.
+When persisted Tiptap JSON is corrupt, changing only the title does not
+autosave the empty fallback over the original bytes; the user must first edit
+the recovered document.
+
 The Web test runtime uses a localStorage Repository. Tauri uses the SQLite
 Repository and applies `0006_notes.sql` through the existing SQL plugin; no new
 native capability is required.

@@ -55,4 +55,26 @@ describe('mapBookRecord', () => {
       }),
     ).toThrow();
   });
+
+  it('keeps a valid managed book accessible when descriptive JSON is corrupt', () => {
+    expect(
+      mapBookRecord({
+        id: 'book-1',
+        title: '测试书',
+        author: '作者',
+        format: 'epub',
+        file_path: 'light-reader/books/book-1/book.epub',
+        file_hash: 'a'.repeat(64),
+        cover_path: null,
+        metadata_json: '{broken',
+        file_size: 12,
+        created_at: 10,
+        updated_at: 10,
+      }),
+    ).toMatchObject({
+      title: '测试书',
+      author: '作者',
+      metadata: { title: '测试书', creators: ['作者'] },
+    });
+  });
 });

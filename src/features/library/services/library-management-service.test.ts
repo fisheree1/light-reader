@@ -81,6 +81,8 @@ function createNote(): Note {
 
 class FakeDeletionStorage implements BookFileDeletionStorage {
   readonly staged: StagedBookDeletion = {
+    bookId: 'book-1',
+    journalPath: 'light-reader/trash/delete-1/deletion.json',
     originalBookDirectory: 'light-reader/books/book-1',
     originalCoverPath: 'light-reader/covers/book-1.webp',
     quarantineBookDirectory: 'light-reader/trash/delete-1/book',

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Frame } from '@playwright/test';
 
 test('starts and navigates between the scaffold pages', async ({ page }) => {
   await page.goto('/');
@@ -237,7 +237,7 @@ test('persists global reading settings and a per-book override', async ({
   await expect(page.getByLabel('阅读主题')).toHaveValue('dark');
 });
 
-test('creates a highlight with a note and restores both after reopening', async ({
+test('completes the release user loop through the real Foliate Web engine', async ({
   page,
 }) => {
   await page.goto('/library');
@@ -245,10 +245,47 @@ test('creates a highlight with a note and restores both after reopening', async 
   await page.getByRole('button', { name: '打开《Web 测试 EPUB》' }).click();
   await expect(page.getByRole('button', { name: '第一章' })).toBeVisible();
 
-  await expect.poll(() => page.frames().length).toBeGreaterThan(1);
-  const contentFrame = page
-    .frames()
-    .find((frame) => frame !== page.mainFrame());
+  await page.getByRole('button', { name: '阅读设置' }).click();
+  await page.getByLabel('为本书使用单独设置').check();
+  await page.getByLabel('阅读主题').selectOption('dark');
+  await page.getByRole('button', { name: '保存设置' }).click();
+  await page.getByRole('button', { name: '第二章' }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const value = localStorage.getItem('light-reader-reader-settings');
+        if (!value) return 0;
+        const parsed = JSON.parse(value) as {
+          readingStates?: Record<string, unknown>;
+        };
+        return Object.keys(parsed.readingStates ?? {}).length;
+      }),
+    )
+    .toBeGreaterThan(0);
+  await page.getByRole('button', { name: '第一章' }).click();
+
+  let contentFrame: Frame | undefined;
+  await expect
+    .poll(async () => {
+      contentFrame = undefined;
+      for (const frame of page.frames()) {
+        if (frame === page.mainFrame()) continue;
+        try {
+          if (
+            (await frame
+              .getByText('这是 LightReader 自制的无版权测试内容。')
+              .count()) > 0
+          ) {
+            contentFrame = frame;
+            break;
+          }
+        } catch {
+          // Foliate replaces frames during chapter navigation; retry discovery.
+        }
+      }
+      return contentFrame !== undefined;
+    })
+    .toBe(true);
   if (!contentFrame) throw new Error('EPUB content frame was not created');
   await contentFrame
     .getByText('这是 LightReader 自制的无版权测试内容。')
@@ -304,6 +341,24 @@ test('creates a highlight with a note and restores both after reopening', async 
     .click();
   await expect(page).toHaveURL(importedReaderUrl);
   await expect(page.getByRole('button', { name: '第一章' })).toBeVisible();
+
+  await page.getByRole('link', { name: '返回书架' }).click();
+  await page.reload();
+  await expect(
+    page.getByRole('button', { name: '打开《Web 测试 EPUB》' }),
+  ).toBeVisible();
+  await page.getByRole('link', { name: '搜索' }).click();
+  const search = page.getByRole('searchbox', { name: '搜索本地内容' });
+  await search.fill('E2E 独立笔记正文');
+  await page.getByRole('button', { name: '搜索', exact: true }).click();
+  await expect(page.getByText('E2E 独立笔记正文')).toBeVisible();
+  await search.fill('LightReader 自制的无版权测试内容');
+  await page.getByRole('button', { name: '搜索', exact: true }).click();
+  await expect(
+    page.getByText('这是 LightReader 自制的无版权测试内容。', {
+      exact: true,
+    }),
+  ).toBeVisible();
 });
 
 test('manages favorites, tags, sorting, and protected deletion locally', async ({

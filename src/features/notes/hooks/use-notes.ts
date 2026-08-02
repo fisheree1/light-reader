@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { asAppError } from '../../../lib/app-error';
 import type { Note, NoteDocument } from '../domain/note';
 import { NoteService } from '../services/note-service';
+import { LocalNoteDraftStorage } from '../services/note-draft-storage';
 import type { NotesServices } from '../services/notes-services';
 
 export type NoteSaveStatus = 'error' | 'idle' | 'saved' | 'saving';
@@ -21,6 +22,10 @@ export function useNotes(
     () => new NoteService(services.noteRepository),
     [services.noteRepository],
   );
+  const draftStorage = useMemo(
+    () => services.draftStorage ?? new LocalNoteDraftStorage(),
+    [services.draftStorage],
+  );
   const [notes, setNotes] = useState<Note[]>([]);
   const [activeNote, setActiveNote] = useState<Note | null>(null);
   const [query, setQuery] = useState('');
@@ -31,14 +36,21 @@ export function useNotes(
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const draftRef = useRef<Note | null>(null);
   const savedFingerprintRef = useRef('');
+  const draftBaseUpdatedAtRef = useRef(0);
 
-  const activate = useCallback((note: Note | null) => {
-    clearTimeout(timerRef.current);
-    draftRef.current = note;
-    savedFingerprintRef.current = note ? fingerprint(note) : '';
-    setActiveNote(note);
-    setSaveStatus('idle');
-  }, []);
+  const activate = useCallback(
+    (note: Note | null) => {
+      clearTimeout(timerRef.current);
+      const recovered = note ? draftStorage.recover(note) : null;
+      draftRef.current = recovered ?? note;
+      draftBaseUpdatedAtRef.current = note?.updatedAt ?? 0;
+      savedFingerprintRef.current = note ? fingerprint(note) : '';
+      setActiveNote(recovered ?? note);
+      setSaveStatus(recovered ? 'error' : 'idle');
+      setMutationError(recovered ? '已恢复上次异常退出前的未保存内容。' : null);
+    },
+    [draftStorage],
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -73,6 +85,11 @@ export function useNotes(
         return true;
       }
       const candidateFingerprint = fingerprint(candidate);
+      if (candidate.documentRecovered) {
+        setSaveStatus('error');
+        setMutationError('原笔记内容损坏；请先编辑正文，再保存恢复后的内容。');
+        return false;
+      }
       setSaveStatus('saving');
       setMutationError(null);
       try {
@@ -93,6 +110,8 @@ export function useNotes(
           draftRef.current?.id === candidate.id &&
           fingerprint(draftRef.current) === candidateFingerprint
         ) {
+          draftStorage.clear(candidate.id);
+          draftBaseUpdatedAtRef.current = saved.updatedAt;
           savedFingerprintRef.current = candidateFingerprint;
           const currentDraft = { ...saved, title: draftRef.current.title };
           draftRef.current = currentDraft;
@@ -108,7 +127,7 @@ export function useNotes(
         return false;
       }
     },
-    [service],
+    [draftStorage, service],
   );
 
   useEffect(
@@ -144,11 +163,19 @@ export function useNotes(
       const current = draftRef.current;
       if (!current) return;
       const next = { ...current, ...change, documentRecovered: false };
+      if (!change.document && current.documentRecovered) {
+        next.documentRecovered = true;
+      }
       draftRef.current = next;
       setActiveNote(next);
+      try {
+        draftStorage.write(next, draftBaseUpdatedAtRef.current);
+      } catch (error) {
+        setMutationError(asAppError(error, 'NOTE_WRITE_FAILED').userMessage);
+      }
       scheduleSave(next);
     },
-    [scheduleSave],
+    [draftStorage, scheduleSave],
   );
 
   const selectNote = useCallback(
@@ -182,6 +209,7 @@ export function useNotes(
     setMutationError(null);
     try {
       await service.delete(note.id);
+      draftStorage.clear(note.id);
       const remaining = notes.filter((item) => item.id !== note.id);
       setNotes(remaining);
       activate(remaining[0] ?? null);
@@ -190,7 +218,7 @@ export function useNotes(
       setMutationError(asAppError(error, 'NOTE_WRITE_FAILED').userMessage);
       return false;
     }
-  }, [activate, notes, service]);
+  }, [activate, draftStorage, notes, service]);
 
   const visibleNotes = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();

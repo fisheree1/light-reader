@@ -33,10 +33,13 @@ The import service follows this order:
 
 Files are finalized before the database insert so a database row never points
 to a missing EPUB. If the insert fails, the service removes the final directory,
-cover and any staging data. A process crash in the narrow interval between file
-rename and database insert can leave an unreferenced file, but cannot create a
-broken shelf record. A future maintenance task can safely remove such orphaned
-directories.
+cover and any staging data only after it confirms that the new row does not
+exist, or successfully deletes a row whose commit result was uncertain. If that
+verification or compensating delete fails, the finalized managed files are
+retained so a possibly committed row never points at a missing EPUB. A process
+crash in the narrow interval between file rename and database insert can leave
+an unreferenced file, but cannot create a broken shelf record. A future
+maintenance task can safely reconcile such orphaned directories.
 
 Cover extraction is best effort. A missing, unsupported or unwritable cover does
 not fail the book import; the shelf renders its built-in default cover instead.

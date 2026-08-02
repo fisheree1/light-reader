@@ -80,6 +80,11 @@ export function useReader(
     let saveTimer: ReturnType<typeof setTimeout> | undefined;
     let pendingLocator: BookLocator | null = null;
     const host = hostRef.current;
+    const sessionHost = host ? document.createElement('div') : null;
+    if (host && sessionHost) {
+      sessionHost.className = 'h-full w-full';
+      host.replaceChildren(sessionHost);
+    }
 
     const savePendingLocator = () => {
       if (!pendingLocator) return;
@@ -96,6 +101,38 @@ export function useReader(
         });
     };
 
+    const restoreLocator = async (
+      activeReader: EbookReader,
+      value: BookLocator,
+    ): Promise<boolean> => {
+      try {
+        await activeReader.goTo(value);
+        return true;
+      } catch (reason) {
+        if (
+          value.progression !== undefined &&
+          (value.cfi !== undefined || value.chapterHref !== undefined)
+        ) {
+          try {
+            await activeReader.goTo({
+              version: 1,
+              format: 'epub',
+              progression: value.progression,
+            });
+            return true;
+          } catch {
+            // The renderer remains at its safe initial location.
+          }
+        }
+        if (!isCancelled()) {
+          setNavigationError(
+            asAppError(reason, 'READER_NAVIGATION_FAILED').userMessage,
+          );
+        }
+        return false;
+      }
+    };
+
     Promise.all([
       services.repository.findById(bookId),
       services.settingsRepository
@@ -106,13 +143,13 @@ export function useReader(
     ])
       .then(async ([foundBook, globalSettings, override, readingState]) => {
         if (!foundBook) throw new AppError('BOOK_NOT_FOUND');
-        if (isCancelled() || !host) return;
+        if (isCancelled() || !sessionHost) return;
 
         setBook(foundBook);
         hydrateSettings(bookId, globalSettings, override);
         reader = services.createReader();
         readerRef.current = reader;
-        reader.mount(host);
+        reader.mount(sessionHost);
 
         const source = await services.source.read(foundBook.filePath);
         if (isCancelled()) return;
@@ -125,8 +162,9 @@ export function useReader(
           resolveReaderSettings(globalSettings, override),
         );
         if (!navigationTarget && readingState) {
-          await reader.goTo(readingState.locator);
-          setLocator(readingState.locator);
+          if (await restoreLocator(reader, readingState.locator)) {
+            setLocator(readingState.locator);
+          }
         }
         const annotationService = new AnnotationService(
           services.annotationRepository,
@@ -179,8 +217,9 @@ export function useReader(
           }
         }
         if (navigationTarget && !navigationTargetLocated && !isCancelled()) {
-          await reader.goTo(navigationTarget.locator);
-          setLocator(navigationTarget.locator);
+          if (await restoreLocator(reader, navigationTarget.locator)) {
+            setLocator(navigationTarget.locator);
+          }
         }
         unsubscribe = reader.subscribeToRelocation((nextLocator) => {
           if (isCancelled()) return;
@@ -200,15 +239,16 @@ export function useReader(
       });
 
     return () => {
+      cancelled = true;
       clearTimeout(saveTimer);
       savePendingLocator();
-      cancelled = true;
       unsubscribe();
       unsubscribeSelection();
       unsubscribeHighlightActivation();
       readerRef.current = null;
       annotationServiceRef.current = null;
       void reader?.close();
+      if (sessionHost?.parentElement === host) sessionHost.remove();
     };
   }, [attempt, bookId, hydrateSettings, navigationTarget, services]);
 

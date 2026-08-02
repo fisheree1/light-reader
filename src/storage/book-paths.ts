@@ -10,6 +10,8 @@ export interface BookStoragePaths {
 }
 
 export interface BookDeletionPaths {
+  bookId: string;
+  journalPath: string;
   originalBookDirectory: string;
   originalCoverPath: string | null;
   quarantineBookDirectory: string;
@@ -72,6 +74,8 @@ export function createBookDeletionPaths(
 
   const quarantineDirectory = `light-reader/trash/${deletionId}`;
   return {
+    bookId,
+    journalPath: `${quarantineDirectory}/deletion.json`,
     originalBookDirectory,
     originalCoverPath: coverPath,
     quarantineBookDirectory: `${quarantineDirectory}/book`,

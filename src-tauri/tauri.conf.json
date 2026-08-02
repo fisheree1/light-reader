@@ -50,11 +50,6 @@
       }
     }
   },
-  "plugins": {
-    "sql": {
-      "preload": ["sqlite:light-reader.db"]
-    }
-  },
   "bundle": {
     "active": true,
     "targets": "all",

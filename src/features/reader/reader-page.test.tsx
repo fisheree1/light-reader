@@ -6,7 +6,13 @@ import {
   waitFor,
 } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import {
+  createMemoryRouter,
+  MemoryRouter,
+  Route,
+  RouterProvider,
+  Routes,
+} from 'react-router-dom';
 
 import type { BookRepository } from '../../database/repositories/book-repository';
 import type { AnnotationRepository } from '../../database/repositories/annotation-repository';
@@ -317,6 +323,69 @@ describe('ReaderPage', () => {
     });
   });
 
+  it('keeps the newest session mounted when books switch rapidly', async () => {
+    const secondBook: Book = {
+      ...BOOK,
+      id: 'book-2',
+      title: '快速切换后的图书',
+      filePath: 'light-reader/books/book-2/book.epub',
+      fileHash: 'b'.repeat(64),
+    };
+    let finishFirstRead: ((source: ArrayBuffer) => void) | undefined;
+    const firstReader = new FakeReader();
+    const secondReader = new FakeReader();
+    const repository: BookRepository = {
+      ...createRepository(),
+      findById: (id) =>
+        Promise.resolve(
+          id === BOOK.id ? BOOK : id === secondBook.id ? secondBook : null,
+        ),
+    };
+    const services: ReaderServices = {
+      annotationRepository: createAnnotationRepository(),
+      repository,
+      settingsRepository: createSettingsRepository(),
+      source: {
+        read: (path) =>
+          path.includes('book-1')
+            ? new Promise((resolve) => {
+                finishFirstRead = resolve;
+              })
+            : Promise.resolve(new ArrayBuffer(1)),
+      },
+      createReader: vi
+        .fn<() => EbookReader>()
+        .mockReturnValueOnce(firstReader)
+        .mockReturnValueOnce(secondReader),
+    };
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/reader/:bookId',
+          element: <ReaderPage services={services} />,
+        },
+      ],
+      { initialEntries: ['/reader/book-1'] },
+    );
+    render(<RouterProvider router={router} />);
+
+    expect(await screen.findByText(BOOK.title)).toBeVisible();
+    await router.navigate('/reader/book-2');
+    expect(
+      await screen.findByRole('heading', { name: secondBook.title }),
+    ).toBeVisible();
+    expect(await screen.findByRole('button', { name: '第一章' })).toBeVisible();
+    finishFirstRead?.(new ArrayBuffer(1));
+
+    await waitFor(() => {
+      expect(firstReader.close).toHaveBeenCalledOnce();
+    });
+    expect(secondReader.close).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('EPUB 正文')).toHaveTextContent(
+      '渲染后的 EPUB 正文',
+    );
+  });
+
   it('restores and debounces persistence of the reading position', async () => {
     const reader = new FakeReader();
     const settingsRepository = createSettingsRepository();
@@ -354,6 +423,40 @@ describe('ReaderPage', () => {
       },
       { timeout: 1200 },
     );
+  });
+
+  it('keeps the EPUB open when a saved locator can no longer resolve', async () => {
+    const reader = new FakeReader();
+    reader.goTo.mockRejectedValue(new Error('stale CFI'));
+    const settingsRepository = createSettingsRepository();
+    vi.spyOn(settingsRepository, 'getReadingState').mockResolvedValue({
+      bookId: BOOK.id,
+      locator: {
+        version: 1,
+        format: 'epub',
+        cfi: 'epubcfi(/stale)',
+        progression: 0.4,
+      },
+      updatedAt: 1,
+    });
+    renderReader({
+      annotationRepository: createAnnotationRepository(),
+      repository: createRepository(),
+      settingsRepository,
+      source: { read: () => Promise.resolve(new ArrayBuffer(1)) },
+      createReader: () => reader,
+    });
+
+    expect(await screen.findByRole('button', { name: '第一章' })).toBeVisible();
+    expect(screen.getByText('无法跳转到指定阅读位置。')).toBeVisible();
+    expect(
+      screen.queryByRole('heading', { name: '无法打开图书' }),
+    ).not.toBeInTheDocument();
+    expect(reader.goTo).toHaveBeenNthCalledWith(2, {
+      version: 1,
+      format: 'epub',
+      progression: 0.4,
+    });
   });
 
   it('saves a per-book reading override and applies it to the engine', async () => {

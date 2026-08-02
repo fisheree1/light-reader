@@ -30,6 +30,7 @@ function toReaderHighlight(annotation: Annotation): ReaderHighlight {
 }
 
 export class AnnotationService {
+  private readonly noteSaveQueues = new Map<string, Promise<void>>();
   private readonly repository: AnnotationRepository;
   private readonly reader: EbookReader;
   private readonly idFactory: IdFactory;
@@ -87,19 +88,50 @@ export class AnnotationService {
   }
 
   async updateNote(annotationId: string, value: string): Promise<Annotation> {
-    return this.repository.updateNote(annotationId, normalizeNoteText(value));
+    const noteText = normalizeNoteText(value);
+    const previous = this.noteSaveQueues.get(annotationId) ?? Promise.resolve();
+    const operation = previous
+      .catch(() => undefined)
+      .then(() => this.repository.updateNote(annotationId, noteText));
+    const settled = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.noteSaveQueues.set(annotationId, settled);
+    void settled.then(() => {
+      if (this.noteSaveQueues.get(annotationId) === settled) {
+        this.noteSaveQueues.delete(annotationId);
+      }
+    });
+    return operation;
   }
 
   async updateColor(
     annotationId: string,
     value: AnnotationColor,
   ): Promise<Annotation> {
-    const annotation = await this.repository.updateColor(
-      annotationId,
-      annotationColorSchema.parse(value),
-    );
-    await this.reader.createHighlight(toReaderHighlight(annotation));
-    return annotation;
+    const color = annotationColorSchema.parse(value);
+    const current = await this.repository.findById(annotationId);
+    if (!current) throw new AppError('ANNOTATION_NOT_FOUND');
+    const rendered = { ...current, color };
+    await this.reader.removeHighlight(annotationId);
+    try {
+      await this.reader.createHighlight(toReaderHighlight(rendered));
+    } catch (error) {
+      await this.reader
+        .createHighlight(toReaderHighlight(current))
+        .catch(() => undefined);
+      throw asAppError(error, 'ANNOTATION_RENDER_FAILED');
+    }
+    try {
+      return await this.repository.updateColor(annotationId, color);
+    } catch (error) {
+      await this.reader.removeHighlight(annotationId).catch(() => undefined);
+      await this.reader
+        .createHighlight(toReaderHighlight(current))
+        .catch(() => undefined);
+      throw asAppError(error, 'ANNOTATION_WRITE_FAILED');
+    }
   }
 
   async delete(annotation: Annotation): Promise<void> {

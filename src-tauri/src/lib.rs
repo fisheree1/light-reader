@@ -1,4 +1,6 @@
 use log::LevelFilter;
+#[cfg(desktop)]
+use tauri::Manager;
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 mod backup;
@@ -56,8 +58,23 @@ pub fn run() {
         },
     ];
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    #[cfg(desktop)]
+    {
+        // This must be the first plugin. File quarantine recovery and SQLite
+        // maintenance assume only one desktop process owns AppData at a time.
+        builder = builder.plugin(tauri_plugin_single_instance::init(
+            |app, _arguments, _working_directory| {
+                if let Some(window) = app.get_webview_window("main") {
+                    window.set_focus().ok();
+                }
+            },
+        ));
+    }
+
+    builder
         .invoke_handler(tauri::generate_handler![
+            backup::prepare_database_migration,
             backup::create_database_snapshot,
             backup::inspect_database_snapshot,
             backup::restore_database_snapshot

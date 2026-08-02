@@ -38,4 +38,21 @@ describe('mapNoteRecord', () => {
     expect(note.documentRecovered).toBe(true);
     expect(note.document.content.type).toBe('doc');
   });
+
+  it('maps a large note collection within a basic release budget', () => {
+    const rows = Array.from({ length: 1_000 }, (_, index) => ({
+      id: `note-${String(index)}`,
+      title: `性能笔记 ${String(index)}`,
+      content_json: JSON.stringify(validDocument),
+      plain_text: '恢复内容',
+      created_at: index,
+      updated_at: index,
+    }));
+    const startedAt = performance.now();
+
+    const notes = rows.map(mapNoteRecord);
+
+    expect(notes).toHaveLength(1_000);
+    expect(performance.now() - startedAt).toBeLessThan(1_000);
+  });
 });

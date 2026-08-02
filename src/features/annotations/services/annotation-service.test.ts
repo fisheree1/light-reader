@@ -43,6 +43,7 @@ function createAnnotation(overrides: Partial<Annotation> = {}): Annotation {
 
 class MemoryAnnotationRepository implements AnnotationRepository {
   records: Annotation[] = [];
+  failColorSave = false;
   failNoteSave = false;
 
   create(annotation: Annotation): Promise<Annotation> {
@@ -63,6 +64,8 @@ class MemoryAnnotationRepository implements AnnotationRepository {
   }
 
   updateColor(id: string, color: AnnotationColor): Promise<Annotation> {
+    if (this.failColorSave)
+      return Promise.reject(new Error('database offline'));
     return this.update(id, { color });
   }
 
@@ -246,5 +249,72 @@ describe('AnnotationService', () => {
       service.updateNote('annotation-1', 'unsaved draft'),
     ).rejects.toThrow('database offline');
     expect(repository.records[0]?.noteText).toBe('edited note');
+  });
+
+  it('serializes annotation note saves so older input cannot win a race', async () => {
+    const repository = new MemoryAnnotationRepository();
+    repository.records = [createAnnotation()];
+    const completions: (() => void)[] = [];
+    const update = vi.spyOn(repository, 'updateNote').mockImplementation(
+      (id, noteText) =>
+        new Promise((resolve) => {
+          completions.push(() => {
+            resolve(createAnnotation({ id, noteText }));
+          });
+        }),
+    );
+    const service = new AnnotationService(
+      repository,
+      new FakeAnnotationReader(),
+    );
+
+    const first = service.updateNote('annotation-1', '第一版');
+    const second = service.updateNote('annotation-1', '第二版');
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalledTimes(1);
+    });
+    completions[0]?.();
+    await first;
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalledTimes(2);
+    });
+    completions[1]?.();
+
+    await expect(second).resolves.toMatchObject({ noteText: '第二版' });
+  });
+
+  it('restores the rendered color when the database update fails', async () => {
+    const repository = new MemoryAnnotationRepository();
+    const current = createAnnotation();
+    repository.records = [current];
+    repository.failColorSave = true;
+    const reader = new FakeAnnotationReader();
+    const service = new AnnotationService(repository, reader);
+
+    await expect(service.updateColor(current.id, 'red')).rejects.toMatchObject({
+      code: 'ANNOTATION_WRITE_FAILED',
+    });
+    expect(repository.records[0]?.color).toBe('yellow');
+    expect(reader.createHighlightSpy).toHaveBeenLastCalledWith({
+      id: current.id,
+      color: 'yellow',
+      locator: current.locator,
+    });
+  });
+
+  it('restores a large highlight collection within a basic release budget', async () => {
+    const repository = new MemoryAnnotationRepository();
+    repository.records = Array.from({ length: 2_000 }, (_, index) =>
+      createAnnotation({ id: `annotation-${String(index)}` }),
+    );
+    const reader = new FakeAnnotationReader();
+    const service = new AnnotationService(repository, reader);
+    const startedAt = performance.now();
+
+    const restored = await service.restore('book-1');
+
+    expect(restored.annotations).toHaveLength(2_000);
+    expect(restored.restoreResults).toHaveLength(2_000);
+    expect(performance.now() - startedAt).toBeLessThan(1_000);
   });
 });

@@ -35,6 +35,7 @@ export function BookCard({
         .then((url) => {
           loadedUrl = url;
           if (active) setCoverUrl(url);
+          else if (url) services.releaseCoverUrl(url);
         })
         .catch(() => undefined);
     }

@@ -6,9 +6,14 @@ import { WebNoteRepository } from '../../../database/repositories/web-note-repos
 import type { BookRepository } from '../../../database/repositories/book-repository';
 import { libraryServices } from '../../library/services/library-services';
 import { NoteService } from './note-service';
+import {
+  LocalNoteDraftStorage,
+  type NoteDraftStorage,
+} from './note-draft-storage';
 
 export interface NotesServices {
   bookRepository: BookRepository;
+  draftStorage?: NoteDraftStorage;
   noteRepository: NoteRepository;
 }
 
@@ -18,6 +23,7 @@ const noteRepository = isTauri()
 
 export const notesServices: NotesServices = {
   bookRepository: libraryServices.repository,
+  draftStorage: new LocalNoteDraftStorage(),
   noteRepository,
 };
 
