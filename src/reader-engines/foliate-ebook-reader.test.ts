@@ -316,4 +316,32 @@ describe('FoliateEbookReader', () => {
       ]),
     ).resolves.toEqual([{ id: 'stale', status: 'unresolved' }]);
   });
+
+  it('keeps restored highlights drawable and interactive', async () => {
+    const { reader, view } = createReader();
+    await reader.open(new ArrayBuffer(1));
+    const highlight = {
+      id: 'restored-highlight',
+      color: 'blue' as const,
+      locator: {
+        version: 1 as const,
+        format: 'epub' as const,
+        cfi: 'epubcfi(/6/2!/4/2,/1:0,/1:4)',
+      },
+    };
+
+    await expect(reader.restoreHighlights([highlight])).resolves.toEqual([
+      { id: highlight.id, status: 'restored' },
+    ]);
+    const draw = vi.fn();
+    view.dispatchEvent(
+      new CustomEvent('draw-annotation', {
+        detail: { draw, annotation: { color: '#60a5fa' } },
+      }),
+    );
+
+    expect(draw).toHaveBeenCalledWith(expect.any(Function), {
+      color: '#60a5fa',
+    });
+  });
 });

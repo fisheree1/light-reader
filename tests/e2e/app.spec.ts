@@ -1,4 +1,36 @@
-import { expect, test, type Frame } from '@playwright/test';
+import { expect, test, type Frame, type Page } from '@playwright/test';
+
+interface BrowserDiagnostics {
+  pageErrors: string[];
+  routerWarnings: string[];
+}
+
+const diagnosticsByPage = new WeakMap<Page, BrowserDiagnostics>();
+
+test.beforeEach(({ page }) => {
+  const diagnostics: BrowserDiagnostics = {
+    pageErrors: [],
+    routerWarnings: [],
+  };
+  diagnosticsByPage.set(page, diagnostics);
+  page.on('pageerror', (error) => {
+    diagnostics.pageErrors.push(error.message);
+  });
+  page.on('console', (message) => {
+    if (
+      message.type() === 'warning' &&
+      message.text().includes('HydrateFallback')
+    ) {
+      diagnostics.routerWarnings.push(message.text());
+    }
+  });
+});
+
+test.afterEach(({ page }) => {
+  const diagnostics = diagnosticsByPage.get(page);
+  expect(diagnostics?.pageErrors ?? []).toEqual([]);
+  expect(diagnostics?.routerWarnings ?? []).toEqual([]);
+});
 
 test('starts and navigates between the scaffold pages', async ({ page }) => {
   await page.goto('/');

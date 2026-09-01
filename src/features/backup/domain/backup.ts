@@ -25,10 +25,10 @@ export const databaseBackupSummarySchema = z
 
 export type DatabaseBackupSummary = z.infer<typeof databaseBackupSummarySchema>;
 
-export type DatabaseRestoreOutcome = {
+export interface DatabaseRestoreOutcome {
   databaseState: 'ready' | 'reopen-required';
   summary: DatabaseBackupSummary;
-};
+}
 
 export type BackupRestoreResult =
   | { status: 'restored' }

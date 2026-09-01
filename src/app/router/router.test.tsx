@@ -2,8 +2,14 @@ import { render, screen } from '@testing-library/react';
 import { RouterProvider } from 'react-router-dom';
 
 import { createTestRouter } from './router';
+import { routes } from './routes';
 
 describe('application routes', () => {
+  it('provides hydration fallbacks for both application shells', () => {
+    expect(routes[0]?.hydrateFallbackElement).toBeTruthy();
+    expect(routes[1]?.hydrateFallbackElement).toBeTruthy();
+  });
+
   it.each([
     ['/library', '书架'],
     ['/notes', '笔记'],
