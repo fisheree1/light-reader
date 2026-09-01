@@ -1,106 +1,53 @@
 ---
 name: lightreader-verify-efficiently
-description: Select and run the smallest evidence-based verification set for LightReader changes. Use when implementing, reviewing, or finalizing LightReader work to avoid duplicate formatting, type, lint, test, build, E2E, Rust, and Tauri checks while preserving coverage for data, reader, platform, and release risks.
+description: Apply LightReader's lightweight verification policy. Use when implementing, reviewing, or finalizing changes so routine work receives only basic checks while builds, E2E, Rust, Tauri, and full-suite checks are reserved for changes that touch those important boundaries.
 ---
 
-# Verify LightReader efficiently
+# Verify LightReader with essential checks
 
-## Choose evidence from the diff
+## Start from the actual change
 
-Read `AGENTS.md`, `package.json`, `git status`, and the relevant diff before choosing commands. Classify the highest-risk changed boundary and run the corresponding lane below. Explicit verification commands in the active user request remain mandatory.
+Read `AGENTS.md`, `package.json`, `git status`, and the relevant diff. Run explicitly requested checks, then select only checks that could reveal a problem caused by the changed files.
 
-Do not weaken TypeScript, lint, tests, migrations, capabilities, or production configuration to make a check pass. Never report an unexecuted check as successful.
+Never weaken code, types, lint rules, tests, migrations, capabilities, or production configuration to make verification pass. Never report a skipped check as successful.
 
-## Use the smallest sufficient lane
+## Run the basic checks
 
-### Lane 0: documentation and agent instructions
+For every change:
 
-Use for Markdown, comments, docs, or Skill metadata with no executable behavior change.
-
-- Run Prettier only on changed supported files.
 - Run `git diff --check`.
-- For a changed Skill, run the skill validator on that Skill directory.
-- Skip typecheck, lint, unit tests, builds, E2E, Cargo, and Tauri checks.
+- Check Prettier only for changed supported files.
+- Run ESLint only for changed lintable files.
+- Run the smallest relevant Vitest file when behavior changed.
+- Run `pnpm typecheck` when production TypeScript, exported types, shared contracts, routes, or providers changed.
 
-Promote out of this lane when a config file affects compilation, packaging, tests, permissions, or runtime behavior.
+For documentation, comments, or Skill-only changes, stop after the applicable diff and formatting checks. Validate a changed Skill with its Skill validator. Do not run application tests or builds.
 
-### Lane 1: isolated TypeScript or React change
+Do not run repository-wide format, lint, test, build, or E2E commands as a default handoff ritual.
 
-Use for a leaf component, hook, mapper, utility, local style, or focused bug fix with an existing test seam.
+## Add important checks only when needed
 
-- Check formatting and ESLint only for changed lintable files.
-- Run `pnpm typecheck` when exported types or production TypeScript changed.
-- Run the smallest relevant Vitest files with `pnpm exec vitest run <test-paths>`.
-- Skip the full test suite and production build unless the change touches a shared contract, route composition, application provider, dependency, or build boundary.
+- Run `pnpm build` when dependencies, Vite or TypeScript configuration, workers, dynamic imports, assets, route composition, or provider composition changed.
+- Run a scoped Playwright test when a critical user flow, navigation, persistence, reload behavior, or reader/editor lifecycle changed. Run all E2E tests only when the impact is broad or the user requests them.
+- For SQLite, Repository, or migration changes, run the focused tests that prove migration, mapping, transaction, and persistence invariants.
+- For Rust changes, run `cargo fmt --check --manifest-path src-tauri/Cargo.toml` plus focused Cargo tests. Add Clippy when Rust logic, plugin registration, or release readiness changed.
+- Run `pnpm tauri build --debug --no-bundle` only when Tauri plugins, capabilities, CSP, native integration, `tauri.conf.json`, or packaging changed.
+- Launch `pnpm tauri:dev` only when real desktop behavior must be observed and the environment supports it.
 
-### Lane 2: cross-cutting frontend feature
+Load `$lightreader-evolve-data-platform`, `$lightreader-integrate-reader-engine`, or `$lightreader-integrate-notes-editor` when the change crosses that boundary.
 
-Use when multiple feature layers, shared contracts, routing, providers, global state, or dependencies changed.
+## Reserve full verification for broad work
 
-- Run `pnpm typecheck` and `pnpm lint`.
-- Run focused tests first; run `pnpm test:run` when shared behavior or several suites are affected.
-- Run `pnpm build` for production bundling, router/provider composition, dependency, Vite, or TypeScript configuration changes.
-- Run only the relevant Playwright spec or grep for a changed critical user flow. Run the complete E2E suite only for global navigation, shared fixtures, release validation, or broad regressions.
+Run the complete applicable frontend or native verification matrix only for a release, an explicitly requested full audit, a broad refactor, or a change whose impact cannot be bounded. Untouched platforms do not need verification unless acceptance criteria require it.
 
-### Lane 3: SQLite, Repository, or native platform change
+## Avoid duplicate work
 
-Load `$lightreader-evolve-data-platform` and verify the changed invariant directly.
+- `pnpm build` runs `tsc -b`; do not also run `pnpm typecheck` on the same unchanged tree.
+- A Tauri build invokes the frontend build; do not run both separately on the same unchanged tree.
+- Do not rerun a successful check unless relevant files changed afterward.
+- After fixing a failure, rerun that check and only the checks invalidated by the fix.
+- Prefer a targeted test path or Playwright grep before widening scope.
 
-- Run migration, mapper, Repository, transaction, or Adapter tests that exercise the change.
-- Run TypeScript checks only when the TypeScript boundary changed.
-- Run `cargo fmt --check --manifest-path src-tauri/Cargo.toml` for Rust edits.
-- Run Cargo Clippy and tests for changed Rust logic or registration code.
-- Do not require a Tauri build for a SQL-only migration that is covered by migration/Repository tests and whose unchanged registration still compiles.
-- Run `pnpm tauri build --debug --no-bundle` when plugin dependencies, capabilities, `tauri.conf.json`, Rust/native integration, CSP, or packaging changed.
-- Launch `pnpm tauri:dev` only when real native UI, filesystem, database, or permission behavior must be observed and the environment supports it.
+## Report briefly
 
-### Lane 4: reader or editor engine boundary
-
-Load the matching reader-engine or notes-editor Skill.
-
-- Run focused contract, adapter, serialization, lifecycle, and UI tests.
-- Run `pnpm build` when workers, dynamic imports, assets, extensions, serialization schemas, or bundling changed.
-- Run a scoped E2E flow for user-visible persistence or engine lifecycle behavior.
-- Add Tauri compilation only when native loading, CSP, capabilities, or desktop packaging changed.
-
-### Lane 5: full audit or release
-
-Run the complete applicable matrix only when the user requests it, before a release or handoff that requires it, after a broad refactor, or when the impact cannot be bounded:
-
-```bash
-pnpm format:check
-pnpm typecheck
-pnpm lint
-pnpm test:run
-pnpm build
-pnpm test:e2e
-cargo fmt --check --manifest-path src-tauri/Cargo.toml
-cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features
-cargo test --manifest-path src-tauri/Cargo.toml
-pnpm tauri build --debug --no-bundle
-```
-
-Omit commands for untouched platforms only when the requested acceptance criteria do not explicitly require them.
-
-## Remove duplicate work
-
-- Do not run `pnpm format` and then a repository-wide `pnpm format:check` on the same unchanged tree.
-- `pnpm build` already runs `tsc -b`; do not run a separate `pnpm typecheck` immediately before it unless the user explicitly requires both or a distinct typecheck result must be reported.
-- A Tauri build invokes the configured frontend build; do not run a separate frontend build immediately before it on the same unchanged tree.
-- After a failure, rerun the failed check and checks invalidated by the fix. Preserve still-valid successful results.
-- After documentation-only follow-up edits, rerun only Lane 0 checks.
-- Do not rerun a green command when relevant files have not changed since it ran.
-- Prefer a targeted test path or Playwright grep before widening to a whole suite.
-
-Promote to a broader lane when dependencies, shared schemas, error models, global configuration, migrations, capabilities, or multiple consumers changed, or when no focused test demonstrates the affected behavior.
-
-## Report clearly
-
-Report:
-
-- commands actually run and their outcomes;
-- important warnings that did not fail a command;
-- intentionally skipped high-cost checks and the risk-based reason;
-- anything that still requires native or manual verification.
-
-Do not turn a skipped check into an implied pass.
+List the checks actually run and their outcomes. Mention skipped high-cost checks only when the remaining risk matters or manual/native verification is still required.

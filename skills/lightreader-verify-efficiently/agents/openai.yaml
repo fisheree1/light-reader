@@ -1,4 +1,4 @@
 interface:
-  display_name: 'LightReader Efficient Verification'
-  short_description: '按风险选择最小且不重复的 LightReader 验证集'
-  default_prompt: 'Use $lightreader-verify-efficiently to choose and run the smallest sufficient verification set for this LightReader change.'
+  display_name: 'LightReader Essential Verification'
+  short_description: 'LightReader 默认只跑基础校验，关键边界改动时按需升级'
+  default_prompt: 'Use $lightreader-verify-efficiently to run only the basic and important checks required by this LightReader change.'
