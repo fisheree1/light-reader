@@ -28,6 +28,10 @@ export default defineConfig({
     },
   },
   server: {
+    // Playwright captures page errors and targeted console warnings directly.
+    // Disable Vite 8's agent-only forwarding, which otherwise promotes
+    // Chromium's benign Foliate ResizeObserver diagnostic to a server error.
+    forwardConsole: false,
     strictPort: true,
   },
 });

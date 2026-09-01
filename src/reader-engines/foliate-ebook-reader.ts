@@ -1,5 +1,4 @@
 import { AppError } from '../lib/app-error';
-import { withDeferredResizeObservers } from './deferred-resize-observer';
 import {
   bookLocatorSchema,
   type BookLocator,
@@ -152,7 +151,10 @@ const highlightColors = {
   red: '#f87171',
 } as const;
 
-function makeInteractiveHighlight(drawHighlight: HighlightDraw): HighlightDraw {
+function makeInteractiveHighlight(
+  drawHighlight: HighlightDraw,
+  onActivate: () => void,
+): HighlightDraw {
   return (rects, options) => {
     const group = drawHighlight(rects, options);
     group.style.cursor = 'pointer';
@@ -169,6 +171,11 @@ function makeInteractiveHighlight(drawHighlight: HighlightDraw): HighlightDraw {
     });
     group.addEventListener('pointerup', () => {
       group.style.opacity = '.45';
+    });
+    group.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onActivate();
     });
     return group;
   };
@@ -234,47 +241,45 @@ export class FoliateEbookReader implements EbookReader {
   }
 
   async open(source: ArrayBuffer): Promise<void> {
-    if (!this.host) throw new AppError('READER_OPEN_FAILED');
+    const host = this.host;
+    if (!host) throw new AppError('READER_OPEN_FAILED');
 
     await this.close();
     const lifecycleVersion = this.lifecycleVersion;
     const opening = { view: null as FoliateViewElement | null };
     try {
-      await withDeferredResizeObservers(async () => {
-        const [, { Overlayer }] = await Promise.all([
-          this.loadViewModule(),
-          import('foliate-js/overlayer.js'),
-        ]);
-        if (lifecycleVersion !== this.lifecycleVersion) {
-          throw new AppError('READER_OPEN_FAILED');
-        }
-        this.highlightDraw = makeInteractiveHighlight((rects, options) =>
-          Overlayer.highlight(rects, options),
-        );
-        const view = this.viewFactory();
-        opening.view = view;
-        this.view = view;
-        view.addEventListener('relocate', this.handleRelocation);
-        view.addEventListener('external-link', this.blockExternalLink);
-        view.addEventListener('load', this.handleSectionLoad);
-        view.addEventListener('draw-annotation', this.handleDrawAnnotation);
-        view.addEventListener('create-overlay', this.handleCreateOverlay);
-        view.addEventListener('show-annotation', this.handleShowAnnotation);
-        this.host.replaceChildren(view);
+      const [, { Overlayer }] = await Promise.all([
+        this.loadViewModule(),
+        import('foliate-js/overlayer.js'),
+      ]);
+      if (lifecycleVersion !== this.lifecycleVersion) {
+        throw new AppError('READER_OPEN_FAILED');
+      }
+      this.highlightDraw = (rects, options) =>
+        Overlayer.highlight(rects, options);
+      const view = this.viewFactory();
+      opening.view = view;
+      this.view = view;
+      view.addEventListener('relocate', this.handleRelocation);
+      view.addEventListener('external-link', this.blockExternalLink);
+      view.addEventListener('load', this.handleSectionLoad);
+      view.addEventListener('draw-annotation', this.handleDrawAnnotation);
+      view.addEventListener('create-overlay', this.handleCreateOverlay);
+      view.addEventListener('show-annotation', this.handleShowAnnotation);
+      host.replaceChildren(view);
 
-        await view.open(
-          new File([source], 'book.epub', {
-            type: 'application/epub+zip',
-          }),
-        );
-        if (lifecycleVersion !== this.lifecycleVersion) {
-          throw new AppError('READER_OPEN_FAILED');
-        }
-        await view.init({ showTextStart: true });
-        if (lifecycleVersion !== this.lifecycleVersion) {
-          throw new AppError('READER_OPEN_FAILED');
-        }
-      });
+      await view.open(
+        new File([source], 'book.epub', {
+          type: 'application/epub+zip',
+        }),
+      );
+      if (lifecycleVersion !== this.lifecycleVersion) {
+        throw new AppError('READER_OPEN_FAILED');
+      }
+      await view.init({ showTextStart: true });
+      if (lifecycleVersion !== this.lifecycleVersion) {
+        throw new AppError('READER_OPEN_FAILED');
+      }
     } catch (error) {
       const openingView = opening.view;
       if (openingView && this.view === openingView) {
@@ -520,11 +525,18 @@ export class FoliateEbookReader implements EbookReader {
     if (!this.highlightDraw) return;
     const annotation = isRecord(detail.annotation) ? detail.annotation : null;
     const color = readString(annotation?.color) ?? highlightColors.yellow;
+    const cfi = readString(annotation?.value);
+    const id = cfi ? this.highlightIdsByCfi.get(cfi) : null;
     const draw = detail.draw as (
       method: HighlightDraw,
       options: { color: string },
     ) => void;
-    draw(this.highlightDraw, { color });
+    draw(
+      makeInteractiveHighlight(this.highlightDraw, () => {
+        if (id) this.notifyHighlightActivation(id);
+      }),
+      { color },
+    );
   };
 
   private readonly handleCreateOverlay: EventListener = (event) => {
@@ -544,8 +556,12 @@ export class FoliateEbookReader implements EbookReader {
     const cfi = readString(detail.value);
     const id = cfi ? this.highlightIdsByCfi.get(cfi) : null;
     if (!id) return;
-    for (const listener of this.highlightActivationListeners) listener(id);
+    this.notifyHighlightActivation(id);
   };
+
+  private notifyHighlightActivation(id: string): void {
+    for (const listener of this.highlightActivationListeners) listener(id);
+  }
 
   private readSelection(doc: Document, index: number): void {
     const selection = doc.getSelection();

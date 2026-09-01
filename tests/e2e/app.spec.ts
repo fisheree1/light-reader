@@ -32,6 +32,29 @@ test.afterEach(({ page }) => {
   expect(diagnostics?.routerWarnings ?? []).toEqual([]);
 });
 
+async function findContentFrame(page: Page, text: string): Promise<Frame> {
+  let contentFrame: Frame | undefined;
+  await expect
+    .poll(async () => {
+      contentFrame = undefined;
+      for (const frame of page.frames()) {
+        if (frame === page.mainFrame()) continue;
+        try {
+          if (await frame.getByText(text, { exact: true }).isVisible()) {
+            contentFrame = frame;
+            break;
+          }
+        } catch {
+          // Foliate replaces frames during navigation; retry discovery.
+        }
+      }
+      return contentFrame !== undefined;
+    })
+    .toBe(true);
+  if (!contentFrame) throw new Error('EPUB content frame was not created');
+  return contentFrame;
+}
+
 test('starts and navigates between the scaffold pages', async ({ page }) => {
   await page.goto('/');
 
@@ -296,29 +319,10 @@ test('completes the release user loop through the real Foliate Web engine', asyn
     .toBeGreaterThan(0);
   await page.getByRole('button', { name: '第一章' }).click();
 
-  let contentFrame: Frame | undefined;
-  await expect
-    .poll(async () => {
-      contentFrame = undefined;
-      for (const frame of page.frames()) {
-        if (frame === page.mainFrame()) continue;
-        try {
-          if (
-            (await frame
-              .getByText('这是 LightReader 自制的无版权测试内容。')
-              .count()) > 0
-          ) {
-            contentFrame = frame;
-            break;
-          }
-        } catch {
-          // Foliate replaces frames during chapter navigation; retry discovery.
-        }
-      }
-      return contentFrame !== undefined;
-    })
-    .toBe(true);
-  if (!contentFrame) throw new Error('EPUB content frame was not created');
+  const contentFrame = await findContentFrame(
+    page,
+    '这是 LightReader 自制的无版权测试内容。',
+  );
   await contentFrame
     .getByText('这是 LightReader 自制的无版权测试内容。')
     .selectText();

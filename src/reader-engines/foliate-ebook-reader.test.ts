@@ -333,15 +333,27 @@ describe('FoliateEbookReader', () => {
     await expect(reader.restoreHighlights([highlight])).resolves.toEqual([
       { id: highlight.id, status: 'restored' },
     ]);
-    const draw = vi.fn();
+    const activation = vi.fn();
+    reader.subscribeToHighlightActivation(activation);
+    let renderedGroup: SVGGElement | undefined;
+    const draw = vi.fn((method: (rects: DOMRect[]) => SVGGElement) => {
+      renderedGroup = method([]);
+    });
     view.dispatchEvent(
       new CustomEvent('draw-annotation', {
-        detail: { draw, annotation: { color: '#60a5fa' } },
+        detail: {
+          draw,
+          annotation: { color: '#60a5fa', value: highlight.locator.cfi },
+        },
       }),
     );
 
     expect(draw).toHaveBeenCalledWith(expect.any(Function), {
       color: '#60a5fa',
     });
+    renderedGroup?.dispatchEvent(
+      new MouseEvent('click', { bubbles: true, cancelable: true }),
+    );
+    expect(activation).toHaveBeenCalledWith(highlight.id);
   });
 });
