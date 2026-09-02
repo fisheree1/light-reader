@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const BACKUP_FORMAT = 'lightreader-backup';
 export const BACKUP_FORMAT_VERSION = 2;
-export const CURRENT_DATABASE_SCHEMA_VERSION = 9;
+export const CURRENT_DATABASE_SCHEMA_VERSION = 10;
 export const BACKUP_FILE_EXTENSION = 'lightreader-backup';
 
 export const backupCountsSchema = z

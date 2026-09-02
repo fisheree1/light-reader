@@ -6,12 +6,14 @@ import { IconButton } from '../../../components/ui/icon-button';
 import type { ReaderSearchResult } from '../../../reader-engines/types';
 
 interface ReaderChapterSearchProps {
+  scopeLabel?: string;
   onClose: () => void;
   onSearch: (query: string) => Promise<ReaderSearchResult[]>;
   onSelect: (result: ReaderSearchResult) => void;
 }
 
 export function ReaderChapterSearch({
+  scopeLabel = '章节内',
   onClose,
   onSearch,
   onSelect,
@@ -34,14 +36,14 @@ export function ReaderChapterSearch({
 
   return (
     <section
-      aria-label="章节内查找"
+      aria-label={`${scopeLabel}查找`}
       className="bg-surface absolute top-3 right-3 z-30 w-[min(28rem,calc(100%-1.5rem))] rounded-lg border p-3 shadow-lg"
     >
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold">章节内查找</h2>
+        <h2 className="text-sm font-semibold">{scopeLabel}查找</h2>
         <IconButton
           icon={<X aria-hidden="true" size={16} />}
-          label="关闭章节内查找"
+          label={`关闭${scopeLabel}查找`}
           onClick={onClose}
           variant="ghost"
         />
@@ -73,7 +75,13 @@ export function ReaderChapterSearch({
       </p>
       <ul className="mt-2 max-h-72 space-y-1 overflow-auto">
         {results.map((result) => (
-          <li key={result.locator.cfi}>
+          <li
+            key={
+              result.locator.format === 'epub'
+                ? result.locator.cfi
+                : `${String(result.locator.pageIndex)}:${String(result.locator.textRange?.start ?? 0)}`
+            }
+          >
             <button
               className="hover:bg-muted w-full rounded p-2 text-left text-sm"
               onClick={() => {

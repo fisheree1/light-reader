@@ -1,6 +1,7 @@
 import { AppError } from '../lib/app-error';
 import {
   bookLocatorSchema,
+  epubBookLocatorSchema,
   type BookLocator,
   type EbookReader,
   type ReaderTocItem,
@@ -323,7 +324,7 @@ export class FoliateEbookReader implements EbookReader {
   }
 
   async goTo(value: BookLocator): Promise<void> {
-    const locator = bookLocatorSchema.parse(value);
+    const locator = epubBookLocatorSchema.parse(value);
     const view = this.requireView();
     const fractionDestination =
       locator.progression === undefined
@@ -377,7 +378,8 @@ export class FoliateEbookReader implements EbookReader {
             version: 1,
             format: 'epub',
             cfi: result.cfi,
-            ...(this.currentLocator.chapterHref
+            ...(this.currentLocator.format === 'epub' &&
+            this.currentLocator.chapterHref
               ? { chapterHref: this.currentLocator.chapterHref }
               : {}),
           },
@@ -604,7 +606,11 @@ export class FoliateEbookReader implements EbookReader {
     if (!isRecord(detail) || typeof detail.index !== 'number') return;
     const chapterHref = this.view?.book?.sections?.[detail.index]?.id;
     for (const highlight of this.highlights.values()) {
-      if (chapterHref && highlight.locator.chapterHref !== chapterHref)
+      if (
+        chapterHref &&
+        (highlight.locator.format !== 'epub' ||
+          highlight.locator.chapterHref !== chapterHref)
+      )
         continue;
       void this.renderHighlight(highlight).catch(() => undefined);
     }
@@ -674,7 +680,10 @@ export class FoliateEbookReader implements EbookReader {
   }
 
   private requireHighlightCfi(highlight: ReaderHighlight): string {
-    const cfi = highlight.locator.cfi?.trim();
+    const cfi =
+      highlight.locator.format === 'epub'
+        ? highlight.locator.cfi?.trim()
+        : undefined;
     if (!cfi) throw new AppError('ANNOTATION_RENDER_FAILED');
     return cfi;
   }

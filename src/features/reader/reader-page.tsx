@@ -134,7 +134,7 @@ export function ReaderPage({ services = readerServices }: ReaderPageProps) {
         />
         <div className="min-w-0 flex-1 text-center">
           <h1 className="truncate text-sm font-semibold">
-            {book?.title ?? '正在打开 EPUB…'}
+            {book?.title ?? '正在打开电子书…'}
           </h1>
           {book ? (
             <p className="text-muted-foreground truncate text-xs">
@@ -152,7 +152,15 @@ export function ReaderPage({ services = readerServices }: ReaderPageProps) {
         <IconButton
           aria-pressed={isChapterSearchOpen}
           icon={<Search aria-hidden="true" size={17} />}
-          label={isChapterSearchOpen ? '关闭章节内查找' : '章节内查找'}
+          label={
+            isChapterSearchOpen
+              ? book?.format === 'pdf'
+                ? '关闭全文查找'
+                : '关闭章节内查找'
+              : book?.format === 'pdf'
+                ? '全文查找'
+                : '章节内查找'
+          }
           onClick={() => {
             setIsChapterSearchOpen((current) => {
               if (current) clearChapterSearch();
@@ -192,7 +200,9 @@ export function ReaderPage({ services = readerServices }: ReaderPageProps) {
           <aside className="bg-surface w-64 shrink-0 overflow-auto border-r p-3">
             <h2 className="mb-3 px-2 text-sm font-semibold">目录</h2>
             <ReaderTableOfContents
-              currentHref={locator.chapterHref}
+              currentHref={
+                locator.format === 'epub' ? locator.chapterHref : undefined
+              }
               items={toc}
               onSelect={(href) => {
                 void goToChapter(href);
@@ -203,7 +213,7 @@ export function ReaderPage({ services = readerServices }: ReaderPageProps) {
 
         <main className="relative min-w-0 flex-1">
           <section
-            aria-label="EPUB 正文"
+            aria-label={book?.format === 'pdf' ? 'PDF 正文' : 'EPUB 正文'}
             className="reader-render-host bg-surface h-full"
             ref={hostRef}
           />
@@ -212,6 +222,7 @@ export function ReaderPage({ services = readerServices }: ReaderPageProps) {
 
           {isChapterSearchOpen ? (
             <ReaderChapterSearch
+              scopeLabel={book?.format === 'pdf' ? '全文' : '章节内'}
               onClose={() => {
                 clearChapterSearch();
                 setIsChapterSearchOpen(false);
@@ -228,7 +239,7 @@ export function ReaderPage({ services = readerServices }: ReaderPageProps) {
               aria-live="polite"
               className="bg-background/90 absolute inset-0 grid place-items-center text-sm"
             >
-              正在打开 EPUB…
+              正在打开电子书…
             </div>
           ) : null}
 
@@ -246,7 +257,7 @@ export function ReaderPage({ services = readerServices }: ReaderPageProps) {
                     </Button>
                   </div>
                 }
-                description={error ?? '无法打开这本 EPUB。'}
+                description={error ?? '无法打开这本电子书。'}
                 icon={<RotateCcw size={28} />}
                 title="无法打开图书"
               />

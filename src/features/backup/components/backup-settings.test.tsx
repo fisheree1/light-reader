@@ -15,7 +15,7 @@ const prepared: PreparedBackup = {
     readingStates: 1,
   },
   createdAt: '2026-08-01T10:00:00.000Z',
-  schemaVersion: 9,
+  schemaVersion: 10,
   token: 'snapshot-1',
 };
 

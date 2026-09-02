@@ -53,6 +53,16 @@ function renderMarkdown(
     `- 作者：${book.author ?? '未知'}`,
     '',
   ];
+  const renderLocation = (annotation: Annotation): string => {
+    const locator = annotation.locator;
+    if (locator.format === 'epub') {
+      return locator.cfi ?? locator.chapterHref ?? '未知';
+    }
+    const range = locator.textRange
+      ? `，字符 ${String(locator.textRange.start)}-${String(locator.textRange.end)}`
+      : '';
+    return `第 ${String(locator.pageIndex + 1)} 页${range}`;
+  };
   for (const [index, annotation] of annotations.entries()) {
     lines.push(
       `## ${String(index + 1)}. ${annotation.chapterHref ?? '未知章节'}`,
@@ -61,7 +71,7 @@ function renderMarkdown(
       '',
       annotation.noteText ? `批注：${annotation.noteText}` : '批注：无',
       '',
-      `位置：${annotation.locator.cfi ?? annotation.locator.chapterHref ?? '未知'}`,
+      `位置：${renderLocation(annotation)}`,
       '',
     );
   }

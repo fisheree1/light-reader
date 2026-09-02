@@ -12,6 +12,10 @@ export const epubMetadataSchema = z.object({
 });
 
 export type EpubMetadata = z.infer<typeof epubMetadataSchema>;
+export const bookMetadataSchema = epubMetadataSchema;
+export type BookMetadata = z.infer<typeof bookMetadataSchema>;
+export const bookFormatSchema = z.enum(['epub', 'pdf']);
+export type BookFormat = z.infer<typeof bookFormatSchema>;
 
 const controlledBookPath = z
   .string()
@@ -37,18 +41,23 @@ const controlledCoverPath = z
     'Cover path must be inside the managed covers directory.',
   );
 
-export const bookSchema = z.object({
-  id: z.string().min(1),
-  title: z.string().trim().min(1),
-  author: z.string().trim().min(1).nullable(),
-  format: z.literal('epub'),
-  filePath: controlledBookPath,
-  fileHash: z.string().regex(/^[a-f0-9]{64}$/),
-  coverPath: controlledCoverPath.nullable(),
-  metadata: epubMetadataSchema,
-  fileSize: z.number().int().nonnegative(),
-  createdAt: z.number().int().nonnegative(),
-  updatedAt: z.number().int().nonnegative(),
-});
+export const bookSchema = z
+  .object({
+    id: z.string().min(1),
+    title: z.string().trim().min(1),
+    author: z.string().trim().min(1).nullable(),
+    format: bookFormatSchema,
+    filePath: controlledBookPath,
+    fileHash: z.string().regex(/^[a-f0-9]{64}$/),
+    coverPath: controlledCoverPath.nullable(),
+    metadata: bookMetadataSchema,
+    fileSize: z.number().int().nonnegative(),
+    createdAt: z.number().int().nonnegative(),
+    updatedAt: z.number().int().nonnegative(),
+  })
+  .refine((book) => book.filePath.endsWith(`/book.${book.format}`), {
+    message: 'Book format must match its managed file extension.',
+    path: ['filePath'],
+  });
 
 export type Book = z.infer<typeof bookSchema>;

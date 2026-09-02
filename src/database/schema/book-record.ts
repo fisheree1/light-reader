@@ -2,7 +2,8 @@ import { z } from 'zod';
 
 import {
   bookSchema,
-  epubMetadataSchema,
+  bookFormatSchema,
+  bookMetadataSchema,
   type Book,
 } from '../../features/library/domain/book';
 
@@ -10,7 +11,7 @@ export const bookRecordSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
   author: z.string().nullable(),
-  format: z.literal('epub'),
+  format: bookFormatSchema,
   file_path: z.string().min(1),
   file_hash: z.string().min(1),
   cover_path: z.string().nullable(),
@@ -26,12 +27,12 @@ export function mapBookRecord(value: unknown): Book {
   const record = bookRecordSchema.parse(value);
   let metadata;
   try {
-    metadata = epubMetadataSchema.parse(JSON.parse(record.metadata_json));
+    metadata = bookMetadataSchema.parse(JSON.parse(record.metadata_json));
   } catch {
     // Metadata is descriptive and must not make an otherwise valid managed book
     // disappear from the shelf. Preserve the authoritative columns and allow a
     // later metadata repair instead of crashing the whole list query.
-    metadata = epubMetadataSchema.parse({
+    metadata = bookMetadataSchema.parse({
       title: record.title,
       creators: record.author ? [record.author] : [],
       language: null,

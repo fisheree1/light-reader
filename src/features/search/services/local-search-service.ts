@@ -64,6 +64,7 @@ export class LocalSearchService {
       let indexedBooks = 0;
       let failedBooks = 0;
       for (const book of books) {
+        if (book.format !== 'epub') continue;
         if (await this.indexBook(book.id, book.filePath)) indexedBooks += 1;
         else failedBooks += 1;
       }
@@ -81,6 +82,7 @@ export class LocalSearchService {
     const indexed = new Set(indexedIds);
     let failures = 0;
     for (const book of books) {
+      if (book.format !== 'epub') continue;
       if (indexed.has(book.id)) continue;
       if (!(await this.indexBook(book.id, book.filePath))) failures += 1;
     }

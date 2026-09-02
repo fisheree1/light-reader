@@ -62,6 +62,12 @@ pub fn run() {
             sql: include_str!("../migrations/0009_bookmarks_and_reading_activity.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 10,
+            description: "allow managed PDF books",
+            sql: include_str!("../migrations/0010_pdf_books.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();

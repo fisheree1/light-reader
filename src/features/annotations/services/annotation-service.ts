@@ -70,7 +70,10 @@ export class AnnotationService {
       text: selection.text,
       textBefore: selection.textBefore,
       textAfter: selection.textAfter,
-      chapterHref: selection.locator.chapterHref ?? null,
+      chapterHref:
+        selection.locator.format === 'epub'
+          ? (selection.locator.chapterHref ?? null)
+          : null,
       locator: selection.locator,
       color,
       noteText: null,

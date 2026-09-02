@@ -14,6 +14,7 @@ import {
   createBookStoragePaths,
   type BookDeletionPaths,
   type CoverExtension,
+  type ManagedBookExtension,
 } from './book-paths';
 
 export interface ExtractedCover {
@@ -63,6 +64,7 @@ export interface BookFileStorage {
     bookId: string,
     bookData: Uint8Array,
     cover: ExtractedCover | null,
+    format?: ManagedBookExtension,
   ): Promise<StagedBookFiles>;
   commit(staged: StagedBookFiles): Promise<CommittedBookFiles>;
   rollback(staged: StagedBookFiles): Promise<void>;
@@ -91,8 +93,13 @@ export class TauriBookFileStorage
     bookId: string,
     bookData: Uint8Array,
     cover: ExtractedCover | null,
+    format: ManagedBookExtension = 'epub',
   ): Promise<StagedBookFiles> {
-    const paths = createBookStoragePaths(bookId, cover?.extension ?? null);
+    const paths = createBookStoragePaths(
+      bookId,
+      cover?.extension ?? null,
+      format,
+    );
 
     try {
       await mkdir(paths.stagingDirectory, {

@@ -7,7 +7,7 @@ use std::{
 
 static NEXT_DATABASE_ID: AtomicU64 = AtomicU64::new(0);
 
-const MIGRATIONS: [&str; 8] = [
+const MIGRATIONS: [&str; 10] = [
     include_str!("../migrations/0001_initial.sql"),
     include_str!("../migrations/0002_create_books.sql"),
     include_str!("../migrations/0003_reader_settings.sql"),
@@ -16,6 +16,8 @@ const MIGRATIONS: [&str; 8] = [
     include_str!("../migrations/0006_notes.sql"),
     include_str!("../migrations/0007_local_search.sql"),
     include_str!("../migrations/0008_library_management.sql"),
+    include_str!("../migrations/0009_bookmarks_and_reading_activity.sql"),
+    include_str!("../migrations/0010_pdf_books.sql"),
 ];
 
 fn temporary_database_path() -> PathBuf {
@@ -123,6 +125,94 @@ async fn old_database_upgrades_sequentially_without_losing_records() {
             .await
             .expect("upgraded FTS should contain new note");
     assert_eq!(indexed, 1);
+
+    sqlx::query(
+        r#"INSERT INTO books (
+          id, title, author, format, file_path, file_hash, cover_path,
+          metadata_json, file_size, created_at, updated_at
+        ) VALUES ('pdf-book', 'PDF book', NULL, 'pdf',
+          'light-reader/books/pdf-book/book.pdf', ?, NULL, ?, 5, 2, 2)"#,
+    )
+    .bind("p".repeat(64))
+    .bind(r#"{"title":"PDF book","creators":[],"language":null,"publisher":null,"description":null,"identifier":null}"#)
+    .execute(&mut connection)
+    .await
+    .expect("PDF book should be accepted after migration");
+    let foreign_key_failures: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM pragma_foreign_key_check")
+            .fetch_one(&mut connection)
+            .await
+            .expect("upgraded foreign keys should remain valid");
+    assert_eq!(foreign_key_failures, 0);
+
+    connection.close().await.expect("database should close");
+    std::fs::remove_file(path).expect("test database should be removable");
+}
+
+#[tokio::test]
+async fn pdf_migration_preserves_all_book_dependents() {
+    let path = temporary_database_path();
+    let mut connection = connect(&path).await;
+    connection
+        .execute("PRAGMA foreign_keys = ON")
+        .await
+        .expect("foreign keys should enable");
+    for migration in &MIGRATIONS[..9] {
+        connection
+            .execute(*migration)
+            .await
+            .expect("pre-PDF migration should apply");
+    }
+    insert_book(&mut connection, "linked-book", "Linked", 'l', 10).await;
+    connection
+        .execute(
+            r#"INSERT INTO book_reader_settings
+              (book_id, theme, font_size, line_height, content_width, margin, updated_at)
+              VALUES ('linked-book', 'dark', NULL, NULL, NULL, NULL, 11);
+              INSERT INTO reading_states (book_id, locator_json, progression, updated_at)
+              VALUES ('linked-book', '{"version":1,"format":"epub","progression":0.2}', 0.2, 12);
+              INSERT INTO annotations
+              (id, book_id, text, locator_json, color, created_at, updated_at)
+              VALUES ('linked-annotation', 'linked-book', 'text',
+                '{"version":1,"format":"epub","cfi":"epubcfi(/6/2)"}', 'yellow', 13, 13);
+              INSERT INTO book_tags (book_id, tag, created_at)
+              VALUES ('linked-book', 'tag', 14);
+              INSERT INTO bookmarks (id, book_id, name, locator_json, created_at, updated_at)
+              VALUES ('linked-bookmark', 'linked-book', 'mark',
+                '{"version":1,"format":"epub","progression":0.2}', 15, 15);
+              INSERT INTO reading_sessions
+              (id, book_id, started_at, ended_at, duration_seconds)
+              VALUES ('linked-session', 'linked-book', 16, 26, 10);"#,
+        )
+        .await
+        .expect("dependent records should seed");
+
+    connection
+        .execute(MIGRATIONS[9])
+        .await
+        .expect("PDF migration should apply");
+
+    for table in [
+        "book_reader_settings",
+        "reading_states",
+        "annotations",
+        "book_tags",
+        "bookmarks",
+        "reading_sessions",
+    ] {
+        let query = format!("SELECT COUNT(*) FROM {table} WHERE book_id = 'linked-book'");
+        let count: i64 = sqlx::query_scalar(&query)
+            .fetch_one(&mut connection)
+            .await
+            .expect("dependent record should remain queryable");
+        assert_eq!(count, 1, "{table} record should survive PDF migration");
+    }
+    let foreign_key_failures: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM pragma_foreign_key_check")
+            .fetch_one(&mut connection)
+            .await
+            .expect("foreign keys should remain inspectable");
+    assert_eq!(foreign_key_failures, 0);
 
     connection.close().await.expect("database should close");
     std::fs::remove_file(path).expect("test database should be removable");

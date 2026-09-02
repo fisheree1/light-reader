@@ -8,7 +8,7 @@ description: Integrate or evolve LightReader ebook rendering for EPUB, PDF, navi
 ## Inspect before installing
 
 1. Read repository `AGENTS.md`, `src/reader-engines/types.ts`, storage boundaries, CSP, affected UI, and tests.
-2. Confirm the active task explicitly authorizes Foliate JS or PDF.js; the project intentionally defers both dependencies.
+2. Reuse the pinned Foliate JS and PDF.js integrations. Confirm explicit authorization before adding or replacing a reader dependency.
 3. Read [foliate-js.md](references/foliate-js.md) for EPUB or [pdf-js.md](references/pdf-js.md) for PDF. Re-check upstream current documentation before choosing a version or commit.
 4. Load `$lightreader-extend-feature` for product UI and `$lightreader-evolve-data-platform` if locators or annotations require persistence.
 5. Load the project-local [$lightreader-verify-efficiently](../lightreader-verify-efficiently/SKILL.md) before selecting final verification commands.

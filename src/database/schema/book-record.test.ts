@@ -77,4 +77,29 @@ describe('mapBookRecord', () => {
       metadata: { title: '测试书', creators: ['作者'] },
     });
   });
+
+  it('maps a managed PDF record', () => {
+    const book = mapBookRecord({
+      id: 'pdf-1',
+      title: 'PDF 文档',
+      author: null,
+      format: 'pdf',
+      file_path: 'light-reader/books/pdf-1/book.pdf',
+      file_hash: 'b'.repeat(64),
+      cover_path: null,
+      metadata_json: JSON.stringify({
+        title: 'PDF 文档',
+        creators: [],
+        language: null,
+        publisher: null,
+        description: null,
+        identifier: null,
+      }),
+      file_size: 42,
+      created_at: 10,
+      updated_at: 10,
+    });
+    expect(book.format).toBe('pdf');
+    expect(book.filePath).toMatch(/pdf$/);
+  });
 });

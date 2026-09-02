@@ -31,7 +31,10 @@ function createAnnotation(overrides: Partial<Annotation> = {}): Annotation {
     text: selection.text,
     textBefore: selection.textBefore,
     textAfter: selection.textAfter,
-    chapterHref: selection.locator.chapterHref ?? null,
+    chapterHref:
+      selection.locator.format === 'epub'
+        ? (selection.locator.chapterHref ?? null)
+        : null,
     locator: selection.locator,
     color: 'yellow',
     noteText: null,

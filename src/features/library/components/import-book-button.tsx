@@ -14,7 +14,7 @@ export function ImportBookButton({
   return (
     <Button aria-busy={isImporting} disabled={isImporting} onClick={onImport}>
       <Upload aria-hidden="true" size={16} />
-      {isImporting ? '正在导入…' : '导入 EPUB'}
+      {isImporting ? '正在导入…' : '导入电子书'}
     </Button>
   );
 }

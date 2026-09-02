@@ -7,8 +7,11 @@ const nullableText = (max: number) => z.string().max(max).nullable();
 export const annotationColorSchema = z.enum(['yellow', 'blue', 'green', 'red']);
 
 export const annotationLocatorSchema = bookLocatorSchema.refine(
-  (locator) => locator.cfi !== undefined,
-  'An annotation locator must contain an EPUB CFI.',
+  (locator) =>
+    locator.format === 'epub'
+      ? locator.cfi !== undefined
+      : locator.textRange !== undefined,
+  'An annotation locator must contain an EPUB CFI or PDF text range.',
 );
 
 export const annotationSchema = z.object({

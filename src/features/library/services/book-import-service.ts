@@ -6,7 +6,13 @@ import type {
   StagedBookFiles,
 } from '../../../storage/book-file-storage';
 import { AppError, asAppError, isAppError } from '../../../lib/app-error';
-import { bookSchema, type Book } from '../domain/book';
+import {
+  bookMetadataSchema,
+  bookSchema,
+  type Book,
+  type BookFormat,
+} from '../domain/book';
+import { fallbackTitleFromFileName } from '../../../storage/book-paths';
 import type { EpubMetadataParser } from './epub-metadata-parser';
 import { assertEpubFileSize, MAX_EPUB_FILE_SIZE } from './epub-limits';
 
@@ -16,6 +22,7 @@ export type ImportBookResult =
   | { status: 'duplicate'; book: Book };
 
 export interface BookImporter {
+  importBook?(): Promise<ImportBookResult>;
   importEpub(): Promise<ImportBookResult>;
 }
 
@@ -28,6 +35,13 @@ interface BookImportDependencies {
   now?: () => number;
   repository: BookRepository;
   maxFileSize?: number;
+}
+
+function detectBookFormat(fileName: string): BookFormat {
+  const normalized = fileName.toLowerCase();
+  if (normalized.endsWith('.epub')) return 'epub';
+  if (normalized.endsWith('.pdf')) return 'pdf';
+  throw new AppError('UNSUPPORTED_FILE_TYPE');
 }
 
 export class BookImportService implements BookImporter {
@@ -44,16 +58,20 @@ export class BookImportService implements BookImporter {
   }
 
   async importEpub(): Promise<ImportBookResult> {
+    return this.importBook();
+  }
+
+  async importBook(): Promise<ImportBookResult> {
     let selected;
     try {
-      selected = await this.dependencies.dialog.selectEpub();
+      selected = this.dependencies.dialog.selectBook
+        ? await this.dependencies.dialog.selectBook()
+        : await this.dependencies.dialog.selectEpub();
     } catch (error) {
       throw new AppError('UNKNOWN', { cause: error });
     }
     if (!selected) return { status: 'cancelled' };
-    if (!selected.fileName.toLowerCase().endsWith('.epub')) {
-      throw new AppError('UNSUPPORTED_FILE_TYPE');
-    }
+    const format = detectBookFormat(selected.fileName);
 
     let source: Uint8Array;
     try {
@@ -64,18 +82,42 @@ export class BookImportService implements BookImporter {
       source = await this.dependencies.fileStorage.readSource(selected.path);
       assertEpubFileSize(source.byteLength, this.maxFileSize);
     } catch (error) {
-      if (isAppError(error)) throw error;
+      if (isAppError(error)) {
+        if (format === 'pdf' && error.code === 'EPUB_TOO_LARGE') {
+          throw new AppError('PDF_TOO_LARGE', { cause: error });
+        }
+        throw error;
+      }
       throw new AppError('FILE_READ_FAILED', { cause: error });
+    }
+    if (
+      format === 'pdf' &&
+      new TextDecoder('latin1').decode(source.subarray(0, 5)) !== '%PDF-'
+    ) {
+      throw new AppError('INVALID_PDF');
     }
 
     const fileHash = await this.dependencies.hasher.sha256(source);
     const duplicate = await this.dependencies.repository.findByHash(fileHash);
     if (duplicate) return { status: 'duplicate', book: duplicate };
 
-    const parsed = await this.dependencies.metadataParser.parse(
-      source,
-      selected.fileName,
-    );
+    const parsed =
+      format === 'epub'
+        ? await this.dependencies.metadataParser.parse(
+            source,
+            selected.fileName,
+          )
+        : {
+            metadata: bookMetadataSchema.parse({
+              title: fallbackTitleFromFileName(selected.fileName),
+              creators: [],
+              language: null,
+              publisher: null,
+              description: null,
+              identifier: null,
+            }),
+            cover: null,
+          };
     const id = this.idGenerator();
     const timestamp = this.now();
 
@@ -85,6 +127,7 @@ export class BookImportService implements BookImporter {
         id,
         source,
         parsed.cover,
+        format,
       );
     } catch (error) {
       throw new AppError('FILE_WRITE_FAILED', { cause: error });
@@ -92,8 +135,8 @@ export class BookImportService implements BookImporter {
 
     let committed;
     try {
-      // Finalize files before inserting the row so the database never points at a
-      // missing EPUB. A crash can leave an orphan file, never a broken shelf row.
+      // Finalize files before inserting the row so the database never points at
+      // a missing book. A crash can leave an orphan, never a broken shelf row.
       committed = await this.dependencies.fileStorage.commit(staged);
     } catch (error) {
       await this.dependencies.fileStorage.rollback(staged);
@@ -106,7 +149,7 @@ export class BookImportService implements BookImporter {
         id,
         title: parsed.metadata.title,
         author: parsed.metadata.creators.join(', ') || null,
-        format: 'epub',
+        format,
         filePath: committed.bookPath,
         fileHash,
         coverPath: committed.coverPath,
@@ -140,7 +183,7 @@ export class BookImportService implements BookImporter {
         persisted = await this.dependencies.repository.findById(id);
       } catch (verificationError) {
         // The insert outcome is unknown. Retain the managed files because a row
-        // may exist; an orphan is recoverable, a missing referenced EPUB is not.
+        // may exist; an orphan is recoverable, a missing referenced book is not.
         throw new AppError('DATABASE_WRITE_FAILED', {
           cause: { createError: error, verificationError },
         });

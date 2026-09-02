@@ -15,7 +15,9 @@ import type { ReaderSettingsRepository } from '../../../database/repositories/re
 import { SqliteReaderSettingsRepository } from '../../../database/repositories/sqlite-reader-settings-repository';
 import { WebReaderSettingsRepository } from '../../../database/repositories/web-reader-settings-repository';
 import { FoliateEbookReader } from '../../../reader-engines/foliate-ebook-reader';
+import { PdfEbookReader } from '../../../reader-engines/pdf-ebook-reader';
 import type { EbookReader } from '../../../reader-engines/types';
+import type { BookFormat } from '../../library/domain/book';
 import type { FileExportPlatform } from '../../../platform/export/file-export-platform';
 import {
   TauriFileExportPlatform,
@@ -32,7 +34,7 @@ import { WebReaderBookSource } from './web-reader-book-source';
 export interface ReaderServices {
   annotationRepository: AnnotationRepository;
   bookmarkRepository?: BookmarkRepository;
-  createReader(): EbookReader;
+  createReader(format: BookFormat): EbookReader;
   exportPlatform?: FileExportPlatform;
   noteRepository?: NoteRepository;
   repository: BookRepository;
@@ -57,7 +59,8 @@ export const readerServices: ReaderServices = {
     ? new SqliteReaderSettingsRepository()
     : new WebReaderSettingsRepository(),
   source: isTauri() ? new TauriReaderBookSource() : new WebReaderBookSource(),
-  createReader: () => new FoliateEbookReader(),
+  createReader: (format) =>
+    format === 'pdf' ? new PdfEbookReader() : new FoliateEbookReader(),
   exportPlatform: isTauri()
     ? new TauriFileExportPlatform()
     : new WebFileExportPlatform(),

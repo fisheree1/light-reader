@@ -7,7 +7,7 @@ use std::{
 };
 use tauri::{AppHandle, Manager};
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 9;
+pub const CURRENT_SCHEMA_VERSION: i64 = 10;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -405,16 +405,19 @@ async fn reconcile_deletion_journals(app: &AppHandle) -> Result<(), String> {
 
 async fn validate_managed_book_files_at(app_data: &Path, database: &Path) -> Result<(), String> {
     let mut connection = connect(database, false).await?;
-    let rows: Vec<(String, String, Option<String>, i64)> =
-        sqlx::query_as("SELECT id, file_path, cover_path, file_size FROM books")
+    let rows: Vec<(String, String, String, Option<String>, i64)> =
+        sqlx::query_as("SELECT id, format, file_path, cover_path, file_size FROM books")
             .fetch_all(&mut connection)
             .await
             .map_err(|error| error.to_string())?;
-    for (id, book_path, cover_path, expected_size) in rows {
+    for (id, format, book_path, cover_path, expected_size) in rows {
         if !safe_generated_id(&id) {
             return Err("backup contains an unsafe book id".to_string());
         }
-        let expected_book_path = format!("light-reader/books/{id}/book.epub");
+        if format != "epub" && format != "pdf" {
+            return Err("backup contains an unsupported book format".to_string());
+        }
+        let expected_book_path = format!("light-reader/books/{id}/book.{format}");
         if book_path != expected_book_path {
             return Err("backup contains a book path outside managed storage".to_string());
         }
@@ -422,7 +425,7 @@ async fn validate_managed_book_files_at(app_data: &Path, database: &Path) -> Res
             .join("light-reader")
             .join("books")
             .join(&id)
-            .join("book.epub");
+            .join(format!("book.{format}"));
         let book_metadata = fs::metadata(managed_book_path)
             .map_err(|_| "a book file required by this backup is missing".to_string())?;
         if expected_size < 0 || book_metadata.len() != expected_size as u64 {
@@ -785,6 +788,7 @@ mod tests {
             include_str!("../migrations/0007_local_search.sql"),
             include_str!("../migrations/0008_library_management.sql"),
             include_str!("../migrations/0009_bookmarks_and_reading_activity.sql"),
+            include_str!("../migrations/0010_pdf_books.sql"),
         ] {
             connection
                 .execute(migration)
@@ -1103,6 +1107,38 @@ mod tests {
         assert!(validate_managed_book_files_at(&app_data, &database_path)
             .await
             .is_err());
+
+        fs::remove_file(database_path).expect("database should be removed");
+        fs::remove_dir_all(app_data).expect("app data should be removed");
+    }
+
+    #[tokio::test]
+    async fn restore_preflight_accepts_a_managed_pdf() {
+        let database_path = temporary_path("managed-pdf-database");
+        let app_data = temporary_path("managed-pdf-appdata");
+        let mut database = apply_schema(&database_path).await;
+        sqlx::query(
+            r#"INSERT INTO books (
+              id, title, author, format, file_path, file_hash, cover_path,
+              metadata_json, file_size, created_at, updated_at
+            ) VALUES ('pdf-book', 'PDF book', NULL, 'pdf',
+              'light-reader/books/pdf-book/book.pdf', ?, NULL, ?, 8, 1, 1)"#,
+        )
+        .bind("d".repeat(64))
+        .bind(r#"{"title":"PDF book","creators":[],"language":null,"publisher":null,"description":null,"identifier":null}"#)
+        .execute(&mut database)
+        .await
+        .expect("PDF row should seed");
+        database.close().await.expect("database should close");
+
+        let book_directory = app_data.join("light-reader").join("books").join("pdf-book");
+        fs::create_dir_all(&book_directory).expect("PDF directory should create");
+        fs::write(book_directory.join("book.pdf"), b"%PDF-1\nx")
+            .expect("managed PDF should create");
+
+        validate_managed_book_files_at(&app_data, &database_path)
+            .await
+            .expect("matching managed PDF should pass");
 
         fs::remove_file(database_path).expect("database should be removed");
         fs::remove_dir_all(app_data).expect("app data should be removed");

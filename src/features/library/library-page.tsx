@@ -32,13 +32,13 @@ export function LibraryPage({ services = libraryServices }: LibraryPageProps) {
         <div>
           <h1 className="text-2xl font-semibold">书架</h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            本地图书保存在应用受控目录中，目前支持 EPUB。
+            本地图书保存在应用受控目录中，支持 EPUB 和 PDF。
           </p>
         </div>
         <ImportBookButton
           isImporting={library.isImporting}
           onImport={() => {
-            void library.importEpub();
+            void library.importBook();
           }}
         />
       </header>
@@ -140,7 +140,7 @@ export function LibraryPage({ services = libraryServices }: LibraryPageProps) {
         />
       ) : library.books.length === 0 ? (
         <EmptyState
-          description="点击右上角“导入 EPUB”，把本地图书添加到书架。"
+          description="点击右上角“导入电子书”，把 EPUB 或 PDF 添加到书架。"
           icon={<BookOpen size={28} />}
           title="书架还是空的"
         />

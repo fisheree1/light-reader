@@ -1,4 +1,5 @@
 export type CoverExtension = 'gif' | 'jpeg' | 'png' | 'webp';
+export type ManagedBookExtension = 'epub' | 'pdf';
 
 export interface BookStoragePaths {
   finalBookPath: string;
@@ -30,6 +31,7 @@ function requireSafeGeneratedId(value: string, label: string): void {
 export function createBookStoragePaths(
   bookId: string,
   coverExtension: CoverExtension | null,
+  bookExtension: ManagedBookExtension = 'epub',
 ): BookStoragePaths {
   requireSafeGeneratedId(bookId, 'Book ID');
 
@@ -38,12 +40,12 @@ export function createBookStoragePaths(
 
   return {
     stagingDirectory,
-    stagingBookPath: `${stagingDirectory}/book.epub`,
+    stagingBookPath: `${stagingDirectory}/book.${bookExtension}`,
     stagingCoverPath: coverExtension
       ? `${stagingDirectory}/cover.${coverExtension}`
       : null,
     finalDirectory,
-    finalBookPath: `${finalDirectory}/book.epub`,
+    finalBookPath: `${finalDirectory}/book.${bookExtension}`,
     finalCoverPath: coverExtension
       ? `light-reader/covers/${bookId}.${coverExtension}`
       : null,
@@ -59,7 +61,10 @@ export function createBookDeletionPaths(
   requireSafeGeneratedId(bookId, 'Book ID');
   requireSafeGeneratedId(deletionId, 'Deletion ID');
   const originalBookDirectory = `light-reader/books/${bookId}`;
-  if (bookPath !== `${originalBookDirectory}/book.epub`) {
+  if (
+    bookPath !== `${originalBookDirectory}/book.epub` &&
+    bookPath !== `${originalBookDirectory}/book.pdf`
+  ) {
     throw new Error('Book file is outside its managed directory.');
   }
 
@@ -91,7 +96,7 @@ export function fileNameFromPath(path: string): string {
 export function fallbackTitleFromFileName(fileName: string): string {
   const title = fileName
     .trim()
-    .replace(/\.epub$/i, '')
+    .replace(/\.(?:epub|pdf)$/i, '')
     .trim();
   return title || '未命名图书';
 }

@@ -115,6 +115,7 @@ export function useReader(
       } catch (reason) {
         if (
           value.progression !== undefined &&
+          value.format === 'epub' &&
           (value.cfi !== undefined || value.chapterHref !== undefined)
         ) {
           try {
@@ -161,7 +162,7 @@ export function useReader(
           setBook(foundBook);
           setBookmarks(savedBookmarks);
           hydrateSettings(bookId, globalSettings, override);
-          reader = services.createReader();
+          reader = services.createReader(foundBook.format);
           readerRef.current = reader;
           reader.mount(sessionHost);
 
@@ -506,6 +507,7 @@ export function useReader(
   const searchCurrentChapter = useCallback(
     async (query: string): Promise<ReaderSearchResult[]> => {
       const reader = readerRef.current;
+      if (reader?.search) return reader.search(query);
       return reader?.searchCurrentChapter
         ? reader.searchCurrentChapter(query)
         : [];

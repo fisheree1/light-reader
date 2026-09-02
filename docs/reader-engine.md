@@ -1,4 +1,4 @@
-# EPUB reader engine
+# EPUB and PDF reader engines
 
 LightReader integrates [Foliate JS](https://github.com/johnfactotum/foliate-js)
 at commit `78914aef4466eb960965702401634c2cb348e9b1`. The upstream project does not
@@ -10,7 +10,8 @@ rerun adapter, E2E and Tauri checks.
 ```text
 ReaderPage / useReader
   -> EbookReader
-     -> FoliateEbookReader
+     -> FoliateEbookReader (EPUB)
+     -> PdfEbookReader (PDF.js)
   -> ReaderBookSource
      -> TauriBookFileStorage (AppData)
   -> BookRepository
@@ -23,10 +24,10 @@ ReaderPage / useReader
      -> NoteRepository
 ```
 
-React does not import Foliate or Tauri modules. Custom elements, upstream event
-payloads, Blob/File objects and renderer cleanup stay inside
-`FoliateEbookReader`. Tauri reads only the managed relative path already
-validated on the `Book` domain object.
+React does not import Foliate, PDF.js or Tauri modules. Custom elements,
+workers, upstream event payloads, Blob/File objects, canvases, text layers and
+renderer cleanup stay inside their engine adapter. Tauri reads only the managed
+relative path already validated on the `Book` domain object.
 
 The browser test runtime uses the same Foliate adapter with a minimal EPUB
 generated from LightReader-owned text. Only its source adapter is mocked.
@@ -36,13 +37,22 @@ generated from LightReader-owned text. Only its source adapter is mocked.
 Reader positions are JSON-safe domain values:
 
 ```ts
-interface BookLocator {
-  version: 1;
-  format: 'epub';
-  chapterHref?: string;
-  cfi?: string;
-  progression?: number; // inclusive 0..1
-}
+type BookLocator =
+  | {
+      version: 1;
+      format: 'epub';
+      chapterHref?: string;
+      cfi?: string;
+      progression?: number;
+    }
+  | {
+      version: 1;
+      format: 'pdf';
+      pageIndex: number; // zero based
+      withinPageProgression?: number;
+      textRange?: { start: number; end: number };
+      progression?: number;
+    };
 ```
 
 Foliate `relocate` details are validated and converted before leaving the
@@ -52,6 +62,25 @@ rendering and is written to `reading_states` through `ReaderSettingsRepository`.
 Writes are debounced by 600 ms, the final pending value is flushed on teardown,
 and a saved locator is restored before relocation persistence is subscribed.
 This prevents the renderer's initial relocation from overwriting a saved value.
+
+## PDF.js adapter
+
+`pdfjs-dist` is pinned in the package lock. Its main API is loaded only when a
+PDF reader opens, and the matching worker is emitted as a Vite-managed local
+asset. Each `PdfEbookReader` owns its worker and loading task; close and rapid
+book switching cancel page/text-layer work, release page resources, destroy the
+loading task and terminate the worker.
+
+The adapter creates lightweight placeholders for every page but renders only
+the current page and its immediate neighbors. It retains at most five rendered
+pages, caps canvas dimensions and total pixels, and keeps extracted text in a
+32-page LRU. The 2000-page performance contract verifies that initial parsing
+and canvas creation remain bounded instead of scaling with total page count.
+
+PDF.js text-layer DOM remains private. Selection is converted to normalized
+page character offsets; saved highlights and search results use those offsets
+with the page locator. PDF search scans extracted text and paints result ranges
+through the same overlay without persisting viewport coordinates.
 
 ## Reading appearance
 
@@ -118,8 +147,8 @@ the Annotation still exists, the restored highlight is activated as well.
    cannot mount over the current book.
 
 Vite excludes Foliate's dormant PDF, MOBI, FB2, CBZ, search and TTS dynamic
-modules from this EPUB-only build. Fixed-layout EPUB and the EPUB ZIP loader stay
-available.
+modules. PDF support comes from the independent PDF.js adapter; fixed-layout
+EPUB and the EPUB ZIP loader stay available.
 
 ## Content security
 

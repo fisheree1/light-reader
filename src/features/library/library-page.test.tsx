@@ -148,7 +148,7 @@ describe('LibraryPage', () => {
     expect(
       await screen.findByRole('heading', { name: '书架还是空的' }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '导入 EPUB' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '导入电子书' })).toBeEnabled();
   });
 
   it('shows a loading state while books are loading', () => {
@@ -176,7 +176,7 @@ describe('LibraryPage', () => {
     renderLibrary(createServices({ importEpub: () => pending }));
     await screen.findByRole('heading', { name: '书架还是空的' });
 
-    await user.click(screen.getByRole('button', { name: '导入 EPUB' }));
+    await user.click(screen.getByRole('button', { name: '导入电子书' }));
     expect(screen.getByRole('button', { name: '正在导入…' })).toBeDisabled();
   });
 
@@ -185,7 +185,7 @@ describe('LibraryPage', () => {
     renderLibrary(createServices());
     await screen.findByRole('heading', { name: '书架还是空的' });
 
-    await user.click(screen.getByRole('button', { name: '导入 EPUB' }));
+    await user.click(screen.getByRole('button', { name: '导入电子书' }));
 
     expect(await screen.findByRole('status')).toHaveTextContent('已导入书架');
     expect(
@@ -205,7 +205,7 @@ describe('LibraryPage', () => {
     );
     await screen.findByRole('button', { name: /打开《一本很长/ });
 
-    await user.click(screen.getByRole('button', { name: '导入 EPUB' }));
+    await user.click(screen.getByRole('button', { name: '导入电子书' }));
 
     expect(await screen.findByRole('status')).toHaveTextContent('已经在书架');
     expect(
@@ -230,12 +230,12 @@ describe('LibraryPage', () => {
     );
     await screen.findByRole('heading', { name: '书架还是空的' });
 
-    await user.click(screen.getByRole('button', { name: '导入 EPUB' }));
+    await user.click(screen.getByRole('button', { name: '导入电子书' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
       '不是有效的 EPUB',
     );
 
-    await user.click(screen.getByRole('button', { name: '导入 EPUB' }));
+    await user.click(screen.getByRole('button', { name: '导入电子书' }));
     await waitFor(() => {
       expect(screen.getByRole('status')).toHaveTextContent('已导入书架');
     });

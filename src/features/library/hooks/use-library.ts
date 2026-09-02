@@ -65,11 +65,13 @@ export function useLibrary(services: LibraryServices) {
     };
   }, [favoritesOnly, query, services.management, sort]);
 
-  const importEpub = useCallback(async () => {
+  const importBook = useCallback(async () => {
     setIsImporting(true);
     setNotice(null);
     try {
-      const result = await services.importer.importEpub();
+      const result = services.importer.importBook
+        ? await services.importer.importBook()
+        : await services.importer.importEpub();
       if (result.status === 'created') {
         await loadBooks();
         setNotice({
@@ -170,7 +172,8 @@ export function useLibrary(services: LibraryServices) {
     books,
     deleteBook,
     favoritesOnly,
-    importEpub,
+    importBook,
+    importEpub: importBook,
     isImporting,
     isLoading,
     loadBooks,

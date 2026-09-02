@@ -238,7 +238,7 @@ describe('ReaderPage', () => {
       createReader: () => reader,
     });
 
-    expect(screen.getAllByText('正在打开 EPUB…')).not.toHaveLength(0);
+    expect(screen.getAllByText('正在打开电子书…')).not.toHaveLength(0);
     expect(await screen.findByText(BOOK.title)).toBeInTheDocument();
   });
 

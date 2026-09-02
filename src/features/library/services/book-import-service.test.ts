@@ -98,8 +98,10 @@ class FakeStorage implements BookFileStorage {
   rollbackCount = 0;
   sourceSize = 3;
   sourceSizeFailure: Error | null = null;
+  source = new Uint8Array([1, 2, 3]);
   stageFailure: Error | null = null;
   stageCount = 0;
+  staged = STAGED;
 
   getSourceSize(): Promise<number> {
     if (this.sourceSizeFailure) return Promise.reject(this.sourceSizeFailure);
@@ -109,19 +111,32 @@ class FakeStorage implements BookFileStorage {
   readSource(): Promise<Uint8Array> {
     this.readCount += 1;
     if (this.readFailure) return Promise.reject(this.readFailure);
-    return Promise.resolve(new Uint8Array([1, 2, 3]));
+    return Promise.resolve(this.source);
   }
 
-  stage(): Promise<StagedBookFiles> {
+  stage(
+    _bookId: string,
+    _bookData: Uint8Array,
+    _cover: null,
+    format: 'epub' | 'pdf' = 'epub',
+  ): Promise<StagedBookFiles> {
     this.stageCount += 1;
     if (this.stageFailure) return Promise.reject(this.stageFailure);
-    return Promise.resolve(STAGED);
+    this.staged =
+      format === 'pdf'
+        ? {
+            ...STAGED,
+            stagingBookPath: 'light-reader/tmp/book-1/book.pdf',
+            finalBookPath: 'light-reader/books/book-1/book.pdf',
+          }
+        : STAGED;
+    return Promise.resolve(this.staged);
   }
 
   commit(): Promise<CommittedBookFiles> {
     if (this.commitFailure) return Promise.reject(new Error('copy failed'));
     return Promise.resolve({
-      bookPath: STAGED.finalBookPath,
+      bookPath: this.staged.finalBookPath,
       coverPath: null,
     });
   }
@@ -203,6 +218,36 @@ describe('BookImportService', () => {
       book: { id: 'book-1', title: '新图书', fileHash: HASH, fileSize: 3 },
     });
     expect(repository.books).toHaveLength(1);
+  });
+
+  it('imports a valid PDF without sending it through the EPUB parser', async () => {
+    const { dialog, fileStorage, metadataParser, subject } = createSubject();
+    dialog.selection = {
+      fileName: 'PDF Reference.pdf',
+      path: '/selected/PDF Reference.pdf',
+    };
+    fileStorage.source = new TextEncoder().encode('%PDF-1.7 fixture');
+    fileStorage.sourceSize = fileStorage.source.byteLength;
+    const parse = vi.spyOn(metadataParser, 'parse');
+
+    await expect(subject.importBook()).resolves.toMatchObject({
+      status: 'created',
+      book: {
+        format: 'pdf',
+        title: 'PDF Reference',
+        filePath: 'light-reader/books/book-1/book.pdf',
+      },
+    });
+    expect(parse).not.toHaveBeenCalled();
+  });
+
+  it('rejects a PDF extension with a missing PDF signature', async () => {
+    const { dialog, subject } = createSubject();
+    dialog.selection = { fileName: 'broken.pdf', path: '/selected/broken.pdf' };
+
+    await expect(subject.importBook()).rejects.toMatchObject({
+      code: 'INVALID_PDF',
+    } satisfies Partial<AppError>);
   });
 
   it('returns quietly when the user cancels', async () => {

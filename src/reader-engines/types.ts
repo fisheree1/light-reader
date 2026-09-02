@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const bookLocatorSchema = z.object({
+export const epubBookLocatorSchema = z.object({
   version: z.literal(1),
   format: z.literal('epub'),
   chapterHref: z.string().trim().min(1).optional(),
@@ -8,7 +8,33 @@ export const bookLocatorSchema = z.object({
   progression: z.number().min(0).max(1).optional(),
 });
 
-/** Stable, serializable reading position. Never store DOM or Foliate objects. */
+export const pdfTextRangeSchema = z
+  .object({
+    start: z.number().int().nonnegative(),
+    end: z.number().int().positive(),
+  })
+  .refine((range) => range.end > range.start, {
+    message: 'PDF text range end must be greater than start.',
+  });
+
+export const pdfBookLocatorSchema = z.object({
+  version: z.literal(1),
+  format: z.literal('pdf'),
+  /** Zero-based PDF page index. */
+  pageIndex: z.number().int().nonnegative(),
+  /** Optional vertical position within the page, from top (0) to bottom (1). */
+  withinPageProgression: z.number().min(0).max(1).optional(),
+  /** Stable character offsets in the normalized PDF.js text layer. */
+  textRange: pdfTextRangeSchema.optional(),
+  progression: z.number().min(0).max(1).optional(),
+});
+
+export const bookLocatorSchema = z.discriminatedUnion('format', [
+  epubBookLocatorSchema,
+  pdfBookLocatorSchema,
+]);
+
+/** Stable position. Never store DOM, Foliate, PDF.js, worker, or canvas state. */
 export type BookLocator = z.infer<typeof bookLocatorSchema>;
 
 export interface ReaderTocItem {
@@ -70,6 +96,7 @@ export interface EbookReader {
   goTo(locator: BookLocator): Promise<void>;
   previousPage(): Promise<void>;
   nextPage(): Promise<void>;
+  search?(query: string): Promise<ReaderSearchResult[]>;
   searchCurrentChapter?(query: string): Promise<ReaderSearchResult[]>;
   clearSearch?(): void;
   getCurrentLocator(): Promise<BookLocator>;

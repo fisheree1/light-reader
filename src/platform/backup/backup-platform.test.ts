@@ -2,7 +2,7 @@ import type { DatabaseBackupSummary } from '../../features/backup/domain/backup'
 import { TauriBackupPlatform } from './backup-platform';
 
 const summary: DatabaseBackupSummary = {
-  schemaVersion: 9,
+  schemaVersion: 10,
   counts: {
     annotations: 2,
     bookmarks: 0,

@@ -18,8 +18,11 @@ export const bookQuoteReferenceSchema = z.object({
   quote: z.string().trim().min(1).max(20_000),
   chapter: z.string().trim().max(2_000).nullable(),
   locator: bookLocatorSchema.refine(
-    (locator) => locator.cfi !== undefined,
-    'A book quote locator must contain an EPUB CFI.',
+    (locator) =>
+      locator.format === 'epub'
+        ? locator.cfi !== undefined
+        : locator.textRange !== undefined,
+    'A book quote locator must contain an EPUB CFI or PDF text range.',
   ),
 });
 

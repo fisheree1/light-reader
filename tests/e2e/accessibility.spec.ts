@@ -51,7 +51,7 @@ test('restores dialog focus and audits the Foliate content region', async ({
   page,
 }) => {
   await page.goto('/library');
-  await page.getByRole('button', { name: '导入 EPUB' }).click();
+  await page.getByRole('button', { name: '导入电子书' }).click();
   await page.getByRole('button', { name: '打开《Web 测试 EPUB》' }).click();
   await expect(page.getByRole('button', { name: '第一章' })).toBeVisible();
 

@@ -22,6 +22,22 @@ describe('book path helpers', () => {
     expect(() => createBookStoragePaths('folder/book', null)).toThrow();
   });
 
+  it('generates and accepts managed PDF paths', () => {
+    expect(createBookStoragePaths('pdf-1', null, 'pdf')).toMatchObject({
+      stagingBookPath: 'light-reader/tmp/pdf-1/book.pdf',
+      finalBookPath: 'light-reader/books/pdf-1/book.pdf',
+    });
+    expect(() =>
+      createBookDeletionPaths(
+        'pdf-1',
+        'light-reader/books/pdf-1/book.pdf',
+        null,
+        'delete-pdf-1',
+      ),
+    ).not.toThrow();
+    expect(fallbackTitleFromFileName('Reference.pdf')).toBe('Reference');
+  });
+
   it('normalizes source display names without using them as target paths', () => {
     expect(fileNameFromPath('C:\\Books\\Example.epub')).toBe('Example.epub');
     expect(fallbackTitleFromFileName(' Example.epub ')).toBe('Example');

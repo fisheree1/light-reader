@@ -76,6 +76,107 @@ body {
   height: 100%;
 }
 
+.pdf-reader {
+  position: relative;
+  height: 100%;
+  overflow: auto;
+  padding: 1px 16px;
+  overscroll-behavior: contain;
+}
+
+.pdf-page {
+  position: relative;
+  width: 100%;
+  min-height: 1px;
+  margin: 16px auto;
+  overflow: hidden;
+  background: white;
+  box-shadow: 0 1px 5px rgb(0 0 0 / 18%);
+}
+
+.pdf-page-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+.pdf-page .textLayer {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  overflow: clip;
+  color-scheme: only light;
+  line-height: 1;
+  text-align: initial;
+  letter-spacing: normal;
+  word-spacing: normal;
+  caret-color: CanvasText;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+.pdf-page .textLayer :is(span, br) {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+
+.pdf-page .textLayer > :not(.markedContent),
+.pdf-page .textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x))
+    scale(var(--min-font-size-inv));
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+}
+
+.pdf-page .textLayer .markedContent {
+  display: contents;
+}
+
+.pdf-page .textLayer ::selection {
+  color: transparent;
+  background: rgb(55 98 75 / 32%);
+}
+
+.pdf-page-overlay {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.pdf-search-highlight,
+.pdf-highlight {
+  position: absolute;
+  border: 0;
+  border-radius: 2px;
+  padding: 0;
+  opacity: 0.3;
+  mix-blend-mode: multiply;
+}
+
+.pdf-highlight-interactive {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.pdf-highlight-interactive:hover,
+.pdf-highlight-interactive:focus-visible {
+  opacity: 0.48;
+}
+
 .tiptap p.is-editor-empty:first-child::before {
   float: left;
   height: 0;

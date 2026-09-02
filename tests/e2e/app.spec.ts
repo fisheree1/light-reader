@@ -254,14 +254,14 @@ test('verifies the import interaction through the Web mock adapter', async ({
     page.getByRole('heading', { name: '书架还是空的' }),
   ).toBeVisible();
 
-  await page.getByRole('button', { name: '导入 EPUB' }).click();
+  await page.getByRole('button', { name: '导入电子书' }).click();
 
   await expect(page.getByRole('status')).toContainText('已导入书架');
   await expect(
     page.getByRole('button', { name: '打开《Web 测试 EPUB》' }),
   ).toBeVisible();
 
-  await page.getByRole('button', { name: '导入 EPUB' }).click();
+  await page.getByRole('button', { name: '导入电子书' }).click();
   await expect(page.getByRole('status')).toContainText('已经在书架');
 });
 
@@ -279,7 +279,7 @@ test('persists global reading settings and a per-book override', async ({
   await expect(page.getByLabel('字号')).toHaveValue('22');
 
   await page.goto('/library');
-  await page.getByRole('button', { name: '导入 EPUB' }).click();
+  await page.getByRole('button', { name: '导入电子书' }).click();
   await page.getByRole('button', { name: '打开《Web 测试 EPUB》' }).click();
   await expect(page.getByRole('button', { name: '第一章' })).toBeVisible();
 
@@ -296,7 +296,7 @@ test('completes the release user loop through the real Foliate Web engine', asyn
   page,
 }) => {
   await page.goto('/library');
-  await page.getByRole('button', { name: '导入 EPUB' }).click();
+  await page.getByRole('button', { name: '导入电子书' }).click();
   await page.getByRole('button', { name: '打开《Web 测试 EPUB》' }).click();
   await expect(page.getByRole('button', { name: '第一章' })).toBeVisible();
 
