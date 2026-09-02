@@ -19,6 +19,10 @@ export const appErrorMessages = {
   READER_SETTINGS_READ_FAILED: '无法加载阅读设置，将使用默认排版。',
   READER_SETTINGS_WRITE_FAILED: '无法保存阅读设置，请稍后重试。',
   READING_STATE_WRITE_FAILED: '无法保存当前阅读位置。',
+  BOOKMARK_READ_FAILED: '无法加载书签，请稍后重试。',
+  BOOKMARK_WRITE_FAILED: '无法保存书签，请稍后重试。',
+  BOOKMARK_NOT_FOUND: '这个书签已经不存在。',
+  READING_ACTIVITY_FAILED: '无法记录阅读时长，但不会影响继续阅读。',
   ANNOTATION_READ_FAILED: '无法加载高亮和批注，请稍后重试。',
   ANNOTATION_WRITE_FAILED: '无法保存高亮或批注，请稍后重试。',
   ANNOTATION_NOT_FOUND: '这条高亮已经不存在。',
@@ -38,6 +42,9 @@ export const appErrorMessages = {
   BACKUP_INVALID: '备份文件已损坏，或不是有效的 LightReader 备份。',
   BACKUP_VERSION_UNSUPPORTED: '此备份版本与当前 LightReader 不兼容。',
   BACKUP_RESTORE_FAILED: '无法恢复备份，原有数据已保留。',
+  BACKUP_CAPACITY_INSUFFICIENT: '可用空间不足，无法完成这次备份操作。',
+  EXPORT_CANCELLED: '',
+  EXPORT_FAILED: '无法导出内容，请检查保存位置后重试。',
   UNKNOWN: '发生了意外错误，请重试。',
 } as const;
 

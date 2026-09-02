@@ -4,6 +4,7 @@ import {
   type BookLocator,
   type EbookReader,
   type ReaderTocItem,
+  type ReaderSearchResult,
   type RelocationListener,
   type ReaderDisplayOptions,
   type ReaderHighlight,
@@ -32,6 +33,14 @@ interface FoliateViewElement extends HTMLElement {
   next(): Promise<void>;
   open(source: Blob): Promise<void>;
   prev(): Promise<void>;
+  search(options: { index: number; query: string }): AsyncIterable<
+    | string
+    | {
+        cfi?: string;
+        excerpt?: { match: string; post: string; pre: string };
+      }
+  >;
+  clearSearch(): void;
   getCFI(index: number, range: Range): string;
   addAnnotation(annotation: FoliateAnnotation): Promise<unknown>;
   deleteAnnotation(annotation: FoliateAnnotation): Promise<unknown>;
@@ -131,12 +140,20 @@ const themeColors = {
 function getReaderStyles(settings: ReaderDisplayOptions): string {
   const colors = themeColors[settings.theme];
   const colorScheme = settings.theme === 'dark' ? 'dark' : 'light';
+  const fontFamily =
+    settings.fontFamily === 'publisher'
+      ? 'inherit'
+      : settings.fontFamily === 'sans-serif'
+        ? 'system-ui, -apple-system, sans-serif'
+        : 'ui-serif, Georgia, serif';
   return `
     :root { color-scheme: ${colorScheme}; }
     html, body {
       background: ${colors.background} !important;
       color: ${colors.foreground} !important;
       font-size: ${String(settings.fontSize)}px !important;
+      font-family: ${fontFamily} !important;
+      font-weight: ${String(settings.fontWeight)} !important;
     }
     body { line-height: ${String(settings.lineHeight)} !important; }
     p, li, blockquote, dd { line-height: ${String(settings.lineHeight)} !important; }
@@ -216,6 +233,7 @@ export class FoliateEbookReader implements EbookReader {
     format: 'epub',
     progression: 0,
   };
+  private currentSectionIndex = 0;
   private host: HTMLElement | null = null;
   private highlightDraw: HighlightDraw | null = null;
   private lastSelection: ReaderTextSelection | null = null;
@@ -338,6 +356,43 @@ export class FoliateEbookReader implements EbookReader {
     }
   }
 
+  async searchCurrentChapter(query: string): Promise<ReaderSearchResult[]> {
+    const normalized = query.trim();
+    if (!normalized) {
+      this.clearSearch();
+      return [];
+    }
+    try {
+      const results: ReaderSearchResult[] = [];
+      for await (const result of this.requireView().search({
+        index: this.currentSectionIndex,
+        query: normalized,
+      })) {
+        if (typeof result === 'string' || !result.cfi || !result.excerpt) {
+          continue;
+        }
+        results.push({
+          excerpt: result.excerpt,
+          locator: {
+            version: 1,
+            format: 'epub',
+            cfi: result.cfi,
+            ...(this.currentLocator.chapterHref
+              ? { chapterHref: this.currentLocator.chapterHref }
+              : {}),
+          },
+        });
+      }
+      return results;
+    } catch (error) {
+      throw new AppError('READER_NAVIGATION_FAILED', { cause: error });
+    }
+  }
+
+  clearSearch(): void {
+    this.view?.clearSearch();
+  }
+
   getCurrentLocator(): Promise<BookLocator> {
     return Promise.resolve({ ...this.currentLocator });
   }
@@ -440,6 +495,7 @@ export class FoliateEbookReader implements EbookReader {
     const view = this.view;
     if (view) this.disposeView(view);
     this.currentLocator = { version: 1, format: 'epub', progression: 0 };
+    this.currentSectionIndex = 0;
     this.lastSelection = null;
     this.highlights.clear();
     this.highlightIdsByCfi.clear();
@@ -488,8 +544,12 @@ export class FoliateEbookReader implements EbookReader {
   }
 
   private readonly handleRelocation: EventListener = (event) => {
-    const locator = mapRelocation((event as CustomEvent<unknown>).detail);
+    const detail = (event as CustomEvent<unknown>).detail;
+    const locator = mapRelocation(detail);
     if (!locator) return;
+    if (isRecord(detail) && typeof detail.index === 'number') {
+      this.currentSectionIndex = detail.index;
+    }
     this.currentLocator = locator;
     for (const listener of this.listeners) listener({ ...locator });
   };

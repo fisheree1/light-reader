@@ -36,7 +36,7 @@ export class SqliteReaderSettingsRepository implements ReaderSettingsRepository 
     try {
       const database = await this.databaseProvider();
       const rows = await database.select<ReaderSettingsRecord[]>(
-        `SELECT theme, font_size, line_height, content_width, margin
+        `SELECT theme, font_family, font_weight, font_size, line_height, content_width, margin
          FROM reader_settings WHERE id = 1 LIMIT 1`,
       );
       if (!rows[0]) throw new Error('Missing global reader settings');
@@ -54,15 +54,18 @@ export class SqliteReaderSettingsRepository implements ReaderSettingsRepository 
       const database = await this.databaseProvider();
       await database.execute(
         `INSERT INTO reader_settings (
-          id, theme, font_size, line_height, content_width, margin, updated_at
-        ) VALUES (1, $1, $2, $3, $4, $5, $6)
+          id, theme, font_family, font_weight, font_size, line_height, content_width, margin, updated_at
+        ) VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8)
         ON CONFLICT(id) DO UPDATE SET
-          theme = excluded.theme, font_size = excluded.font_size,
+          theme = excluded.theme, font_family = excluded.font_family,
+          font_weight = excluded.font_weight, font_size = excluded.font_size,
           line_height = excluded.line_height,
           content_width = excluded.content_width, margin = excluded.margin,
           updated_at = excluded.updated_at`,
         [
           settings.theme,
+          settings.fontFamily,
+          settings.fontWeight,
           settings.fontSize,
           settings.lineHeight,
           settings.contentWidth,
@@ -83,7 +86,7 @@ export class SqliteReaderSettingsRepository implements ReaderSettingsRepository 
     try {
       const database = await this.databaseProvider();
       const rows = await database.select<BookReaderSettingsRecord[]>(
-        `SELECT theme, font_size, line_height, content_width, margin
+        `SELECT theme, font_family, font_weight, font_size, line_height, content_width, margin
          FROM book_reader_settings WHERE book_id = $1 LIMIT 1`,
         [id],
       );
@@ -107,16 +110,19 @@ export class SqliteReaderSettingsRepository implements ReaderSettingsRepository 
       const database = await this.databaseProvider();
       await database.execute(
         `INSERT INTO book_reader_settings (
-          book_id, theme, font_size, line_height, content_width, margin, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+          book_id, theme, font_family, font_weight, font_size, line_height, content_width, margin, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         ON CONFLICT(book_id) DO UPDATE SET
-          theme = excluded.theme, font_size = excluded.font_size,
+          theme = excluded.theme, font_family = excluded.font_family,
+          font_weight = excluded.font_weight, font_size = excluded.font_size,
           line_height = excluded.line_height,
           content_width = excluded.content_width, margin = excluded.margin,
           updated_at = excluded.updated_at`,
         [
           id,
           settings.theme ?? null,
+          settings.fontFamily ?? null,
+          settings.fontWeight ?? null,
           settings.fontSize ?? null,
           settings.lineHeight ?? null,
           settings.contentWidth ?? null,

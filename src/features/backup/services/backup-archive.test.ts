@@ -29,7 +29,14 @@ const database = Uint8Array.from([
 
 const summary = {
   schemaVersion: CURRENT_DATABASE_SCHEMA_VERSION,
-  counts: { annotations: 3, books: 1, notes: 2, readingStates: 1 },
+  counts: {
+    annotations: 3,
+    bookmarks: 0,
+    books: 1,
+    notes: 2,
+    readingSessions: 0,
+    readingStates: 1,
+  },
 };
 
 function zipFiles(files: Record<string, Uint8Array>): Promise<Uint8Array> {
@@ -67,6 +74,43 @@ describe('backup archive', () => {
       },
       summary,
     });
+  });
+
+  it('round-trips hashed EPUB and cover assets in a full backup', async () => {
+    const bookData = new TextEncoder().encode('epub-data');
+    const coverData = new TextEncoder().encode('cover-data');
+    const archive = await createBackupArchive({
+      appVersion: '0.1.0',
+      createdAt: new Date('2026-08-01T10:00:00.000Z'),
+      database,
+      hasher,
+      summary,
+      mode: 'full',
+      assets: [
+        {
+          bookId: 'book-1',
+          data: bookData,
+          kind: 'book',
+          managedPath: 'light-reader/books/book-1/book.epub',
+        },
+        {
+          bookId: 'book-1',
+          data: coverData,
+          kind: 'cover',
+          managedPath: 'light-reader/covers/book-1.png',
+        },
+      ],
+    });
+
+    const parsed = await parseBackupArchive(archive, hasher);
+    expect(parsed.manifest.contents.bookFiles).toBe(true);
+    expect(parsed.assets).toHaveLength(2);
+    expect(Array.from(parsed.assets[0]?.data ?? [])).toEqual(
+      Array.from(bookData),
+    );
+    expect(parsed.assets[1]?.metadata.managedPath).toBe(
+      'light-reader/covers/book-1.png',
+    );
   });
 
   it('rejects a damaged database payload', async () => {

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../../components/ui/button';
 import { asAppError } from '../../../lib/app-error';
 import type { PreparedBackup } from '../domain/backup';
+import type { BackupMode } from '../domain/backup';
 import type { BackupManager } from '../services/backup-service';
 
 type BackupStatus =
@@ -26,6 +27,7 @@ export function BackupSettings({ manager }: BackupSettingsProps) {
   const preparedRef = useRef<PreparedBackup | null>(null);
   const [status, setStatus] = useState<BackupStatus>('idle');
   const [message, setMessage] = useState('');
+  const [exportMode, setExportMode] = useState<BackupMode>('database');
 
   useEffect(
     () => () => {
@@ -45,7 +47,7 @@ export function BackupSettings({ manager }: BackupSettingsProps) {
     setStatus('exporting');
     setMessage('');
     try {
-      const result = await manager.exportBackup();
+      const result = await manager.exportBackup(exportMode);
       if (result.status === 'cancelled') {
         setStatus('idle');
         return;
@@ -111,8 +113,8 @@ export function BackupSettings({ manager }: BackupSettingsProps) {
     <section className="bg-surface mt-4 rounded-lg border p-5">
       <h2 className="font-medium">数据导出与备份</h2>
       <p className="text-muted-foreground mt-1 text-sm leading-6">
-        导出书籍元数据、阅读进度、高亮、批注、笔记和阅读设置。备份不包含 EPUB
-        与封面文件，也不会上传到云端。
+        数据库备份体积较小；完整备份额外包含 EPUB 和封面，可用于跨设备迁移。
+        两种备份都只保存在你选择的位置，不会上传到云端。
       </p>
 
       {!manager.available ? (
@@ -135,8 +137,23 @@ export function BackupSettings({ manager }: BackupSettingsProps) {
                 条阅读进度 · {prepared.counts.annotations} 条高亮/批注 ·{' '}
                 {prepared.counts.notes} 条笔记
               </p>
+              {prepared.mode === 'full' ? (
+                <p className="text-muted-foreground mt-1 text-sm">
+                  完整备份 · {prepared.assetCount ?? 0} 个文件 ·{' '}
+                  {((prepared.assetBytes ?? 0) / 1024 / 1024).toFixed(1)} MB ·{' '}
+                  {prepared.conflicts ?? 0} 个现有文件冲突
+                </p>
+              ) : (
+                <p className="text-muted-foreground mt-1 text-sm">
+                  仅数据库备份，不包含 EPUB 与封面。
+                </p>
+              )}
               <p className="text-destructive mt-3 text-sm">
-                确认恢复会替换当前本地数据库。恢复失败时当前数据不会被改写。
+                确认恢复会替换当前本地数据库
+                {prepared.mode === 'full'
+                  ? '，并以备份中的 EPUB 和封面替换同路径文件'
+                  : ''}
+                。恢复失败时会回滚到当前数据。
               </p>
             </div>
           </div>
@@ -160,6 +177,20 @@ export function BackupSettings({ manager }: BackupSettingsProps) {
         </div>
       ) : (
         <div className="mt-4 flex flex-wrap gap-3">
+          <label className="sr-only" htmlFor="backup-export-mode">
+            备份模式
+          </label>
+          <select
+            className="bg-background h-10 rounded-md border px-3 text-sm"
+            id="backup-export-mode"
+            onChange={(event) => {
+              setExportMode(event.currentTarget.value as BackupMode);
+            }}
+            value={exportMode}
+          >
+            <option value="database">仅数据库</option>
+            <option value="full">完整备份（含 EPUB 与封面）</option>
+          </select>
           <Button disabled={busy} onClick={() => void handleExport()}>
             <Download aria-hidden="true" size={16} />
             {status === 'exporting' ? '正在导出…' : '导出备份'}

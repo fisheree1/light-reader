@@ -12,6 +12,8 @@ import { SqliteReaderSettingsRepository } from './sqlite-reader-settings-reposit
 class FakeSettingsDatabase implements SqlDatabase {
   global: ReaderSettingsRecord = {
     theme: 'light',
+    font_family: 'serif',
+    font_weight: 400,
     font_size: 18,
     line_height: 1.6,
     content_width: 720,
@@ -24,18 +26,22 @@ class FakeSettingsDatabase implements SqlDatabase {
     if (query.includes('INSERT INTO reader_settings')) {
       this.global = {
         theme: String(values[0]),
-        font_size: Number(values[1]),
-        line_height: Number(values[2]),
-        content_width: Number(values[3]),
-        margin: Number(values[4]),
+        font_family: String(values[1]),
+        font_weight: Number(values[2]),
+        font_size: Number(values[3]),
+        line_height: Number(values[4]),
+        content_width: Number(values[5]),
+        margin: Number(values[6]),
       };
     } else if (query.includes('INSERT INTO book_reader_settings')) {
       this.overrides.set(String(values[0]), {
         theme: typeof values[1] === 'string' ? values[1] : null,
-        font_size: typeof values[2] === 'number' ? values[2] : null,
-        line_height: typeof values[3] === 'number' ? values[3] : null,
-        content_width: typeof values[4] === 'number' ? values[4] : null,
-        margin: typeof values[5] === 'number' ? values[5] : null,
+        font_family: typeof values[2] === 'string' ? values[2] : null,
+        font_weight: typeof values[3] === 'number' ? values[3] : null,
+        font_size: typeof values[4] === 'number' ? values[4] : null,
+        line_height: typeof values[5] === 'number' ? values[5] : null,
+        content_width: typeof values[6] === 'number' ? values[6] : null,
+        margin: typeof values[7] === 'number' ? values[7] : null,
       });
     } else if (query.startsWith('DELETE FROM book_reader_settings')) {
       this.overrides.delete(String(values[0]));

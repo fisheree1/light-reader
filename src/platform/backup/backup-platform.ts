@@ -17,6 +17,8 @@ import {
   databaseBackupSummarySchema,
   type DatabaseBackupSummary,
   type DatabaseRestoreOutcome,
+  type BackupAsset,
+  type BackupMode,
 } from '../../features/backup/domain/backup';
 import { fileNameFromPath } from '../../storage/book-paths';
 
@@ -31,11 +33,24 @@ export interface BackupPlatform {
   chooseImportPath(): Promise<SelectedBackupFile | null>;
   cleanupSnapshot(snapshotId: string): Promise<void>;
   createSnapshot(snapshotId: string): Promise<DatabaseBackupSummary>;
-  inspectSnapshot(snapshotId: string): Promise<DatabaseBackupSummary>;
+  inspectSnapshot(
+    snapshotId: string,
+    mode?: BackupMode,
+  ): Promise<DatabaseBackupSummary>;
+  availableSpace(): Promise<number>;
+  countManagedConflicts(paths: string[]): Promise<number>;
   readExternal(path: string): Promise<Uint8Array>;
+  readManaged(path: string): Promise<Uint8Array>;
   readSnapshot(snapshotId: string): Promise<Uint8Array>;
-  restoreSnapshot(snapshotId: string): Promise<DatabaseRestoreOutcome>;
-  stageSnapshot(snapshotId: string, database: Uint8Array): Promise<void>;
+  restoreSnapshot(
+    snapshotId: string,
+    mode?: BackupMode,
+  ): Promise<DatabaseRestoreOutcome>;
+  stageSnapshot(
+    snapshotId: string,
+    database: Uint8Array,
+    assets?: { metadata: BackupAsset; data: Uint8Array }[],
+  ): Promise<void>;
   writeExternal(path: string, archive: Uint8Array): Promise<void>;
 }
 
@@ -127,12 +142,37 @@ export class TauriBackupPlatform implements BackupPlatform {
     return invokeSummary('create_database_snapshot', snapshotId);
   }
 
-  inspectSnapshot(snapshotId: string): Promise<DatabaseBackupSummary> {
-    return invokeSummary('inspect_database_snapshot', snapshotId);
+  inspectSnapshot(
+    snapshotId: string,
+    mode: BackupMode = 'database',
+  ): Promise<DatabaseBackupSummary> {
+    return invokeSummary(
+      mode === 'full'
+        ? 'inspect_full_backup_snapshot'
+        : 'inspect_database_snapshot',
+      snapshotId,
+    );
+  }
+
+  availableSpace(): Promise<number> {
+    return invoke<number>('available_backup_space');
+  }
+
+  async countManagedConflicts(paths: string[]): Promise<number> {
+    const conflicts = await Promise.all(
+      paths.map((path) =>
+        exists(path, { baseDir: BaseDirectory.AppData }).catch(() => false),
+      ),
+    );
+    return conflicts.filter(Boolean).length;
   }
 
   readExternal(path: string): Promise<Uint8Array> {
     return readFile(path);
+  }
+
+  readManaged(path: string): Promise<Uint8Array> {
+    return readFile(path, { baseDir: BaseDirectory.AppData });
   }
 
   readSnapshot(snapshotId: string): Promise<Uint8Array> {
@@ -141,12 +181,18 @@ export class TauriBackupPlatform implements BackupPlatform {
     });
   }
 
-  async restoreSnapshot(snapshotId: string): Promise<DatabaseRestoreOutcome> {
+  async restoreSnapshot(
+    snapshotId: string,
+    mode: BackupMode = 'database',
+  ): Promise<DatabaseRestoreOutcome> {
     await this.closeDatabase();
     let restored: DatabaseBackupSummary | undefined;
     let restoreError: unknown;
     try {
-      restored = await this.restoreNative(snapshotId);
+      restored =
+        mode === 'full'
+          ? await invokeSummary('restore_full_backup_snapshot', snapshotId)
+          : await this.restoreNative(snapshotId);
     } catch (error) {
       restoreError = error;
     }
@@ -172,7 +218,11 @@ export class TauriBackupPlatform implements BackupPlatform {
     return { summary: restored, databaseState: 'ready' };
   }
 
-  async stageSnapshot(snapshotId: string, database: Uint8Array): Promise<void> {
+  async stageSnapshot(
+    snapshotId: string,
+    database: Uint8Array,
+    assets: { metadata: BackupAsset; data: Uint8Array }[] = [],
+  ): Promise<void> {
     const directory = snapshotDirectory(snapshotId);
     await this.cleanupSnapshot(snapshotId);
     await mkdir(directory, {
@@ -182,6 +232,15 @@ export class TauriBackupPlatform implements BackupPlatform {
     await writeFile(snapshotPath(snapshotId), database, {
       baseDir: BaseDirectory.AppData,
     });
+    for (const asset of assets) {
+      const path = `${directory}/${asset.metadata.archivePath}`;
+      const parent = path.slice(0, path.lastIndexOf('/'));
+      await mkdir(parent, {
+        baseDir: BaseDirectory.AppData,
+        recursive: true,
+      });
+      await writeFile(path, asset.data, { baseDir: BaseDirectory.AppData });
+    }
   }
 
   writeExternal(path: string, archive: Uint8Array): Promise<void> {
@@ -216,7 +275,19 @@ export class UnavailableBackupPlatform implements BackupPlatform {
     return this.unavailable();
   }
 
+  availableSpace(): Promise<number> {
+    return this.unavailable();
+  }
+
+  countManagedConflicts(): Promise<number> {
+    return this.unavailable();
+  }
+
   readExternal(): Promise<Uint8Array> {
+    return this.unavailable();
+  }
+
+  readManaged(): Promise<Uint8Array> {
     return this.unavailable();
   }
 

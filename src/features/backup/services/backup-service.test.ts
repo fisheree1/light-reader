@@ -9,6 +9,8 @@ import {
   type DatabaseRestoreOutcome,
 } from '../domain/backup';
 import { BackupService } from './backup-service';
+import type { BookRepository } from '../../../database/repositories/book-repository';
+import type { Book } from '../../library/domain/book';
 
 const database = Uint8Array.from([
   ...new TextEncoder().encode('SQLite format 3\0'),
@@ -16,7 +18,14 @@ const database = Uint8Array.from([
 ]);
 const summary: DatabaseBackupSummary = {
   schemaVersion: CURRENT_DATABASE_SCHEMA_VERSION,
-  counts: { annotations: 2, books: 1, notes: 3, readingStates: 1 },
+  counts: {
+    annotations: 2,
+    bookmarks: 0,
+    books: 1,
+    notes: 3,
+    readingSessions: 0,
+    readingStates: 1,
+  },
 };
 const hasher: ContentHasher = {
   sha256: () => Promise.resolve('a'.repeat(64)),
@@ -40,6 +49,15 @@ class FakeBackupPlatform implements BackupPlatform {
     databaseState: 'ready',
     summary,
   };
+  stagedAssetCount = 0;
+
+  availableSpace(): Promise<number> {
+    return Promise.resolve(1024 * 1024 * 1024);
+  }
+
+  countManagedConflicts(): Promise<number> {
+    return Promise.resolve(1);
+  }
 
   chooseExportPath(): Promise<SelectedBackupFile | null> {
     return Promise.resolve(this.exportSelection);
@@ -66,6 +84,10 @@ class FakeBackupPlatform implements BackupPlatform {
     return Promise.resolve(this.archive);
   }
 
+  readManaged(): Promise<Uint8Array> {
+    return Promise.resolve(new TextEncoder().encode('managed epub'));
+  }
+
   readSnapshot(): Promise<Uint8Array> {
     return Promise.resolve(database);
   }
@@ -76,8 +98,13 @@ class FakeBackupPlatform implements BackupPlatform {
       : Promise.resolve(this.restoreOutcome);
   }
 
-  stageSnapshot(_snapshotId: string, value: Uint8Array): Promise<void> {
+  stageSnapshot(
+    _snapshotId: string,
+    value: Uint8Array,
+    assets: unknown[] = [],
+  ): Promise<void> {
     this.stagedDatabase = value;
+    this.stagedAssetCount = assets.length;
     return Promise.resolve();
   }
 
@@ -126,6 +153,56 @@ describe('BackupService', () => {
     });
     expect(platform.stagedDatabase).toEqual(database);
     expect(platform.cleanupTokens).toEqual([]);
+  });
+
+  it('preflights and stages managed files for a full migration backup', async () => {
+    const platform = new FakeBackupPlatform();
+    const book: Book = {
+      id: 'book-1',
+      title: '迁移测试书',
+      author: null,
+      format: 'epub',
+      filePath: 'light-reader/books/book-1/book.epub',
+      fileHash: 'a'.repeat(64),
+      coverPath: null,
+      metadata: {
+        title: '迁移测试书',
+        creators: [],
+        language: null,
+        publisher: null,
+        description: null,
+        identifier: null,
+      },
+      fileSize: 12,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const bookRepository: BookRepository = {
+      create: (value) => Promise.resolve(value),
+      findById: () => Promise.resolve(book),
+      findByHash: () => Promise.resolve(null),
+      list: () => Promise.resolve([book]),
+      delete: () => Promise.resolve(),
+    };
+    const service = new BackupService(platform, hasher, {
+      appVersion: '0.1.0',
+      bookRepository,
+      createId: () => 'snapshot-1',
+      now: () => new Date('2026-08-01T10:00:00.000Z'),
+    });
+
+    await service.exportBackup('full');
+    const prepared = await service.prepareImport();
+
+    expect(prepared).toMatchObject({
+      status: 'prepared',
+      backup: {
+        mode: 'full',
+        assetCount: 1,
+        conflicts: 1,
+      },
+    });
+    expect(platform.stagedAssetCount).toBe(1);
   });
 
   it('restores a prepared backup and cleans its staged database', async () => {

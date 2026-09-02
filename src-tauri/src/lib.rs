@@ -56,6 +56,12 @@ pub fn run() {
             sql: include_str!("../migrations/0008_library_management.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 9,
+            description: "add bookmarks and reading activity",
+            sql: include_str!("../migrations/0009_bookmarks_and_reading_activity.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();
@@ -77,7 +83,10 @@ pub fn run() {
             backup::prepare_database_migration,
             backup::create_database_snapshot,
             backup::inspect_database_snapshot,
-            backup::restore_database_snapshot
+            backup::restore_database_snapshot,
+            backup::inspect_full_backup_snapshot,
+            backup::restore_full_backup_snapshot,
+            backup::available_backup_space
         ])
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())

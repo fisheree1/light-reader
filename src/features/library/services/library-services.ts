@@ -7,6 +7,10 @@ import { SqliteNoteRepository } from '../../../database/repositories/sqlite-note
 import { WebLibraryRepository } from '../../../database/repositories/web-library-repository';
 import { WebNoteRepository } from '../../../database/repositories/web-note-repository';
 import { WebReaderSettingsRepository } from '../../../database/repositories/web-reader-settings-repository';
+import { bookmarkSchema } from '../../reader/domain/bookmark';
+import { readingSessionSchema } from '../../reader/domain/reading-activity';
+import { WEB_BOOKMARKS_KEY } from '../../../database/repositories/web-bookmark-repository';
+import { WEB_READING_SESSIONS_KEY } from '../../../database/repositories/web-reading-activity-repository';
 import { WebCryptoContentHasher } from '../../../platform/crypto/content-hasher';
 import { TauriFileDialogAdapter } from '../../../platform/dialog/file-dialog-adapter';
 import {
@@ -64,7 +68,34 @@ class WebBookRepository implements BookRepository {
   }
 
   async delete(id: string): Promise<void> {
-    this.save((await this.list()).filter((book) => book.id !== id));
+    const bookmarks = localStorage.getItem(WEB_BOOKMARKS_KEY);
+    const sessions = localStorage.getItem(WEB_READING_SESSIONS_KEY);
+    try {
+      if (bookmarks) {
+        const retained = bookmarkSchema
+          .array()
+          .parse(JSON.parse(bookmarks))
+          .filter((bookmark) => bookmark.bookId !== id);
+        localStorage.setItem(WEB_BOOKMARKS_KEY, JSON.stringify(retained));
+      }
+      if (sessions) {
+        const retained = readingSessionSchema
+          .array()
+          .parse(JSON.parse(sessions))
+          .filter((session) => session.bookId !== id);
+        localStorage.setItem(
+          WEB_READING_SESSIONS_KEY,
+          JSON.stringify(retained),
+        );
+      }
+      this.save((await this.list()).filter((book) => book.id !== id));
+    } catch (error) {
+      if (bookmarks === null) localStorage.removeItem(WEB_BOOKMARKS_KEY);
+      else localStorage.setItem(WEB_BOOKMARKS_KEY, bookmarks);
+      if (sessions === null) localStorage.removeItem(WEB_READING_SESSIONS_KEY);
+      else localStorage.setItem(WEB_READING_SESSIONS_KEY, sessions);
+      throw error;
+    }
   }
 
   private save(books: Book[]) {

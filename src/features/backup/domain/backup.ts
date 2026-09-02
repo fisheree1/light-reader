@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
 export const BACKUP_FORMAT = 'lightreader-backup';
-export const BACKUP_FORMAT_VERSION = 1;
-export const CURRENT_DATABASE_SCHEMA_VERSION = 8;
+export const BACKUP_FORMAT_VERSION = 2;
+export const CURRENT_DATABASE_SCHEMA_VERSION = 9;
 export const BACKUP_FILE_EXTENSION = 'lightreader-backup';
 
 export const backupCountsSchema = z
@@ -11,6 +11,8 @@ export const backupCountsSchema = z
     books: z.number().int().nonnegative(),
     notes: z.number().int().nonnegative(),
     readingStates: z.number().int().nonnegative(),
+    bookmarks: z.number().int().nonnegative().default(0),
+    readingSessions: z.number().int().nonnegative().default(0),
   })
   .strict();
 
@@ -24,6 +26,26 @@ export const databaseBackupSummarySchema = z
   .strict();
 
 export type DatabaseBackupSummary = z.infer<typeof databaseBackupSummarySchema>;
+export type BackupMode = 'database' | 'full';
+
+export const backupAssetSchema = z
+  .object({
+    archivePath: z
+      .string()
+      .regex(/^assets\/light-reader\/(?:books|covers)\/[a-zA-Z0-9._/-]+$/)
+      .refine((path) => !path.split('/').includes('..')),
+    bookId: z.string().trim().min(1).max(128),
+    kind: z.enum(['book', 'cover']),
+    managedPath: z
+      .string()
+      .regex(/^light-reader\/(?:books|covers)\/[a-zA-Z0-9._/-]+$/)
+      .refine((path) => !path.split('/').includes('..')),
+    sha256: z.string().regex(/^[a-f0-9]{64}$/),
+    size: z.number().int().positive(),
+  })
+  .strict();
+
+export type BackupAsset = z.infer<typeof backupAssetSchema>;
 
 export interface DatabaseRestoreOutcome {
   databaseState: 'ready' | 'reopen-required';
@@ -41,7 +63,7 @@ export const backupManifestSchema = z
     contents: z
       .object({
         database: z.literal(true),
-        bookFiles: z.literal(false),
+        bookFiles: z.boolean(),
       })
       .strict(),
     counts: backupCountsSchema,
@@ -54,6 +76,7 @@ export const backupManifestSchema = z
       .strict(),
     format: z.literal(BACKUP_FORMAT),
     formatVersion: z.number().int().positive(),
+    assets: z.array(backupAssetSchema).default([]),
     schemaVersion: z.number().int().nonnegative(),
   })
   .strict();
@@ -65,6 +88,10 @@ export const preparedBackupSchema = z
     counts: backupCountsSchema,
     createdAt: z.iso.datetime({ offset: true }),
     schemaVersion: z.number().int().nonnegative(),
+    assetBytes: z.number().int().nonnegative().optional(),
+    assetCount: z.number().int().nonnegative().optional(),
+    conflicts: z.number().int().nonnegative().optional(),
+    mode: z.enum(['database', 'full']).optional(),
     token: z.string().regex(/^[a-zA-Z0-9-]+$/),
   })
   .strict();

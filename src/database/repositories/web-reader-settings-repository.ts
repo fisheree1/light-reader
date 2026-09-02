@@ -32,9 +32,13 @@ function emptyStorage(): StoredReaderSettings {
 
 export class WebReaderSettingsRepository implements ReaderSettingsRepository {
   getGlobal(): Promise<ReaderDisplaySettings> {
-    return this.run('READER_SETTINGS_READ_FAILED', () =>
-      readerDisplaySettingsSchema.parse(this.read().global),
-    );
+    return this.run('READER_SETTINGS_READ_FAILED', () => {
+      const stored = this.read().global;
+      return readerDisplaySettingsSchema.parse({
+        ...defaultReaderSettings,
+        ...(typeof stored === 'object' && stored !== null ? stored : {}),
+      });
+    });
   }
 
   saveGlobal(value: ReaderDisplaySettings): Promise<ReaderDisplaySettings> {

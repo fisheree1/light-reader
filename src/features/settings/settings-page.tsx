@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Button } from '../../components/ui/button';
 import { checkDatabaseHealth } from '../../database/client';
 import type { ReaderSettingsRepository } from '../../database/repositories/reader-settings-repository';
+import type { ReadingActivityRepository } from '../../database/repositories/reading-activity-repository';
 import { ReaderSettingsForm } from '../reader/components/reader-settings-form';
 import {
   defaultReaderSettings,
@@ -13,17 +14,23 @@ import { useReaderSettingsStore } from '../../stores/reader-settings-store';
 import { BackupSettings } from '../backup/components/backup-settings';
 import type { BackupManager } from '../backup/services/backup-service';
 import { backupManager as defaultBackupManager } from '../backup/services/backup-services';
+import type {
+  ReadingHistoryEntry,
+  ReadingStats,
+} from '../reader/domain/reading-activity';
 
 type HealthStatus = 'idle' | 'checking' | 'healthy' | 'error';
 type SaveStatus = 'idle' | 'loading' | 'saving' | 'saved' | 'error';
 
 interface SettingsPageProps {
   backupManager?: BackupManager;
+  readingActivityRepository?: ReadingActivityRepository;
   settingsRepository?: ReaderSettingsRepository;
 }
 
 export function SettingsPage({
   backupManager = defaultBackupManager,
+  readingActivityRepository,
   settingsRepository = readerServices.settingsRepository,
 }: SettingsPageProps) {
   const [healthStatus, setHealthStatus] = useState<HealthStatus>('idle');
@@ -31,6 +38,10 @@ export function SettingsPage({
     defaultReaderSettings,
   );
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('loading');
+  const [readingStats, setReadingStats] = useState<ReadingStats | null>(null);
+  const [readingHistory, setReadingHistory] = useState<ReadingHistoryEntry[]>(
+    [],
+  );
   const setGlobalSettings = useReaderSettingsStore(
     (state) => state.setGlobalSettings,
   );
@@ -52,6 +63,25 @@ export function SettingsPage({
       cancelled = true;
     };
   }, [setGlobalSettings, settingsRepository]);
+
+  useEffect(() => {
+    const repository =
+      readingActivityRepository ?? readerServices.readingActivityRepository;
+    if (!repository) return;
+    let cancelled = false;
+    void Promise.all([repository.getStats(), repository.listRecent(10)]).then(
+      ([stats, history]) => {
+        if (!cancelled) {
+          setReadingStats(stats);
+          setReadingHistory(history);
+        }
+      },
+      () => undefined,
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [readingActivityRepository]);
 
   async function handleSaveReaderSettings() {
     setSaveStatus('saving');
@@ -120,6 +150,59 @@ export function SettingsPage({
             </span>
           </div>
         </div>
+      </section>
+
+      <section className="bg-surface mt-4 rounded-lg border p-5">
+        <h2 className="font-medium">阅读统计</h2>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-md border p-3">
+            <p className="text-muted-foreground text-xs">累计阅读</p>
+            <p className="mt-1 text-xl font-semibold">
+              {readingStats
+                ? `${String(Math.floor(readingStats.totalSeconds / 3600))} 小时 ${String(
+                    Math.floor((readingStats.totalSeconds % 3600) / 60),
+                  )} 分钟`
+                : '—'}
+            </p>
+          </div>
+          <div className="rounded-md border p-3">
+            <p className="text-muted-foreground text-xs">阅读次数</p>
+            <p className="mt-1 text-xl font-semibold">
+              {readingStats?.sessionCount ?? '—'}
+            </p>
+          </div>
+          <div className="rounded-md border p-3">
+            <p className="text-muted-foreground text-xs">读过的书</p>
+            <p className="mt-1 text-xl font-semibold">
+              {readingStats?.booksRead ?? '—'}
+            </p>
+          </div>
+        </div>
+        <h3 className="mt-5 text-sm font-medium">最近阅读</h3>
+        {readingHistory.length ? (
+          <ol className="mt-2 divide-y rounded-md border">
+            {readingHistory.map((entry, index) => (
+              <li
+                className="flex items-center justify-between gap-4 p-3 text-sm"
+                key={`${entry.bookId}-${String(entry.startedAt)}-${String(index)}`}
+              >
+                <span className="truncate">
+                  {entry.bookTitle}
+                  <span className="text-muted-foreground ml-2">
+                    {entry.author ?? '未知作者'}
+                  </span>
+                </span>
+                <span className="text-muted-foreground shrink-0 text-xs">
+                  {new Date(entry.startedAt).toLocaleString('zh-CN')} ·{' '}
+                  {String(Math.max(1, Math.round(entry.durationSeconds / 60)))}{' '}
+                  分钟
+                </span>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="text-muted-foreground mt-2 text-sm">暂无阅读记录。</p>
+        )}
       </section>
 
       <BackupSettings manager={backupManager} />

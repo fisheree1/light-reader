@@ -7,7 +7,7 @@ use std::{
 };
 use tauri::{AppHandle, Manager};
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 8;
+pub const CURRENT_SCHEMA_VERSION: i64 = 9;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -16,6 +16,8 @@ pub struct BackupCounts {
     books: i64,
     notes: i64,
     reading_states: i64,
+    bookmarks: i64,
+    reading_sessions: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -77,6 +79,8 @@ async fn count(connection: &mut SqliteConnection, table: &str) -> Result<i64, St
         "books" => "SELECT COUNT(*) FROM books",
         "notes" => "SELECT COUNT(*) FROM notes",
         "reading_states" => "SELECT COUNT(*) FROM reading_states",
+        "bookmarks" => "SELECT COUNT(*) FROM bookmarks",
+        "reading_sessions" => "SELECT COUNT(*) FROM reading_sessions",
         _ => return Err("unsupported backup table".to_string()),
     };
     sqlx::query_scalar(query)
@@ -121,26 +125,28 @@ async fn inspect_database(path: &Path) -> Result<DatabaseBackupSummary, String> 
         WHERE type = 'table' AND name IN (
           'app_meta', 'books', 'reader_settings', 'book_reader_settings',
           'reading_states', 'annotations', 'notes', 'book_tags',
-          'book_content_index'
+          'book_content_index', 'bookmarks', 'reading_sessions'
         )"#,
     )
     .fetch_one(&mut connection)
     .await
     .map_err(|error| error.to_string())?;
-    if required_table_count != 9 {
+    if required_table_count != 11 {
         return Err("backup database is missing required tables".to_string());
     }
 
     let validation_queries = [
         "SELECT key, value FROM app_meta LIMIT 1",
         "SELECT id, title, author, format, file_path, file_hash, cover_path, metadata_json, file_size, created_at, updated_at, favorite FROM books LIMIT 1",
-        "SELECT id, theme, font_size, line_height, content_width, margin, updated_at FROM reader_settings LIMIT 1",
-        "SELECT book_id, theme, font_size, line_height, content_width, margin, updated_at FROM book_reader_settings LIMIT 1",
+        "SELECT id, theme, font_family, font_weight, font_size, line_height, content_width, margin, updated_at FROM reader_settings LIMIT 1",
+        "SELECT book_id, theme, font_family, font_weight, font_size, line_height, content_width, margin, updated_at FROM book_reader_settings LIMIT 1",
         "SELECT book_id, locator_json, progression, updated_at FROM reading_states LIMIT 1",
         "SELECT id, book_id, text, text_before, text_after, chapter_href, locator_json, color, note_text, created_at, updated_at FROM annotations LIMIT 1",
         "SELECT id, title, content_json, plain_text, created_at, updated_at FROM notes LIMIT 1",
         "SELECT book_id, tag, created_at FROM book_tags LIMIT 1",
         "SELECT book_id, chapter_href, chapter_title, text FROM book_content_index LIMIT 1",
+        "SELECT id, book_id, name, locator_json, created_at, updated_at FROM bookmarks LIMIT 1",
+        "SELECT id, book_id, started_at, ended_at, duration_seconds FROM reading_sessions LIMIT 1",
     ];
     for query in validation_queries {
         sqlx::query(query)
@@ -155,6 +161,8 @@ async fn inspect_database(path: &Path) -> Result<DatabaseBackupSummary, String> 
             books: count(&mut connection, "books").await?,
             notes: count(&mut connection, "notes").await?,
             reading_states: count(&mut connection, "reading_states").await?,
+            bookmarks: count(&mut connection, "bookmarks").await?,
+            reading_sessions: count(&mut connection, "reading_sessions").await?,
         },
         schema_version,
     })
@@ -452,6 +460,60 @@ async fn validate_managed_book_files(app: &AppHandle, database: &Path) -> Result
     validate_managed_book_files_at(&app_data, database).await
 }
 
+fn staged_assets_root(app: &AppHandle, snapshot_id: &str) -> Result<PathBuf, String> {
+    Ok(snapshot_directory(app, snapshot_id)?.join("assets"))
+}
+
+fn replace_asset_directory(
+    live_root: &Path,
+    staged_root: &Path,
+    safety_root: &Path,
+    name: &str,
+) -> Result<(), String> {
+    let live = live_root.join(name);
+    let staged = staged_root.join(name);
+    let safety = safety_root.join(name);
+    if live.exists() {
+        fs::create_dir_all(safety_root).map_err(|error| error.to_string())?;
+        fs::rename(&live, &safety).map_err(|error| error.to_string())?;
+    }
+    if staged.exists() {
+        fs::create_dir_all(live_root).map_err(|error| error.to_string())?;
+        if let Err(error) = fs::rename(&staged, &live) {
+            if safety.exists() {
+                fs::rename(&safety, &live).ok();
+            }
+            return Err(error.to_string());
+        }
+    }
+    Ok(())
+}
+
+fn rollback_asset_directories(
+    live_root: &Path,
+    staged_root: &Path,
+    safety_root: &Path,
+    names: &[&str],
+) -> Result<(), String> {
+    for name in names {
+        let live = live_root.join(name);
+        let staged = staged_root.join(name);
+        let safety = safety_root.join(name);
+        if live.exists() {
+            if staged.exists() {
+                fs::remove_dir_all(&live).map_err(|error| error.to_string())?;
+            } else {
+                fs::create_dir_all(staged_root).map_err(|error| error.to_string())?;
+                fs::rename(&live, &staged).map_err(|error| error.to_string())?;
+            }
+        }
+        if safety.exists() {
+            fs::rename(&safety, &live).map_err(|error| error.to_string())?;
+        }
+    }
+    Ok(())
+}
+
 async fn attached_count(
     connection: &mut SqliteConnection,
     database: &str,
@@ -462,10 +524,14 @@ async fn attached_count(
         ("main", "books") => "SELECT COUNT(*) FROM main.books",
         ("main", "notes") => "SELECT COUNT(*) FROM main.notes",
         ("main", "reading_states") => "SELECT COUNT(*) FROM main.reading_states",
+        ("main", "bookmarks") => "SELECT COUNT(*) FROM main.bookmarks",
+        ("main", "reading_sessions") => "SELECT COUNT(*) FROM main.reading_sessions",
         ("backup", "annotations") => "SELECT COUNT(*) FROM backup.annotations",
         ("backup", "books") => "SELECT COUNT(*) FROM backup.books",
         ("backup", "notes") => "SELECT COUNT(*) FROM backup.notes",
         ("backup", "reading_states") => "SELECT COUNT(*) FROM backup.reading_states",
+        ("backup", "bookmarks") => "SELECT COUNT(*) FROM backup.bookmarks",
+        ("backup", "reading_sessions") => "SELECT COUNT(*) FROM backup.reading_sessions",
         _ => return Err("unsupported attached backup table".to_string()),
     };
     sqlx::query_scalar(query)
@@ -475,7 +541,14 @@ async fn attached_count(
 }
 
 async fn verify_restored_counts(connection: &mut SqliteConnection) -> Result<(), String> {
-    for table in ["annotations", "books", "notes", "reading_states"] {
+    for table in [
+        "annotations",
+        "books",
+        "notes",
+        "reading_states",
+        "bookmarks",
+        "reading_sessions",
+    ] {
         let live = attached_count(connection, "main", table).await?;
         let backup = attached_count(connection, "backup", table).await?;
         if live != backup {
@@ -512,6 +585,8 @@ async fn restore_database(
         let statements = [
             "DELETE FROM main.book_content_index",
             "DELETE FROM main.annotations",
+            "DELETE FROM main.bookmarks",
+            "DELETE FROM main.reading_sessions",
             "DELETE FROM main.reading_states",
             "DELETE FROM main.book_reader_settings",
             "DELETE FROM main.book_tags",
@@ -521,13 +596,15 @@ async fn restore_database(
             "DELETE FROM main.app_meta",
             "INSERT INTO main.app_meta (key, value) SELECT key, value FROM backup.app_meta",
             "INSERT INTO main.books (id, title, author, format, file_path, file_hash, cover_path, metadata_json, file_size, created_at, updated_at, favorite) SELECT id, title, author, format, file_path, file_hash, cover_path, metadata_json, file_size, created_at, updated_at, favorite FROM backup.books",
-            "INSERT INTO main.reader_settings (id, theme, font_size, line_height, content_width, margin, updated_at) SELECT id, theme, font_size, line_height, content_width, margin, updated_at FROM backup.reader_settings",
-            "INSERT INTO main.book_reader_settings (book_id, theme, font_size, line_height, content_width, margin, updated_at) SELECT book_id, theme, font_size, line_height, content_width, margin, updated_at FROM backup.book_reader_settings",
+            "INSERT INTO main.reader_settings (id, theme, font_family, font_weight, font_size, line_height, content_width, margin, updated_at) SELECT id, theme, font_family, font_weight, font_size, line_height, content_width, margin, updated_at FROM backup.reader_settings",
+            "INSERT INTO main.book_reader_settings (book_id, theme, font_family, font_weight, font_size, line_height, content_width, margin, updated_at) SELECT book_id, theme, font_family, font_weight, font_size, line_height, content_width, margin, updated_at FROM backup.book_reader_settings",
             "INSERT INTO main.reading_states (book_id, locator_json, progression, updated_at) SELECT book_id, locator_json, progression, updated_at FROM backup.reading_states",
             "INSERT INTO main.annotations (id, book_id, text, text_before, text_after, chapter_href, locator_json, color, note_text, created_at, updated_at) SELECT id, book_id, text, text_before, text_after, chapter_href, locator_json, color, note_text, created_at, updated_at FROM backup.annotations",
             "INSERT INTO main.notes (id, title, content_json, plain_text, created_at, updated_at) SELECT id, title, content_json, plain_text, created_at, updated_at FROM backup.notes",
             "INSERT INTO main.book_tags (book_id, tag, created_at) SELECT book_id, tag, created_at FROM backup.book_tags",
             "INSERT INTO main.book_content_index (book_id, chapter_href, chapter_title, text) SELECT book_id, chapter_href, chapter_title, text FROM backup.book_content_index",
+            "INSERT INTO main.bookmarks (id, book_id, name, locator_json, created_at, updated_at) SELECT id, book_id, name, locator_json, created_at, updated_at FROM backup.bookmarks",
+            "INSERT INTO main.reading_sessions (id, book_id, started_at, ended_at, duration_seconds) SELECT id, book_id, started_at, ended_at, duration_seconds FROM backup.reading_sessions",
         ];
         for statement in statements {
             connection
@@ -600,6 +677,26 @@ pub async fn inspect_database_snapshot(
     inspect_database(&snapshot).await
 }
 
+#[tauri::command]
+pub fn available_backup_space(app: AppHandle) -> Result<u64, String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+    fs2::available_space(directory).map_err(|error| error.to_string())
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn inspect_full_backup_snapshot(
+    app: AppHandle,
+    snapshot_id: String,
+) -> Result<DatabaseBackupSummary, String> {
+    let snapshot = snapshot_path(&app, &snapshot_id)?;
+    validate_managed_book_files_at(&staged_assets_root(&app, &snapshot_id)?, &snapshot).await?;
+    inspect_database(&snapshot).await
+}
+
 #[tauri::command(rename_all = "camelCase")]
 pub async fn restore_database_snapshot(
     app: AppHandle,
@@ -609,6 +706,41 @@ pub async fn restore_database_snapshot(
     let destination = database_path(&app)?;
     validate_managed_book_files(&app, &source).await?;
     restore_database(&source, &destination).await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn restore_full_backup_snapshot(
+    app: AppHandle,
+    snapshot_id: String,
+) -> Result<DatabaseBackupSummary, String> {
+    let source = snapshot_path(&app, &snapshot_id)?;
+    let staged_root = staged_assets_root(&app, &snapshot_id)?.join("light-reader");
+    validate_managed_book_files_at(&staged_assets_root(&app, &snapshot_id)?, &source).await?;
+
+    let app_data = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let live_root = app_data.join("light-reader");
+    let safety_root = snapshot_directory(&app, &snapshot_id)?.join("current-assets");
+    if safety_root.exists() {
+        fs::remove_dir_all(&safety_root).map_err(|error| error.to_string())?;
+    }
+    let names = ["books", "covers"];
+    for name in names {
+        if let Err(error) = replace_asset_directory(&live_root, &staged_root, &safety_root, name) {
+            rollback_asset_directories(&live_root, &staged_root, &safety_root, &names)?;
+            return Err(error);
+        }
+    }
+
+    match restore_database(&source, &database_path(&app)?).await {
+        Ok(summary) => Ok(summary),
+        Err(error) => {
+            rollback_asset_directories(&live_root, &staged_root, &safety_root, &names)?;
+            Err(error)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -652,6 +784,7 @@ mod tests {
             include_str!("../migrations/0006_notes.sql"),
             include_str!("../migrations/0007_local_search.sql"),
             include_str!("../migrations/0008_library_management.sql"),
+            include_str!("../migrations/0009_bookmarks_and_reading_activity.sql"),
         ] {
             connection
                 .execute(migration)
@@ -731,6 +864,8 @@ mod tests {
                 books: 1,
                 notes: 1,
                 reading_states: 1,
+                bookmarks: 0,
+                reading_sessions: 0,
             }
         );
 
@@ -772,6 +907,41 @@ mod tests {
 
         fs::remove_file(live_path).expect("live database should be removed");
         fs::remove_file(snapshot_path).expect("snapshot should be removed");
+    }
+
+    #[test]
+    fn full_backup_asset_swap_rolls_back_without_losing_either_version() {
+        let root = temporary_path("full-backup-assets");
+        let live = root.join("live");
+        let staged = root.join("staged");
+        let safety = root.join("safety");
+        fs::create_dir_all(live.join("books")).expect("live books should exist");
+        fs::create_dir_all(staged.join("books")).expect("staged books should exist");
+        fs::write(live.join("books/book.epub"), b"current").expect("current book should seed");
+        fs::write(staged.join("books/book.epub"), b"backup").expect("backup book should seed");
+
+        replace_asset_directory(&live, &staged, &safety, "books")
+            .expect("full backup assets should swap");
+        assert_eq!(
+            fs::read(live.join("books/book.epub")).expect("backup book should be live"),
+            b"backup"
+        );
+        assert_eq!(
+            fs::read(safety.join("books/book.epub")).expect("current book should be retained"),
+            b"current"
+        );
+
+        rollback_asset_directories(&live, &staged, &safety, &["books"])
+            .expect("asset rollback should succeed");
+        assert_eq!(
+            fs::read(live.join("books/book.epub")).expect("current book should be restored"),
+            b"current"
+        );
+        assert_eq!(
+            fs::read(staged.join("books/book.epub")).expect("backup book should be restaged"),
+            b"backup"
+        );
+        fs::remove_dir_all(root).expect("temporary assets should be removed");
     }
 
     #[tokio::test]
@@ -1002,5 +1172,226 @@ mod tests {
 
         fs::remove_file(database_path).expect("database should be removed");
         fs::remove_dir_all(app_data).expect("app data should be removed");
+    }
+
+    #[tokio::test]
+    async fn native_smoke_imports_epub_and_round_trips_application_data() {
+        let database_path = temporary_path("native-smoke-database");
+        let app_data = temporary_path("native-smoke-appdata");
+        let book_path = app_data
+            .join("light-reader")
+            .join("books")
+            .join("native-smoke-book")
+            .join("book.epub");
+        let snapshot_path = app_data
+            .join("light-reader")
+            .join("exports")
+            .join("native-smoke-backup.sqlite");
+        let epub = create_native_smoke_epub();
+
+        fs::create_dir_all(book_path.parent().expect("book path has a parent"))
+            .expect("managed book directory should create");
+        fs::write(&book_path, &epub).expect("EPUB should write to application data");
+        assert_eq!(
+            fs::read(&book_path).expect("EPUB should read from application data"),
+            epub
+        );
+
+        let mut database = apply_schema(&database_path).await;
+        sqlx::query(
+            r#"INSERT INTO books (
+              id, title, author, format, file_path, file_hash, cover_path,
+              metadata_json, file_size, created_at, updated_at
+            ) VALUES ('native-smoke-book', 'Native smoke EPUB', NULL, 'epub',
+              'light-reader/books/native-smoke-book/book.epub', ?, NULL, ?, ?, 1, 1)"#,
+        )
+        .bind("f".repeat(64))
+        .bind(r#"{"title":"Native smoke EPUB","creators":[],"language":"en","publisher":null,"description":null,"identifier":"urn:lightreader:native-smoke"}"#)
+        .bind(i64::try_from(epub.len()).expect("fixture size should fit SQLite"))
+        .execute(&mut database)
+        .await
+        .expect("real EPUB import should persist");
+        database
+            .close()
+            .await
+            .expect("initialized database should close");
+
+        validate_managed_book_files_at(&app_data, &database_path)
+            .await
+            .expect("database and managed EPUB should agree");
+        create_snapshot(&database_path, &snapshot_path)
+            .await
+            .expect("backup export should create a SQLite snapshot");
+
+        let mut changed = connect(&database_path, false)
+            .await
+            .expect("live database should reopen");
+        changed
+            .execute("UPDATE books SET title = 'Changed after backup'")
+            .await
+            .expect("live data should change after export");
+        changed
+            .close()
+            .await
+            .expect("changed database should close");
+
+        restore_database(&snapshot_path, &database_path)
+            .await
+            .expect("backup should restore transactionally");
+        let mut restored = connect(&database_path, false)
+            .await
+            .expect("restored database should open");
+        let title: String =
+            sqlx::query_scalar("SELECT title FROM books WHERE id = 'native-smoke-book'")
+                .fetch_one(&mut restored)
+                .await
+                .expect("restored book should exist");
+        assert_eq!(title, "Native smoke EPUB");
+        restored
+            .close()
+            .await
+            .expect("restored database should close");
+
+        fs::remove_file(database_path).expect("database should be removed");
+        fs::remove_dir_all(app_data).expect("application data should be removed");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn native_smoke_observes_missing_and_permission_denied_files() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = temporary_path("native-smoke-permissions");
+        let missing = directory.join("missing.epub");
+        let denied = directory.join("denied.epub");
+        fs::create_dir_all(&directory).expect("permission fixture directory should create");
+
+        let missing_error = fs::read(&missing).expect_err("missing file should fail");
+        assert_eq!(missing_error.kind(), std::io::ErrorKind::NotFound);
+
+        fs::write(&denied, create_native_smoke_epub()).expect("denied fixture should write");
+        fs::set_permissions(&denied, fs::Permissions::from_mode(0o000))
+            .expect("fixture permissions should change");
+        let denied_error = fs::read(&denied).expect_err("unreadable file should fail");
+        assert_eq!(denied_error.kind(), std::io::ErrorKind::PermissionDenied);
+
+        fs::set_permissions(&denied, fs::Permissions::from_mode(0o600))
+            .expect("fixture permissions should restore");
+        fs::remove_dir_all(directory).expect("permission fixtures should be removed");
+    }
+
+    fn create_native_smoke_epub() -> Vec<u8> {
+        let entries = [
+            ("mimetype", b"application/epub+zip".as_slice()),
+            (
+                "META-INF/container.xml",
+                br#"<?xml version="1.0"?><container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="EPUB/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>"#.as_slice(),
+            ),
+            (
+                "EPUB/content.opf",
+                br#"<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier>urn:lightreader:native-smoke</dc:identifier><dc:title>Native smoke EPUB</dc:title><dc:language>en</dc:language></metadata><manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="chapter"/></spine></package>"#.as_slice(),
+            ),
+            (
+                "EPUB/chapter.xhtml",
+                br#"<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>Smoke</title></head><body><h1>Native smoke</h1></body></html>"#.as_slice(),
+            ),
+        ];
+        create_stored_zip(&entries)
+    }
+
+    fn create_stored_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut archive = Vec::new();
+        let mut central_records = Vec::new();
+        for (name, data) in entries {
+            let offset = u32::try_from(archive.len()).expect("fixture offset should fit ZIP");
+            let crc = crc32(data);
+            push_u32(&mut archive, 0x0403_4b50);
+            push_u16(&mut archive, 20);
+            push_u16(&mut archive, 0);
+            push_u16(&mut archive, 0);
+            push_u16(&mut archive, 0);
+            push_u16(&mut archive, 0);
+            push_u32(&mut archive, crc);
+            push_u32(
+                &mut archive,
+                u32::try_from(data.len()).expect("fixture entry should fit ZIP"),
+            );
+            push_u32(
+                &mut archive,
+                u32::try_from(data.len()).expect("fixture entry should fit ZIP"),
+            );
+            push_u16(
+                &mut archive,
+                u16::try_from(name.len()).expect("fixture name should fit ZIP"),
+            );
+            push_u16(&mut archive, 0);
+            archive.extend_from_slice(name.as_bytes());
+            archive.extend_from_slice(data);
+            central_records.push((*name, *data, crc, offset));
+        }
+
+        let central_offset = u32::try_from(archive.len()).expect("central offset should fit ZIP");
+        for (name, data, crc, offset) in central_records {
+            push_u32(&mut archive, 0x0201_4b50);
+            push_u16(&mut archive, 20);
+            push_u16(&mut archive, 20);
+            push_u16(&mut archive, 0);
+            push_u16(&mut archive, 0);
+            push_u16(&mut archive, 0);
+            push_u16(&mut archive, 0);
+            push_u32(&mut archive, crc);
+            push_u32(
+                &mut archive,
+                u32::try_from(data.len()).expect("fixture entry should fit ZIP"),
+            );
+            push_u32(
+                &mut archive,
+                u32::try_from(data.len()).expect("fixture entry should fit ZIP"),
+            );
+            push_u16(
+                &mut archive,
+                u16::try_from(name.len()).expect("fixture name should fit ZIP"),
+            );
+            push_u16(&mut archive, 0);
+            push_u16(&mut archive, 0);
+            push_u16(&mut archive, 0);
+            push_u16(&mut archive, 0);
+            push_u32(&mut archive, 0);
+            push_u32(&mut archive, offset);
+            archive.extend_from_slice(name.as_bytes());
+        }
+        let central_size = u32::try_from(archive.len())
+            .expect("archive size should fit ZIP")
+            .saturating_sub(central_offset);
+        push_u32(&mut archive, 0x0605_4b50);
+        push_u16(&mut archive, 0);
+        push_u16(&mut archive, 0);
+        let entry_count = u16::try_from(entries.len()).expect("entry count should fit ZIP");
+        push_u16(&mut archive, entry_count);
+        push_u16(&mut archive, entry_count);
+        push_u32(&mut archive, central_size);
+        push_u32(&mut archive, central_offset);
+        push_u16(&mut archive, 0);
+        archive
+    }
+
+    fn crc32(data: &[u8]) -> u32 {
+        let mut crc = 0xffff_ffff_u32;
+        for byte in data {
+            crc ^= u32::from(*byte);
+            for _ in 0..8 {
+                let mask = 0_u32.wrapping_sub(crc & 1);
+                crc = (crc >> 1) ^ (0xedb8_8320 & mask);
+            }
+        }
+        !crc
+    }
+
+    fn push_u16(buffer: &mut Vec<u8>, value: u16) {
+        buffer.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn push_u32(buffer: &mut Vec<u8>, value: u32) {
+        buffer.extend_from_slice(&value.to_le_bytes());
     }
 }

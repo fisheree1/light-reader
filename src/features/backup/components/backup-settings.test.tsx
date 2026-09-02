@@ -6,9 +6,16 @@ import type { BackupManager } from '../services/backup-service';
 import { BackupSettings } from './backup-settings';
 
 const prepared: PreparedBackup = {
-  counts: { annotations: 3, books: 1, notes: 2, readingStates: 1 },
+  counts: {
+    annotations: 3,
+    bookmarks: 0,
+    books: 1,
+    notes: 2,
+    readingSessions: 0,
+    readingStates: 1,
+  },
   createdAt: '2026-08-01T10:00:00.000Z',
-  schemaVersion: 8,
+  schemaVersion: 9,
   token: 'snapshot-1',
 };
 

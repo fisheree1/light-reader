@@ -6,7 +6,6 @@ const unsupportedFoliateLoaders = new Set([
   './fb2.js',
   './mobi.js',
   './pdf.js',
-  './search.js',
   './tts.js',
   './vendor/fflate.js',
 ]);
@@ -18,8 +17,8 @@ export default defineConfig({
   build: {
     rollupOptions: {
       // Foliate's high-level view can load several formats dynamically. This
-      // slice supports EPUB navigation only, so do not ship dormant format,
-      // search, or TTS modules that cannot be reached from the product UI.
+      // slice supports EPUB navigation and in-book search only, so do not ship
+      // dormant format or TTS modules that cannot be reached from the product UI.
       external: (id, importer) =>
         Boolean(
           importer?.includes('/foliate-js/view.js') &&

@@ -300,6 +300,23 @@ test('completes the release user loop through the real Foliate Web engine', asyn
   await page.getByRole('button', { name: '打开《Web 测试 EPUB》' }).click();
   await expect(page.getByRole('button', { name: '第一章' })).toBeVisible();
 
+  await page.getByRole('button', { name: '显示书签' }).click();
+  await page.getByLabel('书签名称').fill('开篇书签');
+  await page.getByRole('button', { name: '保存当前位置' }).click();
+  await expect(
+    page.getByRole('button', { name: '开篇书签', exact: true }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: '隐藏书签' }).click();
+
+  await page.getByRole('button', { name: '章节内查找' }).click();
+  await page.getByLabel('查找内容').fill('LightReader');
+  await page.getByRole('button', { name: '查找', exact: true }).click();
+  await expect(page.getByText(/找到 \d+ 处/)).toBeVisible();
+  await page
+    .getByRole('region', { name: '章节内查找' })
+    .getByRole('button', { name: '关闭章节内查找' })
+    .click();
+
   await page.getByRole('button', { name: '阅读设置' }).click();
   await page.getByLabel('为本书使用单独设置').check();
   await page.getByLabel('阅读主题').selectOption('dark');
@@ -346,6 +363,10 @@ test('completes the release user loop through the real Foliate Web engine', asyn
     page.getByText('这是 LightReader 自制的无版权测试内容。', { exact: true }),
   ).toBeVisible();
   await expect(page.getByText('E2E 自制批注', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '显示书签' }).click();
+  await expect(
+    page.getByRole('button', { name: '开篇书签', exact: true }),
+  ).toBeVisible();
   const importedReaderUrl = page.url();
 
   await page

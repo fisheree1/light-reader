@@ -6,6 +6,11 @@ import { WebNoteRepository } from '../../../database/repositories/web-note-repos
 import type { BookRepository } from '../../../database/repositories/book-repository';
 import { libraryServices } from '../../library/services/library-services';
 import { NoteService } from './note-service';
+import type { FileExportPlatform } from '../../../platform/export/file-export-platform';
+import {
+  TauriFileExportPlatform,
+  WebFileExportPlatform,
+} from '../../../platform/export/file-export-platform';
 import {
   LocalNoteDraftStorage,
   type NoteDraftStorage,
@@ -14,6 +19,7 @@ import {
 export interface NotesServices {
   bookRepository: BookRepository;
   draftStorage?: NoteDraftStorage;
+  exportPlatform?: FileExportPlatform;
   noteRepository: NoteRepository;
 }
 
@@ -24,6 +30,9 @@ const noteRepository = isTauri()
 export const notesServices: NotesServices = {
   bookRepository: libraryServices.repository,
   draftStorage: new LocalNoteDraftStorage(),
+  exportPlatform: isTauri()
+    ? new TauriFileExportPlatform()
+    : new WebFileExportPlatform(),
   noteRepository,
 };
 

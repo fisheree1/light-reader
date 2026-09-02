@@ -2,8 +2,15 @@ import type { DatabaseBackupSummary } from '../../features/backup/domain/backup'
 import { TauriBackupPlatform } from './backup-platform';
 
 const summary: DatabaseBackupSummary = {
-  schemaVersion: 8,
-  counts: { annotations: 2, books: 1, notes: 3, readingStates: 1 },
+  schemaVersion: 9,
+  counts: {
+    annotations: 2,
+    bookmarks: 0,
+    books: 1,
+    notes: 3,
+    readingSessions: 0,
+    readingStates: 1,
+  },
 };
 
 describe('TauriBackupPlatform restore state machine', () => {

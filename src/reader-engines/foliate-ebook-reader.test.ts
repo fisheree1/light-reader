@@ -26,6 +26,14 @@ interface FakeFoliateView extends HTMLElement {
   next: () => Promise<void>;
   open: (source: Blob) => Promise<void>;
   prev: () => Promise<void>;
+  search: (options: { index: number; query: string }) => AsyncIterable<
+    | string
+    | {
+        cfi?: string;
+        excerpt?: { match: string; post: string; pre: string };
+      }
+  >;
+  clearSearch: () => void;
   renderer: {
     setAttribute: ReturnType<
       typeof vi.fn<(name: string, value: string) => void>
@@ -57,6 +65,15 @@ function createFakeView(): FakeFoliateView {
   element.next = vi.fn(() => Promise.resolve());
   element.open = vi.fn(() => Promise.resolve());
   element.prev = vi.fn(() => Promise.resolve());
+  element.search = vi.fn(async function* () {
+    await Promise.resolve();
+    yield {
+      cfi: 'epubcfi(/6/2!/4/2,/1:0,/1:4)',
+      excerpt: { pre: '前文', match: '关键词', post: '后文' },
+    };
+    yield 'done';
+  });
+  element.clearSearch = vi.fn();
   element.renderer = {
     setAttribute: vi.fn<(name: string, value: string) => void>(),
     setStyles: vi.fn<(styles: string) => void>(),
@@ -86,6 +103,8 @@ describe('FoliateEbookReader', () => {
     expect(view.init).toHaveBeenCalledWith({ showTextStart: true });
     reader.applyDisplaySettings({
       theme: 'sepia',
+      fontFamily: 'sans-serif',
+      fontWeight: 600,
       fontSize: 20,
       lineHeight: 1.8,
       contentWidth: 680,
@@ -98,6 +117,9 @@ describe('FoliateEbookReader', () => {
     expect(view.renderer.setAttribute).toHaveBeenCalledWith('margin', '40px');
     expect(view.renderer.setStyles).toHaveBeenCalledWith(
       expect.stringContaining('background: #f4ecd8'),
+    );
+    expect(view.renderer.setStyles).toHaveBeenCalledWith(
+      expect.stringContaining('font-weight: 600'),
     );
     expect(reader.getTableOfContents()).toEqual([
       {
@@ -135,6 +157,34 @@ describe('FoliateEbookReader', () => {
     expect(view.goTo).toHaveBeenCalledWith('one.xhtml');
     expect(view.prev).toHaveBeenCalledOnce();
     expect(view.next).toHaveBeenCalledOnce();
+  });
+
+  it('searches the current chapter and clears renderer highlights', async () => {
+    const { reader, view } = createReader();
+    await reader.open(new ArrayBuffer(1));
+    view.dispatchEvent(
+      new CustomEvent('relocate', {
+        detail: {
+          index: 0,
+          tocItem: { href: 'one.xhtml' },
+        },
+      }),
+    );
+
+    await expect(reader.searchCurrentChapter('关键词')).resolves.toEqual([
+      {
+        excerpt: { pre: '前文', match: '关键词', post: '后文' },
+        locator: {
+          version: 1,
+          format: 'epub',
+          chapterHref: 'one.xhtml',
+          cfi: 'epubcfi(/6/2!/4/2,/1:0,/1:4)',
+        },
+      },
+    ]);
+    expect(view.search).toHaveBeenCalledWith({ index: 0, query: '关键词' });
+    reader.clearSearch();
+    expect(view.clearSearch).toHaveBeenCalledOnce();
   });
 
   it('blocks external links and cleans up idempotently', async () => {
@@ -355,5 +405,57 @@ describe('FoliateEbookReader', () => {
       new MouseEvent('click', { bubbles: true, cancelable: true }),
     );
     expect(activation).toHaveBeenCalledWith(highlight.id);
+  });
+
+  it('restores 2000 highlights without losing locator identity', async () => {
+    const { reader, view } = createReader();
+    await reader.open(new ArrayBuffer(1));
+    const highlights = Array.from({ length: 2_000 }, (_, index) => ({
+      id: `highlight-${String(index)}`,
+      color: 'yellow' as const,
+      locator: {
+        version: 1 as const,
+        format: 'epub' as const,
+        cfi: `epubcfi(/6/2!/4/2,/1:${String(index)},/1:${String(index + 1)})`,
+      },
+    }));
+
+    const result = await reader.restoreHighlights(highlights);
+
+    expect(result).toHaveLength(2_000);
+    expect(result.every(({ status }) => status === 'restored')).toBe(true);
+    expect(view.addAnnotation).toHaveBeenCalledTimes(2_000);
+    const activation = vi.fn();
+    reader.subscribeToHighlightActivation(activation);
+    view.dispatchEvent(
+      new CustomEvent('show-annotation', {
+        detail: { value: highlights.at(-1)?.locator.cfi },
+      }),
+    );
+    expect(activation).toHaveBeenCalledWith('highlight-1999');
+  });
+
+  it('reopens with a fresh view and closes repeatedly without leaking resources', async () => {
+    const firstView = createFakeView();
+    const secondView = createFakeView();
+    const viewFactory = vi
+      .fn<() => FakeFoliateView>()
+      .mockReturnValueOnce(firstView)
+      .mockReturnValueOnce(secondView);
+    const reader = new FoliateEbookReader(() => Promise.resolve(), viewFactory);
+    const host = document.createElement('div');
+    reader.mount(host);
+
+    await reader.open(new ArrayBuffer(1));
+    await reader.open(new ArrayBuffer(2));
+
+    expect(firstView.book.destroy).toHaveBeenCalledOnce();
+    expect(firstView.close).toHaveBeenCalledOnce();
+    expect(host.firstElementChild).toBe(secondView);
+    await reader.close();
+    await reader.close();
+    expect(secondView.book.destroy).toHaveBeenCalledOnce();
+    expect(secondView.close).toHaveBeenCalledOnce();
+    expect(host).toBeEmptyDOMElement();
   });
 });

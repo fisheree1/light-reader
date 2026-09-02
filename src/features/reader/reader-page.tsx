@@ -1,10 +1,12 @@
 import {
   ArrowLeft,
+  Bookmark,
   ChevronLeft,
   ChevronRight,
   ListTree,
   Highlighter,
   RotateCcw,
+  Search,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -15,9 +17,12 @@ import { IconButton } from '../../components/ui/icon-button';
 import { cn } from '../../lib/cn';
 import { AnnotationPopover } from '../annotations/components/annotation-popover';
 import { AnnotationSidebar } from '../annotations/components/annotation-sidebar';
+import { AnnotationExportService } from '../annotations/services/annotation-export-service';
 import { SelectionToolbar } from '../annotations/components/selection-toolbar';
 import { ReaderTableOfContents } from './components/reader-table-of-contents';
 import { ReaderSettingsDialog } from './components/reader-settings-dialog';
+import { ReaderBookmarkSidebar } from './components/reader-bookmark-sidebar';
+import { ReaderChapterSearch } from './components/reader-chapter-search';
 import { parseReaderNavigationState } from './domain/reader-navigation';
 import { useReader } from './hooks/use-reader';
 import {
@@ -50,24 +55,32 @@ export function ReaderPage({ services = readerServices }: ReaderPageProps) {
     activeAnnotationId,
     annotationError,
     annotations,
+    bookmarks,
     bookOverride,
     clearBookSettings,
+    clearChapterSearch,
+    createBookmark,
     createHighlight,
     deleteAnnotation,
+    deleteBookmark,
     effectiveSettings,
     error,
     goToChapter,
+    goToLocator,
     hostRef,
     insertAnnotationIntoNote,
     locator,
     navigationError,
     nextPage,
     navigateToAnnotation,
+    navigateToBookmark,
     persistenceError,
     phase,
     previousPage,
     retry,
+    renameBookmark,
     saveBookSettings,
+    searchCurrentChapter,
     selection,
     setActiveAnnotationId,
     toc,
@@ -76,6 +89,8 @@ export function ReaderPage({ services = readerServices }: ReaderPageProps) {
   } = useReader(bookId, services, navigationTarget);
   const [isTocOpen, setIsTocOpen] = useState(true);
   const [isAnnotationSidebarOpen, setIsAnnotationSidebarOpen] = useState(true);
+  const [isBookmarkSidebarOpen, setIsBookmarkSidebarOpen] = useState(false);
+  const [isChapterSearchOpen, setIsChapterSearchOpen] = useState(false);
   const activeAnnotation =
     annotations.find((annotation) => annotation.id === activeAnnotationId) ??
     null;
@@ -135,6 +150,27 @@ export function ReaderPage({ services = readerServices }: ReaderPageProps) {
           onSave={saveBookSettings}
         />
         <IconButton
+          aria-pressed={isChapterSearchOpen}
+          icon={<Search aria-hidden="true" size={17} />}
+          label={isChapterSearchOpen ? '关闭章节内查找' : '章节内查找'}
+          onClick={() => {
+            setIsChapterSearchOpen((current) => {
+              if (current) clearChapterSearch();
+              return !current;
+            });
+          }}
+          variant="ghost"
+        />
+        <IconButton
+          aria-pressed={isBookmarkSidebarOpen}
+          icon={<Bookmark aria-hidden="true" size={17} />}
+          label={isBookmarkSidebarOpen ? '隐藏书签' : '显示书签'}
+          onClick={() => {
+            setIsBookmarkSidebarOpen((current) => !current);
+          }}
+          variant="ghost"
+        />
+        <IconButton
           aria-pressed={isAnnotationSidebarOpen}
           icon={<Highlighter aria-hidden="true" size={17} />}
           label={isAnnotationSidebarOpen ? '隐藏高亮与批注' : '显示高亮与批注'}
@@ -173,6 +209,19 @@ export function ReaderPage({ services = readerServices }: ReaderPageProps) {
           />
 
           <SelectionToolbar onCreate={createHighlight} selection={selection} />
+
+          {isChapterSearchOpen ? (
+            <ReaderChapterSearch
+              onClose={() => {
+                clearChapterSearch();
+                setIsChapterSearchOpen(false);
+              }}
+              onSearch={searchCurrentChapter}
+              onSelect={(result) => {
+                void goToLocator(result.locator);
+              }}
+            />
+          ) : null}
 
           {phase === 'loading' ? (
             <div
@@ -265,7 +314,29 @@ export function ReaderPage({ services = readerServices }: ReaderPageProps) {
             onSelect={(annotationId) => {
               void navigateToAnnotation(annotationId);
             }}
+            onExport={async (format) => {
+              if (!book) return;
+              const platform =
+                services.exportPlatform ?? readerServices.exportPlatform;
+              if (!platform) throw new Error('Export platform is unavailable.');
+              await new AnnotationExportService(platform).exportBook(
+                book,
+                annotations,
+                format,
+              );
+            }}
             unresolvedIds={unresolvedAnnotationIds}
+          />
+        ) : null}
+        {isBookmarkSidebarOpen ? (
+          <ReaderBookmarkSidebar
+            bookmarks={bookmarks}
+            onCreate={createBookmark}
+            onDelete={deleteBookmark}
+            onRename={renameBookmark}
+            onSelect={(bookmark) => {
+              void navigateToBookmark(bookmark);
+            }}
           />
         ) : null}
       </div>

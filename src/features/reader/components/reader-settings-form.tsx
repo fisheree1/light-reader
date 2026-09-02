@@ -89,6 +89,44 @@ export function ReaderSettingsForm({
           <option value="dark">深色</option>
         </select>
       </label>
+      <label
+        className="block text-sm font-medium"
+        htmlFor={`${idPrefix}-font-family`}
+      >
+        字体
+        <select
+          className="bg-background mt-2 block h-9 w-full rounded-md border px-3 text-sm"
+          id={`${idPrefix}-font-family`}
+          onChange={(event) => {
+            const fontFamily = event.currentTarget.value;
+            if (
+              fontFamily === 'publisher' ||
+              fontFamily === 'serif' ||
+              fontFamily === 'sans-serif'
+            ) {
+              onChange({ ...value, fontFamily });
+            }
+          }}
+          value={value.fontFamily}
+        >
+          <option value="publisher">出版社原始字体</option>
+          <option value="serif">衬线字体</option>
+          <option value="sans-serif">无衬线字体</option>
+        </select>
+      </label>
+      <RangeField
+        disabled={disabled}
+        id={`${idPrefix}-font-weight`}
+        label="字重"
+        max={700}
+        min={300}
+        onChange={(fontWeight) => {
+          onChange({ ...value, fontWeight });
+        }}
+        step={100}
+        suffix=""
+        value={value.fontWeight}
+      />
       <RangeField
         disabled={disabled}
         id={`${idPrefix}-font-size`}

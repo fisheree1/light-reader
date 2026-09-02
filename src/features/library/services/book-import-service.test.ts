@@ -93,22 +93,28 @@ class FakeRepository implements BookRepository {
 
 class FakeStorage implements BookFileStorage {
   commitFailure = false;
+  readFailure: Error | null = null;
   readCount = 0;
   rollbackCount = 0;
   sourceSize = 3;
+  sourceSizeFailure: Error | null = null;
+  stageFailure: Error | null = null;
   stageCount = 0;
 
   getSourceSize(): Promise<number> {
+    if (this.sourceSizeFailure) return Promise.reject(this.sourceSizeFailure);
     return Promise.resolve(this.sourceSize);
   }
 
   readSource(): Promise<Uint8Array> {
     this.readCount += 1;
+    if (this.readFailure) return Promise.reject(this.readFailure);
     return Promise.resolve(new Uint8Array([1, 2, 3]));
   }
 
   stage(): Promise<StagedBookFiles> {
     this.stageCount += 1;
+    if (this.stageFailure) return Promise.reject(this.stageFailure);
     return Promise.resolve(STAGED);
   }
 
@@ -229,6 +235,26 @@ describe('BookImportService', () => {
     } satisfies Partial<AppError>);
     expect(fileStorage.readCount).toBe(0);
     expect(fileStorage.stageCount).toBe(0);
+  });
+
+  it('maps a missing selected file to the file-read state', async () => {
+    const { fileStorage, subject } = createSubject();
+    fileStorage.sourceSizeFailure = new Error('No such file or directory');
+
+    await expect(subject.importEpub()).rejects.toMatchObject({
+      code: 'FILE_READ_FAILED',
+    } satisfies Partial<AppError>);
+    expect(fileStorage.readCount).toBe(0);
+  });
+
+  it('maps a denied application-directory write to the file-write state', async () => {
+    const { fileStorage, subject } = createSubject();
+    fileStorage.stageFailure = new Error('Permission denied');
+
+    await expect(subject.importEpub()).rejects.toMatchObject({
+      code: 'FILE_WRITE_FAILED',
+    } satisfies Partial<AppError>);
+    expect(fileStorage.stageCount).toBe(1);
   });
 
   it('imports metadata with a missing author', async () => {

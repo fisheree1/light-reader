@@ -2,6 +2,9 @@ import { AlertTriangle, Highlighter } from 'lucide-react';
 
 import { cn } from '../../../lib/cn';
 import type { Annotation, AnnotationColor } from '../domain/annotation';
+import { useState } from 'react';
+import { Button } from '../../../components/ui/button';
+import type { AnnotationExportFormat } from '../services/annotation-export-service';
 
 const colorClasses: Record<AnnotationColor, string> = {
   yellow: 'bg-yellow-400',
@@ -14,6 +17,7 @@ interface AnnotationSidebarProps {
   activeId: string | null;
   annotations: Annotation[];
   onSelect: (id: string) => void;
+  onExport: (format: AnnotationExportFormat) => Promise<void>;
   unresolvedIds: string[];
 }
 
@@ -28,8 +32,12 @@ export function AnnotationSidebar({
   activeId,
   annotations,
   onSelect,
+  onExport,
   unresolvedIds,
 }: AnnotationSidebarProps) {
+  const [exportFormat, setExportFormat] =
+    useState<AnnotationExportFormat>('markdown');
+  const [exportStatus, setExportStatus] = useState('');
   return (
     <aside
       aria-label="高亮与批注"
@@ -42,6 +50,45 @@ export function AnnotationSidebar({
           {annotations.length}
         </span>
       </div>
+      <div className="mb-3 flex gap-2 px-2">
+        <label className="sr-only" htmlFor="annotation-export-format">
+          批注导出格式
+        </label>
+        <select
+          className="bg-background h-8 min-w-0 flex-1 rounded border px-2 text-xs"
+          id="annotation-export-format"
+          onChange={(event) => {
+            setExportFormat(
+              event.currentTarget.value as AnnotationExportFormat,
+            );
+          }}
+          value={exportFormat}
+        >
+          <option value="markdown">Markdown</option>
+          <option value="json">JSON v1</option>
+        </select>
+        <Button
+          disabled={annotations.length === 0}
+          onClick={() => {
+            setExportStatus('正在导出…');
+            void onExport(exportFormat).then(
+              () => {
+                setExportStatus('导出完成');
+              },
+              () => {
+                setExportStatus('导出已取消或失败');
+              },
+            );
+          }}
+          size="sm"
+          variant="secondary"
+        >
+          导出
+        </Button>
+      </div>
+      <p aria-live="polite" className="text-muted-foreground mb-2 px-2 text-xs">
+        {exportStatus}
+      </p>
 
       {annotations.length === 0 ? (
         <p className="text-muted-foreground px-2 py-8 text-center text-sm">

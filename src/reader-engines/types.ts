@@ -17,6 +17,15 @@ export interface ReaderTocItem {
   subitems: ReaderTocItem[];
 }
 
+export interface ReaderSearchResult {
+  excerpt: {
+    match: string;
+    post: string;
+    pre: string;
+  };
+  locator: BookLocator;
+}
+
 export type RelocationListener = (locator: BookLocator) => void;
 
 export type AnnotationColor = 'yellow' | 'blue' | 'green' | 'red';
@@ -44,7 +53,9 @@ export type HighlightActivationListener = (id: string) => void;
 
 export interface ReaderDisplayOptions {
   contentWidth: number;
+  fontFamily: 'publisher' | 'sans-serif' | 'serif';
   fontSize: number;
+  fontWeight: number;
   lineHeight: number;
   margin: number;
   theme: 'light' | 'sepia' | 'dark';
@@ -59,6 +70,8 @@ export interface EbookReader {
   goTo(locator: BookLocator): Promise<void>;
   previousPage(): Promise<void>;
   nextPage(): Promise<void>;
+  searchCurrentChapter?(query: string): Promise<ReaderSearchResult[]>;
+  clearSearch?(): void;
   getCurrentLocator(): Promise<BookLocator>;
   subscribeToRelocation(listener: RelocationListener): () => void;
   getSelection(): ReaderTextSelection | null;

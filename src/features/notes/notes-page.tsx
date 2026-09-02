@@ -1,5 +1,5 @@
-import { FilePlus2, NotebookPen, Search, Trash2 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { Download, FilePlus2, NotebookPen, Search, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { EmptyState } from '../../components/common/empty-state';
@@ -9,6 +9,10 @@ import { NoteEditor } from './components/note-editor';
 import type { BookQuoteReference } from './domain/note';
 import { useNotes } from './hooks/use-notes';
 import { notesServices, type NotesServices } from './services/notes-services';
+import {
+  NoteExportService,
+  type NoteExportFormat,
+} from './services/note-export-service';
 
 interface NotesPageProps {
   services?: NotesServices;
@@ -37,6 +41,33 @@ export function NotesPage({ services = notesServices }: NotesPageProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [bookTitles, setBookTitles] = useState<Record<string, string>>({});
   const [bookTitlesReady, setBookTitlesReady] = useState(false);
+  const [exportFormat, setExportFormat] =
+    useState<NoteExportFormat>('markdown');
+  const [exportStatus, setExportStatus] = useState('');
+  const exportService = useMemo(() => {
+    const platform = services.exportPlatform ?? notesServices.exportPlatform;
+    if (!platform) throw new Error('Note export platform is unavailable.');
+    return new NoteExportService(
+      services.noteRepository,
+      services.bookRepository,
+      platform,
+    );
+  }, [services]);
+
+  async function runExport(scope: 'all' | 'one') {
+    if (scope === 'one' && !activeNote) return;
+    setExportStatus('正在导出…');
+    try {
+      if (scope === 'one' && activeNote) {
+        await exportService.exportOne(activeNote, exportFormat);
+      } else {
+        await exportService.exportAll(exportFormat);
+      }
+      setExportStatus('导出完成');
+    } catch {
+      setExportStatus('导出已取消或失败');
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -100,10 +131,48 @@ export function NotesPage({ services = notesServices }: NotesPageProps) {
             用结构化笔记整理阅读想法和原文引用。
           </p>
         </div>
-        <Button onClick={() => void createNote()}>
-          <FilePlus2 aria-hidden="true" size={16} />
-          新建笔记
-        </Button>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <label className="sr-only" htmlFor="note-export-format">
+            笔记导出格式
+          </label>
+          <select
+            className="bg-background h-9 rounded-md border px-2 text-sm"
+            id="note-export-format"
+            onChange={(event) => {
+              setExportFormat(event.currentTarget.value as NoteExportFormat);
+            }}
+            value={exportFormat}
+          >
+            <option value="markdown">Markdown</option>
+            <option value="html">HTML</option>
+          </select>
+          <Button
+            disabled={!activeNote}
+            onClick={() => void runExport('one')}
+            size="sm"
+            variant="secondary"
+          >
+            <Download aria-hidden="true" size={15} />
+            导出当前
+          </Button>
+          <Button
+            onClick={() => void runExport('all')}
+            size="sm"
+            variant="secondary"
+          >
+            批量导出
+          </Button>
+          <Button onClick={() => void createNote()}>
+            <FilePlus2 aria-hidden="true" size={16} />
+            新建笔记
+          </Button>
+          <span
+            aria-live="polite"
+            className="text-muted-foreground w-full text-right text-xs"
+          >
+            {exportStatus}
+          </span>
+        </div>
       </header>
 
       <div className="min-h-0 flex-1 overflow-hidden rounded-xl border lg:flex">
