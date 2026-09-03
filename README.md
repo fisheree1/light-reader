@@ -144,7 +144,7 @@ docs/                     # 后续架构文档
 
 React 组件不能直接调用 Tauri API。文件与平台能力通过 Adapter/Service 隔离，持久化业务数据通过 Repository 隔离；这让 Web 测试和未来实现替换保持可控。
 
-EPUB 导入的依赖边界、回滚策略和路径约束见 [`docs/epub-import.md`](docs/epub-import.md)。书架管理、删除事务和引用保护见 [`docs/library-management.md`](docs/library-management.md)。数据库快照、备份格式与恢复事务见 [`docs/data-backup.md`](docs/data-backup.md)。阅读器生命周期、定位模型和内容安全策略见 [`docs/reader-engine.md`](docs/reader-engine.md)。笔记文档、自动保存和引用块约定见 [`docs/notes-editor.md`](docs/notes-editor.md)。FTS5 表、章节抽取和索引重建策略见 [`docs/local-search.md`](docs/local-search.md)。云同步及可选 AI 助手的边界、隐私模型、冲突策略与准入条件见 [`docs/cloud-sync-ai-evaluation.md`](docs/cloud-sync-ai-evaluation.md)。
+EPUB 导入的依赖边界、回滚策略和路径约束见 [`docs/epub-import.md`](docs/epub-import.md)。书架管理、删除事务和引用保护见 [`docs/library-management.md`](docs/library-management.md)。数据库快照、备份格式与恢复事务见 [`docs/data-backup.md`](docs/data-backup.md)。阅读器生命周期、定位模型和内容安全策略见 [`docs/reader-engine.md`](docs/reader-engine.md)。笔记文档、自动保存和引用块约定见 [`docs/notes-editor.md`](docs/notes-editor.md)。FTS5 表、章节抽取和索引重建策略见 [`docs/local-search.md`](docs/local-search.md)。云同步及可选 AI 助手的边界、隐私模型、冲突策略与准入条件见 [`docs/cloud-sync-ai-evaluation.md`](docs/cloud-sync-ai-evaluation.md)。AI Agent 的产品范围、工具系统、RAG、状态模型、安全、评估与分阶段实现见 [`docs/ai-agent-development.md`](docs/ai-agent-development.md)。
 
 ## EPUB 数据与文件位置
 
