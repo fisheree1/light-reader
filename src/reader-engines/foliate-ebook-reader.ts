@@ -64,6 +64,29 @@ type HighlightDraw = (
   options?: { color?: string },
 ) => SVGGElement;
 
+interface PointerStart {
+  x: number;
+  y: number;
+}
+
+const wheelNavigationThreshold = 80;
+const interactionCooldown = 320;
+const swipeNavigationThreshold = 48;
+
+function isInteractiveTarget(target: EventTarget | null): boolean {
+  if (!target || typeof target !== 'object' || !('closest' in target)) {
+    return false;
+  }
+  const closest = (target as { closest?: unknown }).closest;
+  if (typeof closest !== 'function') return false;
+  return Boolean(
+    (closest as (selector: string) => Element | null).call(
+      target,
+      'a, button, input, textarea, select, [contenteditable="true"], [role="button"]',
+    ),
+  );
+}
+
 const loadFoliateView: ViewModuleLoader = () => import('foliate-js/view.js');
 
 function createFoliateView(): FoliateViewElement {
@@ -241,6 +264,10 @@ export class FoliateEbookReader implements EbookReader {
   private readonly highlights = new Map<string, ReaderHighlight>();
   private readonly highlightIdsByCfi = new Map<string, string>();
   private readonly sectionCleanups = new Map<Document, () => void>();
+  private interactionLockedUntil = 0;
+  private pointerStart: PointerStart | null = null;
+  private wheelDelta = 0;
+  private wheelResetTimer: ReturnType<typeof setTimeout> | null = null;
   private view: FoliateViewElement | null = null;
   private lifecycleVersion = 0;
 
@@ -502,6 +529,10 @@ export class FoliateEbookReader implements EbookReader {
     this.highlights.clear();
     this.highlightIdsByCfi.clear();
     this.highlightDraw = null;
+    this.pointerStart = null;
+    this.wheelDelta = 0;
+    if (this.wheelResetTimer) clearTimeout(this.wheelResetTimer);
+    this.wheelResetTimer = null;
     return Promise.resolve();
   }
 
@@ -570,16 +601,82 @@ export class FoliateEbookReader implements EbookReader {
     const updateSelection = () => {
       this.readSelection(doc, index);
     };
+    const handleWheel = (event: WheelEvent) => {
+      if (event.ctrlKey || isInteractiveTarget(event.target)) return;
+      const delta =
+        Math.abs(event.deltaX) > Math.abs(event.deltaY)
+          ? event.deltaX
+          : event.deltaY;
+      if (!Number.isFinite(delta) || delta === 0) return;
+      event.preventDefault();
+      if (Date.now() < this.interactionLockedUntil) return;
+      this.wheelDelta += delta;
+      if (this.wheelResetTimer) clearTimeout(this.wheelResetTimer);
+      this.wheelResetTimer = setTimeout(() => {
+        this.wheelDelta = 0;
+        this.wheelResetTimer = null;
+      }, 180);
+      if (Math.abs(this.wheelDelta) < wheelNavigationThreshold) return;
+      const direction = this.wheelDelta > 0 ? 'next' : 'previous';
+      this.wheelDelta = 0;
+      this.navigateFromInteraction(direction);
+    };
+    const handlePointerDown = (event: PointerEvent) => {
+      if (
+        event.pointerType !== 'touch' ||
+        event.button !== 0 ||
+        isInteractiveTarget(event.target)
+      ) {
+        this.pointerStart = null;
+        return;
+      }
+      this.pointerStart = { x: event.clientX, y: event.clientY };
+    };
+    const handlePointerUp = (event: PointerEvent) => {
+      const start = this.pointerStart;
+      this.pointerStart = null;
+      if (!start || event.pointerType !== 'touch') return;
+      const deltaX = event.clientX - start.x;
+      const deltaY = event.clientY - start.y;
+      if (
+        Math.abs(deltaX) < swipeNavigationThreshold ||
+        Math.abs(deltaX) <= Math.abs(deltaY) * 1.2 ||
+        !doc.getSelection()?.isCollapsed
+      ) {
+        return;
+      }
+      event.preventDefault();
+      this.navigateFromInteraction(deltaX < 0 ? 'next' : 'previous');
+    };
+    const cancelPointer = () => {
+      this.pointerStart = null;
+    };
     doc.addEventListener('selectionchange', updateSelection);
     doc.addEventListener('pointerup', updateSelection);
     doc.addEventListener('keyup', updateSelection);
+    doc.addEventListener('wheel', handleWheel, { passive: false });
+    doc.addEventListener('pointerdown', handlePointerDown);
+    doc.addEventListener('pointerup', handlePointerUp);
+    doc.addEventListener('pointercancel', cancelPointer);
     this.sectionCleanups.get(doc)?.();
     this.sectionCleanups.set(doc, () => {
       doc.removeEventListener('selectionchange', updateSelection);
       doc.removeEventListener('pointerup', updateSelection);
       doc.removeEventListener('keyup', updateSelection);
+      doc.removeEventListener('wheel', handleWheel);
+      doc.removeEventListener('pointerdown', handlePointerDown);
+      doc.removeEventListener('pointerup', handlePointerUp);
+      doc.removeEventListener('pointercancel', cancelPointer);
     });
   };
+
+  private navigateFromInteraction(direction: 'next' | 'previous'): void {
+    if (Date.now() < this.interactionLockedUntil) return;
+    this.interactionLockedUntil = Date.now() + interactionCooldown;
+    const navigation =
+      direction === 'next' ? this.nextPage() : this.previousPage();
+    void navigation.catch(() => undefined);
+  }
 
   private readonly handleDrawAnnotation: EventListener = (event) => {
     const detail = (event as CustomEvent<unknown>).detail;

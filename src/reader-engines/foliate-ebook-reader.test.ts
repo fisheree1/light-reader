@@ -91,6 +91,21 @@ function createReader(view = createFakeView()) {
   return { host, reader, view };
 }
 
+function touchPointerEvent(
+  type: 'pointerdown' | 'pointerup',
+  x: number,
+  y: number,
+): Event {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperties(event, {
+    button: { value: 0 },
+    clientX: { value: x },
+    clientY: { value: y },
+    pointerType: { value: 'touch' },
+  });
+  return event;
+}
+
 describe('FoliateEbookReader', () => {
   it('opens, exposes a safe TOC, relocates, and navigates', async () => {
     const { host, reader, view } = createReader();
@@ -295,6 +310,52 @@ describe('FoliateEbookReader', () => {
     });
     expect(listener).toHaveBeenCalledOnce();
     paragraph.remove();
+  });
+
+  it('turns EPUB wheel input into throttled page navigation', async () => {
+    const { reader, view } = createReader();
+    await reader.open(new ArrayBuffer(1));
+    view.dispatchEvent(
+      new CustomEvent('load', { detail: { doc: document, index: 0 } }),
+    );
+
+    const wheel = new WheelEvent('wheel', {
+      bubbles: true,
+      cancelable: true,
+      deltaY: 120,
+    });
+    document.dispatchEvent(wheel);
+    document.dispatchEvent(
+      new WheelEvent('wheel', { cancelable: true, deltaY: 120 }),
+    );
+
+    expect(wheel.defaultPrevented).toBe(true);
+    expect(view.next).toHaveBeenCalledOnce();
+    await reader.close();
+  });
+
+  it('supports horizontal touch swipes without hijacking interactive controls', async () => {
+    const { reader, view } = createReader();
+    await reader.open(new ArrayBuffer(1));
+    document.getSelection()?.removeAllRanges();
+    view.dispatchEvent(
+      new CustomEvent('load', { detail: { doc: document, index: 0 } }),
+    );
+
+    document.dispatchEvent(touchPointerEvent('pointerdown', 260, 120));
+    const swipeLeft = touchPointerEvent('pointerup', 120, 125);
+    document.dispatchEvent(swipeLeft);
+
+    expect(swipeLeft.defaultPrevented).toBe(true);
+    expect(view.next).toHaveBeenCalledOnce();
+
+    const input = document.createElement('input');
+    document.body.append(input);
+    input.dispatchEvent(touchPointerEvent('pointerdown', 120, 120));
+    input.dispatchEvent(touchPointerEvent('pointerup', 260, 120));
+    expect(view.prev).not.toHaveBeenCalled();
+    input.remove();
+    await reader.close();
   });
 
   it('draws, restores, activates, navigates to, and removes highlights', async () => {

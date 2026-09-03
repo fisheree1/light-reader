@@ -176,8 +176,18 @@ describe('SqliteLibraryRepository', () => {
 
   it('deletes the book transactionally and rolls back on failure', async () => {
     const database = new MemoryLibraryDatabase();
-    const repository = new SqliteLibraryRepository(() =>
-      Promise.resolve(database),
+    const atomicDelete = vi.fn((bookId: string) => {
+      if (database.failBookDelete) {
+        return Promise.reject(new Error('locked'));
+      }
+      database.rows = database.rows.filter((row) => row.id !== bookId);
+      database.tags = database.tags.filter((tag) => tag.book_id !== bookId);
+      return Promise.resolve();
+    });
+    const repository = new SqliteLibraryRepository(
+      () => Promise.resolve(database),
+      Date.now,
+      atomicDelete,
     );
 
     database.failBookDelete = true;
@@ -185,10 +195,10 @@ describe('SqliteLibraryRepository', () => {
       code: 'BOOK_DELETE_FAILED',
     });
     expect(database.rows.some((row) => row.id === 'book-1')).toBe(true);
-    expect(database.executions.at(-1)?.query).toBe('ROLLBACK');
 
     database.failBookDelete = false;
     await repository.deleteBook('book-1', []);
     expect(database.rows.some((row) => row.id === 'book-1')).toBe(false);
+    expect(atomicDelete).toHaveBeenLastCalledWith('book-1', []);
   });
 });

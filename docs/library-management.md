@@ -24,7 +24,7 @@ matching, an optional favorites filter, and three deterministic orders:
 
 ## Delete modes
 
-Both modes remove the managed EPUB/cover and delete the `books` record. SQLite
+Both modes remove the managed EPUB or PDF and its cover, then delete the `books` record. SQLite
 foreign keys then remove book-owned reading state, reader overrides,
 annotations, tags, and indexed EPUB chapters.
 
@@ -34,7 +34,7 @@ annotations, tags, and indexed EPUB chapters.
   committed in one SQLite transaction.
 - `keep-note-references` leaves independent note JSON unchanged, so quote,
   chapter, and locator snapshots remain available. Since the book is gone,
-  those snapshots can no longer navigate to the original EPUB.
+  those snapshots can no longer navigate to the original book.
 
 The dialog first asks the user to choose one of these effects. A separate
 confirmation view explains the exact impact and requires a second click.
@@ -42,14 +42,17 @@ confirmation view explains the exact impact and requires a second click.
 ## File and database failure protocol
 
 Deletion never trusts a user-supplied target path. The stored path must exactly
-match `light-reader/books/<book-id>/book.epub`; an optional cover must match
+match `light-reader/books/<book-id>/book.epub` or
+`light-reader/books/<book-id>/book.pdf`; an optional cover must match
 `light-reader/covers/<book-id>.(gif|jpeg|png|webp)`.
 
 1. Write a validated `deletion.json` journal containing only the generated book
    ID and managed cover path.
 2. Rename the managed book directory and cover into
    `light-reader/trash/<deletion-id>/`.
-3. Execute note-reference updates and book deletion in one SQLite transaction.
+3. Execute note-reference updates and book deletion in one SQLite transaction
+   on one native connection. This avoids leaving `BEGIN IMMEDIATE` on one SQL
+   plugin pool connection while a later statement waits on another connection.
 4. If SQLite fails, rename every staged file back and report a safe error.
 5. If SQLite commits, recursively remove the quarantine directory.
 

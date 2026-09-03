@@ -3,7 +3,6 @@ import type {
   PDFDocumentLoadingTask,
   PDFDocumentProxy,
   PDFPageProxy,
-  PDFWorker,
   RenderTask,
   TextLayer,
 } from 'pdfjs-dist';
@@ -27,7 +26,7 @@ import {
 
 type PdfJsRuntime = Pick<
   typeof import('pdfjs-dist'),
-  'GlobalWorkerOptions' | 'PDFWorker' | 'TextLayer' | 'getDocument'
+  'GlobalWorkerOptions' | 'TextLayer' | 'getDocument'
 >;
 type PdfJsRuntimeLoader = () => Promise<PdfJsRuntime>;
 
@@ -51,9 +50,7 @@ const highlightColors = {
 } as const;
 
 async function loadPdfJsRuntime(): Promise<PdfJsRuntime> {
-  const runtime = await import('pdfjs-dist');
-  runtime.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
-  return runtime;
+  return import('pdfjs-dist');
 }
 
 function clamp(value: number, minimum: number, maximum: number): number {
@@ -66,6 +63,28 @@ function normalizedPageText(content: TextContent): string {
       'str' in item ? [item.str, ...(item.hasEOL ? ['\n'] : [])] : [],
     )
     .join('');
+}
+
+async function readPageTextContent(page: PDFPageProxy): Promise<TextContent> {
+  const stream = page.streamTextContent() as ReadableStream<TextContent>;
+  const reader = stream.getReader();
+  const content: TextContent = {
+    items: [],
+    styles: Object.create(null) as TextContent['styles'],
+    lang: null,
+  };
+  try {
+    let chunk = await reader.read();
+    while (!chunk.done) {
+      content.lang ??= chunk.value.lang;
+      Object.assign(content.styles, chunk.value.styles);
+      content.items.push(...chunk.value.items);
+      chunk = await reader.read();
+    }
+    return content;
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 function findTextOffset(
@@ -172,8 +191,6 @@ export class PdfEbookReader implements EbookReader {
     margin: 32,
     theme: 'light',
   };
-  private worker: PDFWorker | null = null;
-
   constructor(loadRuntime: PdfJsRuntimeLoader = loadPdfJsRuntime) {
     this.loadRuntime = loadRuntime;
   }
@@ -194,18 +211,15 @@ export class PdfEbookReader implements EbookReader {
     try {
       const runtime = await this.loadRuntime();
       if (lifecycleVersion !== this.lifecycleVersion) return;
-      runtime.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+      runtime.GlobalWorkerOptions.workerSrc = new URL(
+        pdfWorkerUrl,
+        window.location.href,
+      ).href;
       this.runtime = runtime;
-      this.worker = new runtime.PDFWorker();
-      this.loadingTask = runtime.getDocument({
-        data: new Uint8Array(source),
-        maxImageSize: maxCanvasPixels,
-        stopAtErrors: true,
-        worker: this.worker,
-      });
-      const document = await this.loadingTask.promise;
+      const document = await this.loadDocument(runtime, source);
       if (lifecycleVersion !== this.lifecycleVersion) {
         await document.cleanup();
+        await this.close();
         return;
       }
       if (document.numPages < 1) throw new Error('PDF has no pages.');
@@ -435,18 +449,11 @@ export class PdfEbookReader implements EbookReader {
     }
     const document = this.document;
     const loadingTask = this.loadingTask;
-    const worker = this.worker;
     this.document = null;
     this.loadingTask = null;
-    this.worker = null;
     this.runtime = null;
     await document?.cleanup().catch(() => undefined);
     await loadingTask?.destroy().catch(() => undefined);
-    try {
-      worker?.destroy();
-    } catch {
-      // Continue clearing DOM and serializable state.
-    }
     this.pageShells = [];
     this.renderingPages.clear();
     this.scroller?.remove();
@@ -462,6 +469,19 @@ export class PdfEbookReader implements EbookReader {
       progression: 0,
     };
     this.setSelection(null);
+  }
+
+  private async loadDocument(
+    runtime: PdfJsRuntime,
+    source: ArrayBuffer,
+  ): Promise<PDFDocumentProxy> {
+    const task = runtime.getDocument({
+      data: Uint8Array.from(new Uint8Array(source)),
+      maxImageSize: maxCanvasPixels,
+      stopAtErrors: false,
+    });
+    this.loadingTask = task;
+    return task.promise;
   }
 
   private async createPageShells(document: PDFDocumentProxy): Promise<void> {
@@ -715,7 +735,7 @@ export class PdfEbookReader implements EbookReader {
     try {
       const [, textContent] = await Promise.all([
         renderTask.promise,
-        page.getTextContent(),
+        readPageTextContent(page),
       ]);
       if (lifecycleVersion !== this.lifecycleVersion) return;
       this.cachePageText(pageIndex, normalizedPageText(textContent));
@@ -771,7 +791,7 @@ export class PdfEbookReader implements EbookReader {
     }
     const page = await this.requireDocument().getPage(pageIndex + 1);
     try {
-      const text = normalizedPageText(await page.getTextContent());
+      const text = normalizedPageText(await readPageTextContent(page));
       this.cachePageText(pageIndex, text);
       return text;
     } finally {

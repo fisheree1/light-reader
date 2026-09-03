@@ -1,3 +1,5 @@
+import { invoke } from '@tauri-apps/api/core';
+
 import {
   bookListOptionsSchema,
   bookTagSchema,
@@ -19,6 +21,21 @@ import {
 import type { LibraryRepository } from './library-repository';
 
 type DatabaseProvider = () => Promise<SqlDatabase>;
+
+interface AtomicNoteReferenceUpdate {
+  contentJson: string;
+  id: string;
+  plainText: string;
+  updatedAt: number;
+}
+
+type AtomicBookDelete = (
+  bookId: string,
+  noteUpdates: AtomicNoteReferenceUpdate[],
+) => Promise<void>;
+
+const deleteBookAtomically: AtomicBookDelete = (bookId, noteUpdates) =>
+  invoke('delete_library_book', { bookId, noteUpdates });
 
 const bookColumns = `b.id, b.title, b.author, b.format, b.file_path,
   b.file_hash, b.cover_path, b.metadata_json, b.file_size, b.created_at,
@@ -52,13 +69,16 @@ function orderBy(sort: BookListOptions['sort']): string {
 export class SqliteLibraryRepository implements LibraryRepository {
   private readonly databaseProvider: DatabaseProvider;
   private readonly now: () => number;
+  private readonly atomicBookDelete: AtomicBookDelete;
 
   constructor(
     databaseProvider: DatabaseProvider = getDatabase,
     now: () => number = Date.now,
+    atomicBookDelete: AtomicBookDelete = deleteBookAtomically,
   ) {
     this.databaseProvider = databaseProvider;
     this.now = now;
+    this.atomicBookDelete = atomicBookDelete;
   }
 
   async list(value: BookListOptions): Promise<LibraryBook[]> {
@@ -146,23 +166,16 @@ export class SqliteLibraryRepository implements LibraryRepository {
     const id = validId(bookId);
     const updates = noteReferenceUpdateSchema.array().parse(values);
     try {
-      const database = await this.databaseProvider();
-      await this.transaction(database, async () => {
-        for (const update of updates) {
-          await database.execute(
-            `UPDATE notes
-             SET content_json = $1, plain_text = $2, updated_at = $3
-             WHERE id = $4`,
-            [
-              JSON.stringify(update.document),
-              extractPlainText(update.document),
-              this.now(),
-              update.id,
-            ],
-          );
-        }
-        await database.execute('DELETE FROM books WHERE id = $1', [id]);
-      });
+      const timestamp = this.now();
+      await this.atomicBookDelete(
+        id,
+        updates.map((update) => ({
+          contentJson: JSON.stringify(update.document),
+          id: update.id,
+          plainText: extractPlainText(update.document),
+          updatedAt: timestamp,
+        })),
+      );
     } catch (error) {
       if (isAppError(error)) throw error;
       throw new AppError('BOOK_DELETE_FAILED', { cause: error });

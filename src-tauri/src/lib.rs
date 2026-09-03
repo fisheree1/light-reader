@@ -4,6 +4,7 @@ use tauri::Manager;
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 mod backup;
+mod library;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -92,7 +93,8 @@ pub fn run() {
             backup::restore_database_snapshot,
             backup::inspect_full_backup_snapshot,
             backup::restore_full_backup_snapshot,
-            backup::available_backup_space
+            backup::available_backup_space,
+            library::delete_library_book
         ])
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())

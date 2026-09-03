@@ -67,9 +67,15 @@ This prevents the renderer's initial relocation from overwriting a saved value.
 
 `pdfjs-dist` is pinned in the package lock. Its main API is loaded only when a
 PDF reader opens, and the matching worker is emitted as a Vite-managed local
-asset. Each `PdfEbookReader` owns its worker and loading task; close and rapid
-book switching cancel page/text-layer work, release page resources, destroy the
-loading task and terminate the worker.
+asset. The adapter resolves that asset to an absolute URL before PDF.js creates
+and owns the worker. It does not construct a second `PDFWorker`, so the worker
+and document loading task cannot drift into separate lifecycles. Close and rapid
+book switching cancel page/text-layer work, release page resources and destroy
+the loading task. Recoverable PDF structure warnings use PDF.js's tolerant
+parsing path instead of rejecting an otherwise readable file. Text extraction
+consumes `streamTextContent()` through `ReadableStream.getReader()` rather than
+PDF.js's async-iterator convenience method, because the macOS Tauri WebView does
+not consistently expose `ReadableStream[Symbol.asyncIterator]`.
 
 The adapter creates lightweight placeholders for every page but renders only
 the current page and its immediate neighbors. It retains at most five rendered
@@ -140,11 +146,15 @@ the Annotation still exists, the restored highlight is activated as well.
 6. Load annotations and restore each highlight without failing the reading session.
 7. Translate later relocation events into locators and debounce persistence.
 8. Navigate using CFI first, then chapter href, then total progression.
-9. On source change or unmount, remove selection/overlay/navigation listeners,
-   unload sections, close the renderer and detach the custom element. `close()`
-   is idempotent. Each React session owns a nested host, and the adapter uses a
-   lifecycle generation token so a delayed open from a rapidly abandoned book
-   cannot mount over the current book.
+9. Inside each loaded EPUB document, accumulate wheel/trackpad deltas into one
+   throttled page action and map horizontal touch swipes to previous/next. Links,
+   buttons, form fields, editable content, pinch zoom and active text selection
+   are not hijacked.
+10. On source change or unmount, remove selection/overlay/navigation listeners,
+    unload sections, close the renderer and detach the custom element. `close()`
+    is idempotent. Each React session owns a nested host, and the adapter uses a
+    lifecycle generation token so a delayed open from a rapidly abandoned book
+    cannot mount over the current book.
 
 Vite excludes Foliate's dormant PDF, MOBI, FB2, CBZ, search and TTS dynamic
 modules. PDF support comes from the independent PDF.js adapter; fixed-layout

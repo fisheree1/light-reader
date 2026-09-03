@@ -31,18 +31,23 @@ function createPdfRuntime(
   const cancelRender = vi.fn();
   const cancelTextLayer = vi.fn();
   const destroyLoadingTask = vi.fn(() => Promise.resolve());
-  const destroyWorker = vi.fn();
   const getPage = vi.fn((pageNumber: number) => {
     const textContent = createTextContent(pageText(pageNumber - 1));
     return Promise.resolve({
       cleanup,
-      getTextContent: () => Promise.resolve(textContent),
       getViewport: ({ scale }: { scale: number }) => ({
         height: 800 * scale,
         scale,
         width: 600 * scale,
       }),
       render: () => ({ cancel: cancelRender, promise: Promise.resolve() }),
+      streamTextContent: () =>
+        new ReadableStream<TextContent>({
+          start(controller) {
+            controller.enqueue(textContent);
+            controller.close();
+          },
+        }),
     });
   });
   const document = {
@@ -54,9 +59,6 @@ function createPdfRuntime(
     destroy: destroyLoadingTask,
     promise: Promise.resolve(document),
   };
-  class FakeWorker {
-    destroy = destroyWorker;
-  }
   class FakeTextLayer {
     private readonly container: HTMLElement;
     private readonly content: TextContent;
@@ -85,8 +87,7 @@ function createPdfRuntime(
     }
   }
   const runtime = {
-    GlobalWorkerOptions: { workerSrc: '' },
-    PDFWorker: FakeWorker,
+    GlobalWorkerOptions: { workerPort: null, workerSrc: '' },
     TextLayer: FakeTextLayer,
     getDocument: vi.fn(() => loadingTask),
   };
@@ -96,7 +97,6 @@ function createPdfRuntime(
     cancelTextLayer,
     cleanup,
     destroyLoadingTask,
-    destroyWorker,
     document,
     getPage,
     loadingTask,
@@ -197,6 +197,25 @@ describe('PdfEbookReader', () => {
     expect(host.querySelectorAll('.pdf-page')).toHaveLength(2_000);
     expect(host.querySelectorAll('canvas').length).toBeLessThanOrEqual(3);
     expect(runtime.getPage.mock.calls.length).toBeLessThanOrEqual(4);
+    await reader.close();
+  });
+
+  it('uses the bundled worker URL and tolerant parsing for WebView compatibility', async () => {
+    const runtime = createPdfRuntime(1);
+    const { reader } = createReader(runtime);
+
+    await expect(
+      reader.open(new Uint8Array([37, 80, 68, 70]).buffer),
+    ).resolves.toBeUndefined();
+
+    expect(runtime.runtime.GlobalWorkerOptions.workerSrc).toContain(
+      'pdf.worker.min',
+    );
+    expect(runtime.runtime.getDocument).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        stopAtErrors: false,
+      }),
+    );
     await reader.close();
   });
 
@@ -402,13 +421,19 @@ describe('PdfEbookReader', () => {
       if (pageNumber === 3) return Promise.reject(new Error('text failed'));
       return Promise.resolve({
         cleanup: vi.fn(() => true),
-        getTextContent: () => Promise.resolve(createTextContent('plain')),
         getViewport: ({ scale }: { scale: number }) => ({
           height: 800 * scale,
           scale,
           width: 600 * scale,
         }),
         render: () => ({ cancel: vi.fn(), promise: Promise.resolve() }),
+        streamTextContent: () =>
+          new ReadableStream<TextContent>({
+            start(controller) {
+              controller.enqueue(createTextContent('plain'));
+              controller.close();
+            },
+          }),
       });
     });
     await expect(reader.search('missing')).rejects.toMatchObject({
@@ -425,7 +450,7 @@ describe('PdfEbookReader', () => {
     });
   });
 
-  it('cancels page resources and destroys loading task and worker on close', async () => {
+  it('cancels page resources and destroys the worker-owning loading task on close', async () => {
     const { host, reader, runtime } = createReader();
     await reader.open(new Uint8Array([1]).buffer);
 
@@ -435,7 +460,6 @@ describe('PdfEbookReader', () => {
     expect(runtime.cleanup).toHaveBeenCalled();
     expect(runtime.document.cleanup).toHaveBeenCalled();
     expect(runtime.destroyLoadingTask).toHaveBeenCalled();
-    expect(runtime.destroyWorker).toHaveBeenCalled();
     expect(host).toBeEmptyDOMElement();
   });
 
