@@ -3,6 +3,7 @@ use log::LevelFilter;
 use tauri::Manager;
 use tauri_plugin_sql::{Migration, MigrationKind};
 
+mod ai;
 mod backup;
 mod library;
 
@@ -86,7 +87,11 @@ pub fn run() {
     }
 
     builder
+        .manage(ai::OllamaState::new())
         .invoke_handler(tauri::generate_handler![
+            ai::ai_ollama_status,
+            ai::ai_ollama_chat,
+            ai::ai_cancel_ollama_run,
             backup::prepare_database_migration,
             backup::create_database_snapshot,
             backup::inspect_database_snapshot,

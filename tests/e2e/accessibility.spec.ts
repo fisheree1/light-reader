@@ -90,3 +90,45 @@ test('audits the Tiptap toolbar and supports keyboard formatting', async ({
   await expect(boldButton).toHaveAttribute('aria-pressed', 'true');
   await expect(editor).toBeFocused();
 });
+
+test('keeps local AI settings and consent dialog accessible', async ({
+  page,
+}) => {
+  await page.goto('/settings');
+  await expectNoAccessibilityViolations(page, [
+    '[aria-labelledby="ai-settings-title"]',
+  ]);
+  await page.getByLabel('启用本地 AI 助手').check();
+  await page.getByRole('button', { name: '保存 AI 设置' }).click();
+
+  await page.goto('/library');
+  await page.getByRole('button', { name: '导入电子书' }).click();
+  await page.getByRole('button', { name: '打开《Web 测试 EPUB》' }).click();
+  await expect(page.getByRole('button', { name: '第一章' })).toBeVisible();
+
+  let contentFrame = page
+    .frames()
+    .find((frame) => frame.url().startsWith('blob:'));
+  await expect
+    .poll(() => {
+      contentFrame = page
+        .frames()
+        .find((frame) => frame.url().startsWith('blob:'));
+      return contentFrame !== undefined;
+    })
+    .toBe(true);
+  if (!contentFrame) throw new Error('EPUB content frame was not created');
+  await contentFrame
+    .getByText('这是 LightReader 自制的无版权测试内容。')
+    .selectText();
+
+  const trigger = page.getByRole('button', { name: 'AI 助手' });
+  await trigger.focus();
+  await page.keyboard.press('Enter');
+  const dialog = page.getByRole('dialog', { name: '本地 AI 阅读助手' });
+  await expect(dialog).toBeVisible();
+  await expectNoAccessibilityViolations(page, ['[role="dialog"]']);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toBeFocused();
+});

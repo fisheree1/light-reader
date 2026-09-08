@@ -18,17 +18,22 @@ import type {
   ReadingHistoryEntry,
   ReadingStats,
 } from '../reader/domain/reading-activity';
+import { AiSettingsSection } from '../ai-agent/components/ai-settings-section';
+import type { AgentFacade } from '../ai-agent/services/agent-facade';
+import { agentFacade as defaultAgentFacade } from '../ai-agent/services/ai-services';
 
 type HealthStatus = 'idle' | 'checking' | 'healthy' | 'error';
 type SaveStatus = 'idle' | 'loading' | 'saving' | 'saved' | 'error';
 
 interface SettingsPageProps {
+  agentFacade?: AgentFacade;
   backupManager?: BackupManager;
   readingActivityRepository?: ReadingActivityRepository;
   settingsRepository?: ReaderSettingsRepository;
 }
 
 export function SettingsPage({
+  agentFacade = defaultAgentFacade,
   backupManager = defaultBackupManager,
   readingActivityRepository,
   settingsRepository = readerServices.settingsRepository,
@@ -206,6 +211,8 @@ export function SettingsPage({
       </section>
 
       <BackupSettings manager={backupManager} />
+
+      <AiSettingsSection facade={agentFacade} />
 
       {import.meta.env.DEV ? (
         <section className="bg-surface mt-4 rounded-lg border p-5">

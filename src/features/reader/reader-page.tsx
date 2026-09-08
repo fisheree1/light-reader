@@ -29,8 +29,14 @@ import {
   readerServices,
   type ReaderServices,
 } from './services/reader-services';
+import { AiSelectionAssistant } from '../ai-agent/components/ai-selection-assistant';
+import type { AgentFacade } from '../ai-agent/services/agent-facade';
+import { agentFacade as defaultAgentFacade } from '../ai-agent/services/ai-services';
+import type { AiDraft } from '../ai-agent/domain/agent';
+import { NoteService } from '../notes/services/note-service';
 
 interface ReaderPageProps {
+  agentFacade?: AgentFacade;
   services?: ReaderServices;
 }
 
@@ -42,7 +48,10 @@ function isEditingTarget(target: EventTarget | null) {
   );
 }
 
-export function ReaderPage({ services = readerServices }: ReaderPageProps) {
+export function ReaderPage({
+  agentFacade = defaultAgentFacade,
+  services = readerServices,
+}: ReaderPageProps) {
   const { bookId = '' } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -91,6 +100,7 @@ export function ReaderPage({ services = readerServices }: ReaderPageProps) {
   const [isAnnotationSidebarOpen, setIsAnnotationSidebarOpen] = useState(true);
   const [isBookmarkSidebarOpen, setIsBookmarkSidebarOpen] = useState(false);
   const [isChapterSearchOpen, setIsChapterSearchOpen] = useState(false);
+  const [isAiAssistantOpen, setIsAiAssistantOpen] = useState(false);
   const activeAnnotation =
     annotations.find((annotation) => annotation.id === activeAnnotationId) ??
     null;
@@ -218,7 +228,13 @@ export function ReaderPage({ services = readerServices }: ReaderPageProps) {
             ref={hostRef}
           />
 
-          <SelectionToolbar onCreate={createHighlight} selection={selection} />
+          <SelectionToolbar
+            onCreate={createHighlight}
+            onOpenAi={() => {
+              setIsAiAssistantOpen(true);
+            }}
+            selection={selection}
+          />
 
           {isChapterSearchOpen ? (
             <ReaderChapterSearch
@@ -365,6 +381,26 @@ export function ReaderPage({ services = readerServices }: ReaderPageProps) {
             await navigate(`/notes?noteId=${encodeURIComponent(note.id)}`);
           }}
           onSave={updateAnnotationNote}
+        />
+      ) : null}
+
+      {book && selection ? (
+        <AiSelectionAssistant
+          bookId={book.id}
+          bookTitle={book.title}
+          facade={agentFacade}
+          onCreateNote={async (draft: AiDraft) => {
+            if (!services.noteRepository) {
+              throw new Error('Note repository is unavailable.');
+            }
+            const note = await new NoteService(
+              services.noteRepository,
+            ).createFromPlainText(draft.title, draft.content);
+            await navigate(`/notes?noteId=${encodeURIComponent(note.id)}`);
+          }}
+          onOpenChange={setIsAiAssistantOpen}
+          open={isAiAssistantOpen}
+          selection={selection}
         />
       ) : null}
     </div>

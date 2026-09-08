@@ -144,7 +144,7 @@ docs/                     # 后续架构文档
 
 React 组件不能直接调用 Tauri API。文件与平台能力通过 Adapter/Service 隔离，持久化业务数据通过 Repository 隔离；这让 Web 测试和未来实现替换保持可控。
 
-EPUB 导入的依赖边界、回滚策略和路径约束见 [`docs/epub-import.md`](docs/epub-import.md)。书架管理、删除事务和引用保护见 [`docs/library-management.md`](docs/library-management.md)。数据库快照、备份格式与恢复事务见 [`docs/data-backup.md`](docs/data-backup.md)。阅读器生命周期、定位模型和内容安全策略见 [`docs/reader-engine.md`](docs/reader-engine.md)。笔记文档、自动保存和引用块约定见 [`docs/notes-editor.md`](docs/notes-editor.md)。FTS5 表、章节抽取和索引重建策略见 [`docs/local-search.md`](docs/local-search.md)。云同步及可选 AI 助手的边界、隐私模型、冲突策略与准入条件见 [`docs/cloud-sync-ai-evaluation.md`](docs/cloud-sync-ai-evaluation.md)。AI Agent 的产品范围、工具系统、RAG、状态模型、安全、评估与分阶段实现见 [`docs/ai-agent-development.md`](docs/ai-agent-development.md)。
+EPUB 导入的依赖边界、回滚策略和路径约束见 [`docs/epub-import.md`](docs/epub-import.md)。书架管理、删除事务和引用保护见 [`docs/library-management.md`](docs/library-management.md)。数据库快照、备份格式与恢复事务见 [`docs/data-backup.md`](docs/data-backup.md)。阅读器生命周期、定位模型和内容安全策略见 [`docs/reader-engine.md`](docs/reader-engine.md)。笔记文档、自动保存和引用块约定见 [`docs/notes-editor.md`](docs/notes-editor.md)。FTS5 表、章节抽取和索引重建策略见 [`docs/local-search.md`](docs/local-search.md)。云同步及可选 AI 助手的边界、隐私模型、冲突策略与准入条件见 [`docs/cloud-sync-ai-evaluation.md`](docs/cloud-sync-ai-evaluation.md)。AI Agent 的产品范围、工具系统、RAG、状态模型、安全、评估与分阶段实现见 [`docs/ai-agent-development.md`](docs/ai-agent-development.md)；本地 Provider 决策和首个模型基线分别见 [`docs/adr/0001-local-ollama-provider.md`](docs/adr/0001-local-ollama-provider.md) 与 [`docs/ai-local-model-baseline.md`](docs/ai-local-model-baseline.md)。
 
 ## EPUB 数据与文件位置
 
@@ -207,11 +207,27 @@ Tauri 文件删除采用应用受控隔离区：先原子重命名电子书目�
 
 独立笔记除串行 SQLite 自动保存外，还会同步写入带数据库基线版本的本地草稿日志。若应用在防抖保存前异常退出，下次启动会恢复草稿；数据库已更新时，旧草稿不会反向覆盖新内容。
 
+## 本地 AI 助手
+
+第一版 AI 只支持本机 Ollama，默认模型为 `deepseek-r1:8b`，不使用云服务或
+API Key：
+
+1. 启动 Ollama，并确认已经安装 `deepseek-r1:8b`；
+2. 使用 `pnpm tauri:dev` 启动桌面应用；
+3. 在“设置 → 本地 AI 助手”中启用 AI、保存并检测 Ollama；
+4. 打开 EPUB 或 PDF，选择正文后点击“AI 助手”；
+5. 选择总结、解释、翻译、提纲或阅读问题，检查将发送的准确文本后确认；
+6. 生成结果先成为独立 AI 草稿，可复制、丢弃或明确确认后创建新笔记。
+
+AI 默认关闭，只允许固定的本机 Ollama 地址。模型不能访问文件路径、SQL、
+Repository、其他书籍或原始笔记；思考内容不会显示或持久化。关闭确认框、取消、
+超时或失败都不会写入笔记。
+
 ## 当前未实现
 
 - 跨设备协作编辑
 - 云同步（已完成架构与隐私评估，尚未接入服务）
-- 可选 AI 助手（已完成最小授权范围评估，尚未接入模型）
+- 单书 RAG、可验证引用、工具型 Agent 和学习工作流
 
 ## 常见问题
 

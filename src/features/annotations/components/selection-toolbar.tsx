@@ -1,4 +1,4 @@
-import { Highlighter } from 'lucide-react';
+import { Highlighter, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 
 import { Button } from '../../../components/ui/button';
@@ -14,11 +14,13 @@ const colors: { className: string; label: string; value: AnnotationColor }[] = [
 ];
 
 interface SelectionToolbarProps {
+  onOpenAi?: () => void;
   onCreate: (color: AnnotationColor) => Promise<void>;
   selection: ReaderTextSelection | null;
 }
 
 export function SelectionToolbar({
+  onOpenAi,
   onCreate,
   selection,
 }: SelectionToolbarProps) {
@@ -76,6 +78,12 @@ export function SelectionToolbar({
         <Highlighter aria-hidden="true" size={15} />
         {isCreating ? '添加中…' : '添加高亮'}
       </Button>
+      {onOpenAi ? (
+        <Button onClick={onOpenAi} size="sm" variant="secondary">
+          <Sparkles aria-hidden="true" size={15} />
+          AI 助手
+        </Button>
+      ) : null}
     </div>
   );
 }

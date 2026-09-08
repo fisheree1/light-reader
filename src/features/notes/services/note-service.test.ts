@@ -57,6 +57,25 @@ function createRepository() {
 }
 
 describe('NoteService', () => {
+  it('creates a new plain-text note without modifying an existing note', async () => {
+    const { notes, repository } = createRepository();
+    const service = new NoteService(
+      repository,
+      () => 'ai-note',
+      () => 20,
+    );
+
+    const created = await service.createFromPlainText(
+      'AI 阅读草稿',
+      '第一段\n第二段',
+    );
+
+    expect(created.id).toBe('ai-note');
+    expect(created.title).toBe('AI 阅读草稿');
+    expect(created.plainText).toBe('第一段 第二段');
+    expect(notes).toHaveLength(1);
+  });
+
   it('creates an independent note with a quote snapshot', async () => {
     const { notes, repository } = createRepository();
     const service = new NoteService(

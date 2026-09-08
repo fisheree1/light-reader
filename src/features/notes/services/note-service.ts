@@ -88,6 +88,30 @@ export class NoteService {
     );
   }
 
+  createFromPlainText(title: string, content: string): Promise<Note> {
+    const document = createEmptyNoteDocument();
+    document.content.content = content
+      .slice(0, 1_000_000)
+      .split(/\r?\n/u)
+      .map((line) => ({
+        type: 'paragraph',
+        content: line ? [{ type: 'text', text: line }] : undefined,
+      }));
+    const input = noteSaveInputSchema.parse({ title, document });
+    const now = this.now();
+    return this.repository.create(
+      noteSchema.parse({
+        id: this.createId(),
+        title: input.title,
+        document: input.document,
+        plainText: extractPlainText(input.document),
+        documentRecovered: false,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    );
+  }
+
   save(noteId: string, value: NoteSaveInput): Promise<Note> {
     const input = noteSaveInputSchema.parse(value);
     const previous = this.saveQueues.get(noteId) ?? Promise.resolve();

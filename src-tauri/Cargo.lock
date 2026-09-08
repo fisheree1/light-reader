@@ -2222,7 +2222,9 @@ name = "light-reader"
 version = "0.1.0"
 dependencies = [
  "fs2",
+ "futures-util",
  "log",
+ "reqwest",
  "serde",
  "serde_json",
  "sqlx",

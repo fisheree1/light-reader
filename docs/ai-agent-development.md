@@ -1,8 +1,15 @@
 # LightReader AI Agent 开发设计
 
-状态：设计完成，尚未实现。
+状态：Phase A/B 已实现本地 Ollama 选中文本助手；Phase C～F 尚未实现。
 
-更新日期：2026-09-03。
+更新日期：2026-09-08。
+
+当前实现采用固定回环地址的 Ollama Provider，默认模型为
+`deepseek-r1:8b`。领域 schema、授权状态机、预算、Fake Provider、敏感内容
+提示、精确文本确认、流式取消、内存 AI 草稿、设置页和确认后新建笔记已经
+接入。实现决策见 [`adr/0001-local-ollama-provider.md`](adr/0001-local-ollama-provider.md)，
+模型基线见 [`ai-local-model-baseline.md`](ai-local-model-baseline.md)。单书 RAG、
+引用、工具型 Agent、受控追加和高级能力仍按本文后续阶段实施。
 
 本文定义 LightReader 后续引入 AI Agent 能力时的产品范围、架构边界、
 数据模型、工具协议、RAG、隐私、安全、测试和交付顺序。它建立在现有
