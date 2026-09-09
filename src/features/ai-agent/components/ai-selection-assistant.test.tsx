@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { WebAiSettingsRepository } from '../../../database/repositories/web-ai-settings-repository';
 import { FakeModelProvider } from '../../../platform/ai/fake-model-provider';
+import { AppError } from '../../../lib/app-error';
 import { defaultAiSettings } from '../domain/ai-settings';
 import { AgentFacade } from '../services/agent-facade';
 import type { AiDraft } from '../domain/agent';
@@ -191,6 +192,7 @@ describe('AiSelectionAssistant', () => {
           sourceChunkId: 'passage-1',
           sourceTextHash: 'fnv1a-deadbeef',
           validation: 'verified',
+          supportValidation: 'not-assessed',
         },
       ],
       sourceSnapshotHash: 'fnv1a-cafebabe',
@@ -204,7 +206,16 @@ describe('AiSelectionAssistant', () => {
     vi.spyOn(facade, 'runBookQuestion').mockResolvedValue({
       draft,
       run: {} as never,
-      trace: [],
+      trace: [
+        {
+          schemaVersion: 1,
+          callId: 'call-search',
+          name: 'search_books',
+          status: 'completed',
+          returnedChars: 128,
+          resultHash: 'fnv1a-private-value',
+        },
+      ],
     });
     const onNavigate = vi.fn();
     render(<TestHost facade={facade} onNavigate={onNavigate} />);
@@ -220,6 +231,58 @@ describe('AiSelectionAssistant', () => {
     expect(await screen.findByText(draft.content)).toBeVisible();
     await user.click(screen.getByRole('button', { name: '依据 1 · 第 5 页' }));
     expect(onNavigate).toHaveBeenCalledWith(locator);
+    await user.click(screen.getByText('本次运行详情（不含原文）'));
+    expect(screen.getByText('搜索本书：完成，返回 128 个字符')).toBeVisible();
+    expect(screen.queryByText('fnv1a-private-value')).not.toBeInTheDocument();
+  });
+
+  it('显示索引进度，并允许用户手动重建当前图书索引', async () => {
+    const user = userEvent.setup();
+    const facade = await createEnabledFacade();
+    const rebuild = vi
+      .spyOn(facade, 'rebuildBookIndex')
+      .mockImplementation((_book, _signal, onProgress) => {
+        onProgress?.({
+          stage: 'extracting-text',
+          completed: 2,
+          total: 4,
+        });
+        return Promise.resolve();
+      });
+    render(<TestHost facade={facade} />);
+
+    await user.click(screen.getByRole('button', { name: '打开助手' }));
+    await user.click(await screen.findByRole('button', { name: '本书问答' }));
+    await user.click(screen.getByRole('button', { name: '重建本书 AI 索引' }));
+
+    expect(rebuild).toHaveBeenCalledWith(
+      book,
+      expect.any(AbortSignal),
+      expect.any(Function),
+    );
+    expect(await screen.findByText('本书 AI 索引已重新建立。')).toBeVisible();
+  });
+
+  it('索引失败时只在 AI 侧边栏中显示可恢复错误', async () => {
+    const user = userEvent.setup();
+    const facade = await createEnabledFacade();
+    vi.spyOn(facade, 'runBookQuestion').mockRejectedValue(
+      new AppError('SEARCH_INDEX_FAILED'),
+    );
+    render(<TestHost facade={facade} />);
+
+    await user.click(screen.getByRole('button', { name: '打开助手' }));
+    await user.click(await screen.findByRole('button', { name: '本书问答' }));
+    await user.type(screen.getByLabelText('向本书提问'), '这本书说了什么？');
+    await user.click(screen.getByRole('button', { name: '检索本书并提问' }));
+
+    expect(await screen.findByText('无法完成生成')).toBeVisible();
+    expect(
+      screen.getByText('无法更新本地搜索索引，请稍后重试。'),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: '关闭 AI 阅读助手' }),
+    ).toBeEnabled();
   });
 
   it('explains how to recover when AI is disabled', async () => {

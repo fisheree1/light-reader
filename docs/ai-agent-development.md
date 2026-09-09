@@ -1,18 +1,22 @@
 # LightReader AI Agent 开发设计
 
-状态：Phase A～D 的本地优先基线已实现；Phase E/F 尚未实现。
+状态：Phase A～D 的本地优先基线和 P1 稳定性加固已实现；
+Phase E/F 尚未实现。
 
-更新日期：2026-09-08。
+更新日期：2026-09-09。
 
 当前实现采用固定回环地址的 Ollama Provider，默认模型为
 `deepseek-r1:8b`。领域 schema、授权状态机、预算、Fake Provider、敏感内容
 提示、精确文本确认、预设或自定义需求、单书 EPUB/PDF 文本检索、可跳转
-引用、受限只读工具、阅读页侧边栏、流式取消、内存 AI 草稿、设置页和确认后
+引用、受限只读工具、索引进度/取消/手动重建、可见的脱敏工具轨迹、
+阅读页侧边栏、流式取消、内存 AI 草稿、设置页和确认后
 新建笔记已经接入。实现决策见
 [`adr/0001-local-ollama-provider.md`](adr/0001-local-ollama-provider.md)，
 模型基线见 [`ai-local-model-baseline.md`](ai-local-model-baseline.md)，检索与工具
 边界见 [`adr/0002-local-rag-readonly-agent.md`](adr/0002-local-rag-readonly-agent.md)。
-语义向量检索、跨书/笔记研究、受控追加和高级能力仍按本文后续阶段实施。
+引用校验只保留回答实际使用的 `[S#]`，并明确区分“来源位置/版本
+已验证”和“这段证据是否足以支持回答，尚未自动判定”。语义向量检索、
+跨书/笔记研究、受控追加和高级能力仍按本文后续阶段实施。
 
 本文定义 LightReader 后续引入 AI Agent 能力时的产品范围、架构边界、
 数据模型、工具协议、RAG、隐私、安全、测试和交付顺序。它建立在现有
@@ -96,6 +100,8 @@ P0 不是 Agent 的最终形态，但它先验证 Provider、流式输出、授�
 
 Agent 可以分解问题、并发搜索独立书籍、读取证据、去重、比较观点、验证
 引用并生成草稿，但不得绕过运行授权或直接修改任何已有笔记。
+当前本机模型的原生工具调用评估见
+[`ai-ollama-tool-calling-evaluation.md`](ai-ollama-tool-calling-evaluation.md)。
 
 ### 2.4 P3：学习工作流
 

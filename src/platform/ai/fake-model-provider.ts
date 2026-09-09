@@ -30,13 +30,18 @@ export class FakeModelProvider implements ModelProviderGateway {
   }
 
   async *run(
-    _request: AgentModelRequest,
+    request: AgentModelRequest,
     signal: AbortSignal,
   ): AsyncIterable<AgentProviderEvent> {
-    const midpoint = Math.max(1, Math.floor(this.response.length / 2));
+    const response =
+      request.prompt.includes('<USER_QUESTION>') &&
+      !/\[S\d+\]/.test(this.response)
+        ? `${this.response} [S1]`
+        : this.response;
+    const midpoint = Math.max(1, Math.floor(response.length / 2));
     for (const delta of [
-      this.response.slice(0, midpoint),
-      this.response.slice(midpoint),
+      response.slice(0, midpoint),
+      response.slice(midpoint),
     ]) {
       if (signal.aborted) return;
       await Promise.resolve();

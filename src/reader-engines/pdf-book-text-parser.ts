@@ -19,6 +19,11 @@ export interface PdfTextPage {
   text: string;
 }
 
+export interface PdfTextParseOptions {
+  onProgress?: (completedPages: number, totalPages: number) => void;
+  signal?: AbortSignal;
+}
+
 const maxPages = 50_000;
 const maxTotalTextChars = 20_000_000;
 
@@ -52,8 +57,12 @@ export class PdfBookTextParser {
     this.loadRuntime = loadRuntime;
   }
 
-  async parse(source: ArrayBuffer): Promise<PdfTextPage[]> {
+  async parse(
+    source: ArrayBuffer,
+    options: PdfTextParseOptions = {},
+  ): Promise<PdfTextPage[]> {
     if (source.byteLength === 0) throw new AppError('INVALID_PDF');
+    if (options.signal?.aborted) throw new AppError('USER_CANCELLED');
     let loadingTask: PDFDocumentLoadingTask | null = null;
     let document: PDFDocumentProxy | null = null;
     try {
@@ -73,8 +82,10 @@ export class PdfBookTextParser {
       const pages: PdfTextPage[] = [];
       let totalChars = 0;
       for (let pageIndex = 0; pageIndex < document.numPages; pageIndex += 1) {
+        if (options.signal?.aborted) throw new AppError('USER_CANCELLED');
         const page = await document.getPage(pageIndex + 1);
         const text = await readPage(page);
+        options.onProgress?.(pageIndex + 1, document.numPages);
         if (!text) continue;
         totalChars += text.length;
         if (totalChars > maxTotalTextChars) {

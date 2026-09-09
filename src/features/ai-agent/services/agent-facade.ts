@@ -14,7 +14,12 @@ import {
   type PreparedSelectionRun,
 } from './agent-consent-service';
 import { AgentRunner, type AgentRunResult } from './agent-runner';
-import { BookQaRunner, type BookQaRunResult } from './book-qa-runner';
+import type { BookIndexingProgress } from '../retrieval/book-indexing';
+import {
+  BookQaRunner,
+  type BookQaEvent,
+  type BookQaRunResult,
+} from './book-qa-runner';
 
 export class AgentFacade {
   private readonly consentService: AgentConsentService;
@@ -41,11 +46,22 @@ export class AgentFacade {
     book: Book,
     question: string,
     signal: AbortSignal,
-    onEvent?: (event: AgentProviderEvent) => void,
+    onEvent?: (event: BookQaEvent) => void,
   ): Promise<BookQaRunResult> {
     if (!this.bookQaRunner) throw new AppError('AI_REQUEST_FAILED');
     const settings = await this.requireAvailableSettings();
     return this.bookQaRunner.run(book, question, settings, signal, onEvent);
+  }
+
+  async rebuildBookIndex(
+    book: Book,
+    signal: AbortSignal,
+    onProgress?: (progress: BookIndexingProgress) => void,
+  ): Promise<void> {
+    if (!this.bookQaRunner) throw new AppError('AI_REQUEST_FAILED');
+    const settings = await this.getSettings();
+    if (!settings.enabled) throw new AppError('AI_DISABLED');
+    await this.bookQaRunner.rebuildIndex(book, signal, onProgress);
   }
 
   getSettings(): Promise<AiSettings> {

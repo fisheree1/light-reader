@@ -2,9 +2,18 @@ import type { BookFormat } from '../../library/domain/book';
 import { FflateEpubContentParser } from '../../search/services/epub-content-parser';
 import { PdfBookTextParser } from '../../../reader-engines/pdf-book-text-parser';
 import { bookTextBlockSchema, type BookTextBlock } from './book-retrieval';
+import {
+  emitBookIndexingProgress,
+  throwIfBookIndexingAborted,
+  type BookRetrievalOptions,
+} from './book-indexing';
 
 export interface BookTextExtractor {
-  extract(format: BookFormat, source: ArrayBuffer): Promise<BookTextBlock[]>;
+  extract(
+    format: BookFormat,
+    source: ArrayBuffer,
+    options?: BookRetrievalOptions,
+  ): Promise<BookTextBlock[]>;
 }
 
 export class LocalBookTextExtractor implements BookTextExtractor {
@@ -22,9 +31,21 @@ export class LocalBookTextExtractor implements BookTextExtractor {
   async extract(
     format: BookFormat,
     source: ArrayBuffer,
+    options: BookRetrievalOptions = {},
   ): Promise<BookTextBlock[]> {
+    throwIfBookIndexingAborted(options.signal);
     if (format === 'pdf') {
-      const pages = await this.pdfParser.parse(source);
+      const pages = await this.pdfParser.parse(source, {
+        signal: options.signal,
+        onProgress: (completed, total) => {
+          emitBookIndexingProgress(
+            options,
+            'extracting-text',
+            completed,
+            total,
+          );
+        },
+      });
       return pages.map((page, ordinal) =>
         bookTextBlockSchema.parse({
           chapterHref: null,
@@ -42,8 +63,16 @@ export class LocalBookTextExtractor implements BookTextExtractor {
     }
 
     const chapters = await this.epubParser.parse(new Uint8Array(source));
-    return chapters.map((chapter, ordinal) =>
-      bookTextBlockSchema.parse({
+    throwIfBookIndexingAborted(options.signal);
+    return chapters.map((chapter, ordinal) => {
+      throwIfBookIndexingAborted(options.signal);
+      emitBookIndexingProgress(
+        options,
+        'extracting-text',
+        ordinal + 1,
+        chapters.length,
+      );
+      return bookTextBlockSchema.parse({
         chapterHref: chapter.chapterHref,
         chapterTitle: chapter.chapterTitle,
         locator: {
@@ -53,7 +82,7 @@ export class LocalBookTextExtractor implements BookTextExtractor {
         },
         ordinal,
         text: chapter.text,
-      }),
-    );
+      });
+    });
   }
 }

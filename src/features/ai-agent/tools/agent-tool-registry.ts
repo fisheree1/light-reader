@@ -12,6 +12,7 @@ import {
 } from '../domain/agent';
 import type { BookRetrievalService } from '../retrieval/book-retrieval-service';
 import type { RetrievedPassage } from '../retrieval/book-retrieval';
+import type { BookRetrievalOptions } from '../retrieval/book-indexing';
 
 type ToolData = RetrievedPassage[] | RetrievedPassage;
 
@@ -28,6 +29,7 @@ export class AgentToolRegistry {
   private readonly grant: AgentCapabilityGrant;
   private readonly now: () => number;
   private readonly retrieval: BookRetrievalService;
+  private readonly retrievalOptions: BookRetrievalOptions;
   private readonly seenCalls = new Set<string>();
   private readonly trace: AgentToolTraceEntry[] = [];
   private totalContextChars = 0;
@@ -37,11 +39,13 @@ export class AgentToolRegistry {
     grant: AgentCapabilityGrant,
     book: Book,
     now: () => number = Date.now,
+    retrievalOptions: BookRetrievalOptions = {},
   ) {
     this.retrieval = retrieval;
     this.grant = grant;
     this.book = book;
     this.now = now;
+    this.retrievalOptions = retrievalOptions;
   }
 
   async execute(value: AgentToolCall): Promise<AgentToolResult<ToolData>> {
@@ -138,6 +142,7 @@ export class AgentToolRegistry {
       this.book,
       call.arguments.query,
       call.arguments.limit,
+      this.retrievalOptions,
     );
     passages.forEach((passage) => {
       passage.sourceChunkIds.forEach((id) => this.allowedChunkIds.add(id));
@@ -162,6 +167,7 @@ export class AgentToolRegistry {
     const passage = await this.retrieval.readChunk(
       this.book,
       call.arguments.chunkId,
+      this.retrievalOptions,
     );
     if (!passage) {
       return {

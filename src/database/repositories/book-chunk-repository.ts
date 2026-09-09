@@ -6,7 +6,11 @@ import type {
 export interface BookChunkRepository {
   findById(bookId: string, chunkId: string): Promise<BookChunk | null>;
   getIndexedSourceHash(bookId: string): Promise<string | null>;
-  replaceBookChunks(bookId: string, chunks: BookChunk[]): Promise<void>;
+  replaceBookChunks(
+    bookId: string,
+    chunks: BookChunk[],
+    signal?: AbortSignal,
+  ): Promise<void>;
   searchBookChunks(
     bookId: string,
     terms: string[],

@@ -5,8 +5,9 @@ import {
   bookChunkSchema,
   type BookChunk,
   type BookChunkMatch,
+  scoreBookChunkTerms,
 } from '../../features/ai-agent/retrieval/book-retrieval';
-import { AppError } from '../../lib/app-error';
+import { AppError, isAppError } from '../../lib/app-error';
 import type { BookChunkRepository } from './book-chunk-repository';
 
 const storageKey = 'light-reader-web-ai-book-chunks';
@@ -51,16 +52,22 @@ export class WebBookChunkRepository implements BookChunkRepository {
           null,
       );
     } catch (error) {
+      if (isAppError(error)) return Promise.reject(error);
       return Promise.reject(
         new AppError('SEARCH_INDEX_FAILED', { cause: error }),
       );
     }
   }
 
-  replaceBookChunks(bookId: string, values: BookChunk[]): Promise<void> {
+  replaceBookChunks(
+    bookId: string,
+    values: BookChunk[],
+    signal?: AbortSignal,
+  ): Promise<void> {
     try {
       const id = idSchema.parse(bookId);
       const chunks = bookChunkSchema.array().parse(values);
+      if (signal?.aborted) throw new AppError('USER_CANCELLED');
       if (chunks.some((chunk) => chunk.bookId !== id)) throw new Error();
       writeChunks([
         ...readChunks().filter((chunk) => chunk.bookId !== id),
@@ -68,6 +75,7 @@ export class WebBookChunkRepository implements BookChunkRepository {
       ]);
       return Promise.resolve();
     } catch (error) {
+      if (isAppError(error)) return Promise.reject(error);
       return Promise.reject(
         new AppError('SEARCH_INDEX_FAILED', { cause: error }),
       );
@@ -90,11 +98,7 @@ export class WebBookChunkRepository implements BookChunkRepository {
       const matches = readChunks()
         .filter((chunk) => chunk.bookId === id)
         .flatMap((chunk) => {
-          const text = chunk.text.toLocaleLowerCase();
-          const score = normalizedTerms.reduce(
-            (total, term) => total + (text.includes(term) ? 1 : 0),
-            0,
-          );
+          const score = scoreBookChunkTerms(chunk.text, normalizedTerms);
           return score > 0
             ? [bookChunkMatchSchema.parse({ chunk, score })]
             : [];

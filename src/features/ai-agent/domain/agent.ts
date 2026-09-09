@@ -103,6 +103,7 @@ export const agentCitationSchema = z.object({
   sourceChunkId: z.string().trim().min(1).max(128),
   sourceTextHash: z.string().trim().min(1).max(128),
   validation: z.enum(['verified', 'stale', 'unresolved']),
+  supportValidation: z.literal('not-assessed'),
 });
 
 export type AgentCitation = z.infer<typeof agentCitationSchema>;

@@ -1,4 +1,5 @@
 import type { Book } from '../../library/domain/book';
+import { throwIfBookIndexingAborted } from './book-indexing';
 import { hashAgentText } from '../domain/agent';
 import {
   bookChunkSchema,
@@ -34,11 +35,17 @@ function locatorForRange(block: BookTextBlock, start: number, end: number) {
 }
 
 export class BookChunker {
-  chunk(book: Book, blocks: BookTextBlock[]): BookChunk[] {
+  chunk(
+    book: Book,
+    blocks: BookTextBlock[],
+    signal?: AbortSignal,
+  ): BookChunk[] {
     const chunks: BookChunk[] = [];
     for (const block of blocks) {
+      throwIfBookIndexingAborted(signal);
       let start = 0;
       while (start < block.text.length) {
+        throwIfBookIndexingAborted(signal);
         const end = findChunkEnd(block.text, start);
         const raw = block.text.slice(start, end);
         const leadingWhitespace = raw.length - raw.trimStart().length;

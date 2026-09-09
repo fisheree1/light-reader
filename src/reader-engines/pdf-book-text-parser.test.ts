@@ -85,4 +85,51 @@ describe('PdfBookTextParser', () => {
       parser.parse(new Uint8Array([1]).buffer),
     ).rejects.toMatchObject({ code: 'TEXT_UNAVAILABLE' });
   });
+
+  it('在页面之间取消解析，仍清理文档和 worker 任务', async () => {
+    const controller = new AbortController();
+    const progress = vi.fn((completedPages: number) => {
+      if (completedPages === 1) controller.abort();
+    });
+    const pageCleanup = vi.fn();
+    const documentCleanup = vi.fn(() => Promise.resolve());
+    const destroy = vi.fn(() => Promise.resolve());
+    const getPage = vi.fn(() =>
+      Promise.resolve({
+        cleanup: pageCleanup,
+        getTextContent: () =>
+          Promise.resolve({
+            items: [{ str: '正文', hasEOL: false }],
+            styles: {},
+            lang: null,
+          }),
+      }),
+    );
+    const parser = new PdfBookTextParser(() =>
+      Promise.resolve({
+        GlobalWorkerOptions: { workerSrc: '' },
+        getDocument: () => ({
+          promise: Promise.resolve({
+            numPages: 2,
+            getPage,
+            cleanup: documentCleanup,
+          }),
+          destroy,
+        }),
+      } as never),
+    );
+
+    await expect(
+      parser.parse(new Uint8Array([1]).buffer, {
+        signal: controller.signal,
+        onProgress: progress,
+      }),
+    ).rejects.toMatchObject({ code: 'USER_CANCELLED' });
+
+    expect(progress).toHaveBeenCalledWith(1, 2);
+    expect(getPage).toHaveBeenCalledOnce();
+    expect(pageCleanup).toHaveBeenCalledOnce();
+    expect(documentCleanup).toHaveBeenCalledOnce();
+    expect(destroy).toHaveBeenCalledOnce();
+  });
 });

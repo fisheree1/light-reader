@@ -14,6 +14,12 @@ import {
   type SelectionAiAction,
 } from '../domain/agent';
 import type { AgentFacade } from '../services/agent-facade';
+import type { BookQaEvent } from '../services/book-qa-runner';
+import {
+  agentToolTraceEntrySchema,
+  type AgentToolTraceEntry,
+} from '../domain/agent-tool';
+import type { BookIndexingProgress } from '../retrieval/book-indexing';
 import { detectSensitiveContent } from '../services/sensitive-content';
 
 type Stage =
@@ -22,9 +28,28 @@ type Stage =
   | 'empty'
   | 'consent'
   | 'running'
+  | 'rebuilding'
   | 'completed'
   | 'cancelled'
   | 'error';
+
+const indexingStageLabels: Record<BookIndexingProgress['stage'], string> = {
+  'reading-source': '正在读取本地图书…',
+  'extracting-text': '正在提取正文…',
+  'chunking-text': '正在整理检索片段…',
+  'writing-index': '正在写入本地索引…',
+  'searching-index': '正在搜索本书依据…',
+  ready: '本书索引已就绪',
+};
+
+function getProgressLabel(progress: BookIndexingProgress | null): string {
+  if (!progress) return '正在准备本书索引…';
+  const suffix =
+    progress.completed !== null && progress.total !== null
+      ? ` ${String(progress.completed)} / ${String(progress.total)}`
+      : '';
+  return `${indexingStageLabels[progress.stage]}${suffix}`;
+}
 
 interface AiSelectionAssistantProps {
   book?: Book;
@@ -61,6 +86,12 @@ export function AiSelectionAssistant({
   const [copied, setCopied] = useState(false);
   const [isCreatingNote, setIsCreatingNote] = useState(false);
   const [settings, setSettings] = useState<AiSettings | null>(null);
+  const [progress, setProgress] = useState<BookIndexingProgress | null>(null);
+  const [trace, setTrace] = useState<AgentToolTraceEntry[]>([]);
+  const [indexNotice, setIndexNotice] = useState<string | null>(null);
+  const [cancelledOperation, setCancelledOperation] = useState<
+    'answer' | 'rebuild'
+  >('answer');
   const controllerRef = useRef<AbortController | null>(null);
   const returnFocusRef = useRef<HTMLElement | null>(
     document.activeElement instanceof HTMLElement
@@ -84,6 +115,9 @@ export function AiSelectionAssistant({
       setError(null);
       setCopied(false);
       setSettings(null);
+      setProgress(null);
+      setTrace([]);
+      setIndexNotice(null);
       setStage('loading');
     });
     facade.getSettings().then(
@@ -145,15 +179,19 @@ export function AiSelectionAssistant({
     setError(null);
     setOutput('');
     setDraft(null);
+    setProgress(null);
+    setTrace([]);
+    setIndexNotice(null);
+    setCancelledOperation('answer');
     try {
       const controller = new AbortController();
       controllerRef.current = controller;
       setStage('running');
-      const handleEvent = (
-        event: Parameters<
-          NonNullable<Parameters<AgentFacade['runBookQuestion']>[3]>
-        >[0],
-      ) => {
+      const handleEvent = (event: BookQaEvent) => {
+        if (event.type === 'retrieval-progress') {
+          setProgress(event.progress);
+          return;
+        }
         if (event.type === 'output-delta') {
           setOutput((current) => current + event.delta);
         }
@@ -186,6 +224,9 @@ export function AiSelectionAssistant({
       controllerRef.current = null;
       setOutput(result.draft.content);
       setDraft(result.draft);
+      if ('trace' in result) {
+        setTrace(agentToolTraceEntrySchema.array().parse(result.trace));
+      }
       setStage('completed');
     } catch (reason) {
       controllerRef.current = null;
@@ -196,6 +237,33 @@ export function AiSelectionAssistant({
       } else {
         setError(appError.userMessage);
         setStage(appError.code === 'AI_DISABLED' ? 'disabled' : 'error');
+      }
+    }
+  }
+
+  async function rebuildIndex() {
+    if (!book) return;
+    setError(null);
+    setIndexNotice(null);
+    setProgress(null);
+    setCancelledOperation('rebuild');
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    setStage('rebuilding');
+    try {
+      await facade.rebuildBookIndex(book, controller.signal, setProgress);
+      controllerRef.current = null;
+      setIndexNotice('本书 AI 索引已重新建立。');
+      setStage('consent');
+    } catch (reason) {
+      controllerRef.current = null;
+      const appError = asAppError(reason, 'SEARCH_INDEX_FAILED');
+      if (appError.code === 'USER_CANCELLED') {
+        setStage('cancelled');
+        setError(null);
+      } else {
+        setError(appError.userMessage);
+        setStage('error');
       }
     }
   }
@@ -332,6 +400,19 @@ export function AiSelectionAssistant({
                 将在本机为当前图书建立文本索引，只向本机模型发送最相关的少量片段。首次使用可能需要稍等；扫描版
                 PDF 暂不支持。
               </p>
+              {indexNotice ? (
+                <p className="text-sm" role="status">
+                  {indexNotice}
+                </p>
+              ) : null}
+              <Button
+                onClick={() => {
+                  void rebuildIndex();
+                }}
+                variant="secondary"
+              >
+                重建本书 AI 索引
+              </Button>
             </>
           ) : selection ? (
             <>
@@ -437,7 +518,9 @@ export function AiSelectionAssistant({
         <div className="mt-5">
           <p aria-live="polite" className="text-sm font-medium">
             {mode === 'book'
-              ? '正在检索本书并由本地模型生成…'
+              ? output
+                ? '本地模型正在生成回答…'
+                : getProgressLabel(progress)
               : 'DeepSeek-R1 正在生成…'}
           </p>
           <pre className="bg-background mt-3 min-h-40 rounded-md border p-4 font-sans text-sm whitespace-pre-wrap">
@@ -459,16 +542,43 @@ export function AiSelectionAssistant({
         </div>
       ) : null}
 
-      {stage === 'cancelled' ? (
+      {stage === 'rebuilding' ? (
         <div className="mt-5 rounded-md border p-4">
-          <p className="font-medium">生成已取消</p>
-          <p className="text-muted-foreground mt-1 text-sm">
-            没有创建草稿或写入笔记。
+          <p aria-live="polite" className="text-sm font-medium">
+            {getProgressLabel(progress)}
+          </p>
+          <p className="text-muted-foreground mt-2 text-xs">
+            只处理当前图书，取消后不会留下半写入的 SQLite 索引。
           </p>
           <Button
             className="mt-4"
             onClick={() => {
-              setStage(selection ? 'consent' : 'empty');
+              controllerRef.current?.abort();
+            }}
+            variant="secondary"
+          >
+            <Square aria-hidden="true" size={15} />
+            取消重建
+          </Button>
+        </div>
+      ) : null}
+
+      {stage === 'cancelled' ? (
+        <div className="mt-5 rounded-md border p-4">
+          <p className="font-medium">
+            {cancelledOperation === 'rebuild' ? '索引重建已取消' : '生成已取消'}
+          </p>
+          <p className="text-muted-foreground mt-1 text-sm">
+            {cancelledOperation === 'rebuild'
+              ? '原有索引仍可继续使用。'
+              : '没有创建草稿或写入笔记。'}
+          </p>
+          <Button
+            className="mt-4"
+            onClick={() => {
+              setStage(
+                mode === 'selection' && !selection ? 'empty' : 'consent',
+              );
             }}
           >
             重新开始
@@ -489,7 +599,10 @@ export function AiSelectionAssistant({
           </p>
           {draft.citations.length ? (
             <div className="mt-4">
-              <p className="text-xs font-medium">本地验证的依据</p>
+              <p className="text-xs font-medium">已定位到原书的依据</p>
+              <p className="text-muted-foreground mt-1 text-xs">
+                位置和原文版本已在本地验证；是否足以支持回答仍需你核对。
+              </p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {draft.citations.map((citation, index) => (
                   <Button
@@ -507,6 +620,28 @@ export function AiSelectionAssistant({
                 ))}
               </div>
             </div>
+          ) : null}
+          {trace.length ? (
+            <details className="mt-4 rounded-md border p-3 text-xs">
+              <summary className="cursor-pointer font-medium">
+                本次运行详情（不含原文）
+              </summary>
+              <p className="text-muted-foreground mt-2">
+                范围：《{bookTitle}》 · 工具调用 {String(trace.length)} 次
+              </p>
+              <ul className="mt-2 space-y-1">
+                {trace.map((item) => (
+                  <li key={item.callId}>
+                    {item.name === 'search_books' ? '搜索本书' : '读取片段'}：
+                    {item.status === 'completed'
+                      ? `完成，返回 ${String(item.returnedChars)} 个字符`
+                      : item.status === 'rejected'
+                        ? '已拒绝'
+                        : '失败'}
+                  </li>
+                ))}
+              </ul>
+            </details>
           ) : null}
           <div className="mt-4 flex flex-wrap justify-end gap-2">
             <Button

@@ -105,4 +105,42 @@ describe('SqliteBookChunkRepository', () => {
     });
     expect(database.selections[1]?.query).toContain('book_id = $1');
   });
+
+  it('取消写入时回滚事务，不提交半成品索引', async () => {
+    const controller = new AbortController();
+    class CancellingDatabase extends RecordingDatabase {
+      override execute(
+        query: string,
+        values: unknown[] = [],
+      ): Promise<unknown> {
+        const result = super.execute(query, values);
+        if (query.includes('INSERT INTO ai_book_chunks')) controller.abort();
+        return result;
+      }
+    }
+    const database = new CancellingDatabase();
+    const repository = new SqliteBookChunkRepository(() =>
+      Promise.resolve(database),
+    );
+
+    await expect(
+      repository.replaceBookChunks(chunk.bookId, [chunk], controller.signal),
+    ).rejects.toMatchObject({ code: 'USER_CANCELLED' });
+
+    expect(database.executions.map(({ query }) => query.trim())).toEqual(
+      expect.arrayContaining([
+        'BEGIN IMMEDIATE',
+        'DELETE FROM ai_book_chunks WHERE book_id = $1',
+        'ROLLBACK',
+      ]),
+    );
+    expect(
+      database.executions.some(({ query }) =>
+        query.includes('INSERT INTO ai_book_chunks'),
+      ),
+    ).toBe(true);
+    expect(database.executions.map(({ query }) => query.trim())).not.toContain(
+      'COMMIT',
+    );
+  });
 });

@@ -9,8 +9,10 @@ import {
   agentCapabilityGrantSchema,
   agentRunSchema,
   transitionAgentRun,
+  type AgentCitation,
 } from '../domain/agent';
 import type { AgentToolTraceEntry } from '../domain/agent-tool';
+import type { BookIndexingProgress } from '../retrieval/book-indexing';
 import {
   bookQuestionSchema,
   type RetrievedPassage,
@@ -26,6 +28,10 @@ import type { AgentRunResult } from './agent-runner';
 export interface BookQaRunResult extends AgentRunResult {
   trace: AgentToolTraceEntry[];
 }
+
+export type BookQaEvent =
+  | AgentProviderEvent
+  | { progress: BookIndexingProgress; type: 'retrieval-progress' };
 
 type IdFactory = () => string;
 
@@ -59,7 +65,7 @@ export class BookQaRunner {
     value: string,
     settings: AiSettings,
     signal: AbortSignal,
-    onEvent: (event: AgentProviderEvent) => void = () => undefined,
+    onEvent: (event: BookQaEvent) => void = () => undefined,
   ): Promise<BookQaRunResult> {
     const question = bookQuestionSchema.parse(value);
     const now = this.now();
@@ -102,7 +108,12 @@ export class BookQaRunner {
     });
     run = transitionAgentRun(run, 'running', now);
 
-    const tools = new AgentToolRegistry(this.retrieval, grant, book, this.now);
+    const tools = new AgentToolRegistry(this.retrieval, grant, book, this.now, {
+      signal,
+      onProgress: (progress) => {
+        onEvent({ type: 'retrieval-progress', progress });
+      },
+    });
     const search = await tools.execute({
       schemaVersion: 1,
       callId: this.createId(),
@@ -131,7 +142,9 @@ export class BookQaRunner {
       prompt: `<USER_QUESTION>\n${question}\n</USER_QUESTION>\n\n<UNTRUSTED_BOOK_PASSAGES>\n${sourceText}\n</UNTRUSTED_BOOK_PASSAGES>`,
       maxOutputChars: 8_000,
     });
-    const output = await this.outputRunner.run(request, signal, onEvent);
+    const output = await this.outputRunner.run(request, signal, (event) => {
+      onEvent(event);
+    });
     const trace = tools.getTrace();
     const completedRun = agentRunSchema.parse({
       ...transitionAgentRun(run, 'completed', this.now()),
@@ -139,11 +152,20 @@ export class BookQaRunner {
       outputTokens: output.outputTokens,
       toolCallCount: trace.length,
     });
-    const citations = this.citationValidator.create(
-      completedRun,
-      book,
-      passages,
-    );
+    let citations: AgentCitation[];
+    try {
+      citations = this.citationValidator.create(
+        completedRun,
+        book,
+        passages,
+        output.content,
+      );
+    } catch (error) {
+      throw new AppError('AI_OUTPUT_INVALID', {
+        cause: error,
+        message: '模型回答没有提供可验证的本书引用，请重试。',
+      });
+    }
     return {
       run: completedRun,
       trace,
@@ -154,5 +176,13 @@ export class BookQaRunner {
         citations,
       ),
     };
+  }
+
+  rebuildIndex(
+    book: Book,
+    signal: AbortSignal,
+    onProgress: (progress: BookIndexingProgress) => void = () => undefined,
+  ): Promise<void> {
+    return this.retrieval.rebuildIndex(book, { signal, onProgress });
   }
 }

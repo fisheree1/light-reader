@@ -6,6 +6,11 @@ import { hashAgentText } from '../domain/agent';
 import { BookChunker } from './book-chunker';
 import type { BookTextExtractor } from './book-text-extractor';
 import {
+  emitBookIndexingProgress,
+  throwIfBookIndexingAborted,
+  type BookRetrievalOptions,
+} from './book-indexing';
+import {
   extractBookQueryTerms,
   retrievedPassageSchema,
   type BookChunkMatch,
@@ -83,15 +88,25 @@ export class BookRetrievalService {
     this.chunker = chunker;
   }
 
-  async ensureIndexed(book: Book): Promise<void> {
+  async ensureIndexed(
+    book: Book,
+    options: BookRetrievalOptions = {},
+  ): Promise<void> {
+    throwIfBookIndexingAborted(options.signal);
     if (
       (await this.repository.getIndexedSourceHash(book.id)) === book.fileHash
     ) {
+      emitBookIndexingProgress(options, 'ready');
       return;
     }
     const active = this.indexing.get(book.id);
-    if (active) return active;
-    const indexing = this.buildIndex(book).finally(() => {
+    if (active) {
+      await active;
+      throwIfBookIndexingAborted(options.signal);
+      emitBookIndexingProgress(options, 'ready');
+      return;
+    }
+    const indexing = this.buildIndex(book, options).finally(() => {
       if (this.indexing.get(book.id) === indexing)
         this.indexing.delete(book.id);
     });
@@ -103,8 +118,11 @@ export class BookRetrievalService {
     book: Book,
     question: string,
     limit = 6,
+    options: BookRetrievalOptions = {},
   ): Promise<RetrievedPassage[]> {
-    await this.ensureIndexed(book);
+    await this.ensureIndexed(book, options);
+    throwIfBookIndexingAborted(options.signal);
+    emitBookIndexingProgress(options, 'searching-index');
     const terms = extractBookQueryTerms(question);
     if (terms.length === 0) return [];
     const matches = await this.repository.searchBookChunks(
@@ -112,6 +130,7 @@ export class BookRetrievalService {
       terms,
       Math.max(1, Math.min(8, limit)),
     );
+    throwIfBookIndexingAborted(options.signal);
     const passages: RetrievedPassage[] = [];
     let totalChars = 0;
     for (const match of matches) {
@@ -137,8 +156,10 @@ export class BookRetrievalService {
   async readChunk(
     book: Book,
     chunkId: string,
+    options: BookRetrievalOptions = {},
   ): Promise<RetrievedPassage | null> {
-    await this.ensureIndexed(book);
+    await this.ensureIndexed(book, options);
+    throwIfBookIndexingAborted(options.signal);
     const chunk = await this.repository.findById(book.id, chunkId);
     if (chunk?.sourceFileHash !== book.fileHash) return null;
     return retrievedPassageSchema.parse({
@@ -149,13 +170,45 @@ export class BookRetrievalService {
     });
   }
 
-  private async buildIndex(book: Book): Promise<void> {
+  async rebuildIndex(
+    book: Book,
+    options: BookRetrievalOptions = {},
+  ): Promise<void> {
+    const active = this.indexing.get(book.id);
+    if (active) {
+      await active;
+      throwIfBookIndexingAborted(options.signal);
+      emitBookIndexingProgress(options, 'ready');
+      return;
+    }
+    throwIfBookIndexingAborted(options.signal);
+    const indexing = this.buildIndex(book, options).finally(() => {
+      if (this.indexing.get(book.id) === indexing)
+        this.indexing.delete(book.id);
+    });
+    this.indexing.set(book.id, indexing);
+    await indexing;
+  }
+
+  private async buildIndex(
+    book: Book,
+    options: BookRetrievalOptions,
+  ): Promise<void> {
     try {
+      emitBookIndexingProgress(options, 'reading-source');
+      throwIfBookIndexingAborted(options.signal);
       const source = await this.source.read(book.filePath);
-      const blocks = await this.extractor.extract(book.format, source);
-      const chunks = this.chunker.chunk(book, blocks);
+      throwIfBookIndexingAborted(options.signal);
+      emitBookIndexingProgress(options, 'extracting-text');
+      const blocks = await this.extractor.extract(book.format, source, options);
+      throwIfBookIndexingAborted(options.signal);
+      emitBookIndexingProgress(options, 'chunking-text');
+      const chunks = this.chunker.chunk(book, blocks, options.signal);
       if (chunks.length === 0) throw new AppError('TEXT_UNAVAILABLE');
-      await this.repository.replaceBookChunks(book.id, chunks);
+      throwIfBookIndexingAborted(options.signal);
+      emitBookIndexingProgress(options, 'writing-index');
+      await this.repository.replaceBookChunks(book.id, chunks, options.signal);
+      emitBookIndexingProgress(options, 'ready');
     } catch (error) {
       if (isAppError(error)) throw error;
       throw new AppError('SEARCH_INDEX_FAILED', { cause: error });

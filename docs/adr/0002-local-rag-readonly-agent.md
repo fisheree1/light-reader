@@ -28,10 +28,17 @@ returned by `search_books`. The audit trace stores hashes and sizes rather than
 book text. The only output is an isolated `AiDraft`; existing notes are never
 updated by the Agent.
 
-Until the provider advertises and validates function-tool support, the book-QA
+Until the provider and selected model pass the function-tool acceptance gate, the book-QA
 runner uses a deterministic one-search plan before text generation. It does not
 parse invented tool calls from model prose. This is intentionally a constrained
 single-Agent baseline, not an autonomous multi-step research system.
+
+The 2026-09-09 local evaluation found that Ollama reports the installed
+`deepseek-r1:8b` model as tool-capable, but two bounded native tool-call probes
+returned thinking text without a structured `tool_calls` value. The current
+Tauri transport also intentionally carries content events only. Native tool
+calling therefore remains disabled; the repeatable enablement gate is recorded
+in `docs/ai-ollama-tool-calling-evaluation.md`.
 
 ## Consequences
 
@@ -45,3 +52,6 @@ single-Agent baseline, not an autonomous multi-step research system.
   retrieval. Local embeddings and a reranker remain an evaluation-backed follow-up.
 - Cross-book, note, annotation, network, arbitrary file, write, and delete tools
   remain out of scope.
+- Citation validation accepts only source markers that actually appear in the
+  answer and validates their book id, source hash, and versioned locator. It
+  does not claim that a cited passage semantically entails the model's answer.

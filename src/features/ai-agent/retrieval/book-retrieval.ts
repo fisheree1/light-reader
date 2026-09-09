@@ -67,3 +67,11 @@ export function extractBookQueryTerms(value: string): string[] {
   }
   return [...new Set(terms)].slice(0, 12);
 }
+
+export function scoreBookChunkTerms(text: string, terms: string[]): number {
+  const normalized = text.toLocaleLowerCase();
+  return terms.reduce(
+    (total, term) => total + (normalized.includes(term) ? 1 : 0),
+    0,
+  );
+}

@@ -6,7 +6,7 @@ import {
   type BookChunk,
   type BookChunkMatch,
 } from '../../features/ai-agent/retrieval/book-retrieval';
-import { AppError } from '../../lib/app-error';
+import { AppError, isAppError } from '../../lib/app-error';
 import { bookLocatorSchema } from '../../reader-engines/types';
 import { getDatabase, type SqlDatabase } from '../client';
 import type { BookChunkRepository } from './book-chunk-repository';
@@ -105,7 +105,11 @@ export class SqliteBookChunkRepository implements BookChunkRepository {
     }
   }
 
-  async replaceBookChunks(bookId: string, values: BookChunk[]): Promise<void> {
+  async replaceBookChunks(
+    bookId: string,
+    values: BookChunk[],
+    signal?: AbortSignal,
+  ): Promise<void> {
     const id = idSchema.parse(bookId);
     const chunks = bookChunkSchema.array().parse(values);
     if (chunks.some((chunk) => chunk.bookId !== id)) {
@@ -118,6 +122,7 @@ export class SqliteBookChunkRepository implements BookChunkRepository {
         id,
       ]);
       for (const chunk of chunks) {
+        if (signal?.aborted) throw new AppError('USER_CANCELLED');
         await database.execute(
           `INSERT INTO ai_book_chunks (
              schema_version, chunk_id, book_id, source_file_hash,
@@ -140,9 +145,11 @@ export class SqliteBookChunkRepository implements BookChunkRepository {
           ],
         );
       }
+      if (signal?.aborted) throw new AppError('USER_CANCELLED');
       await database.execute('COMMIT');
     } catch (error) {
       await database.execute('ROLLBACK').catch(() => undefined);
+      if (isAppError(error)) throw error;
       throw new AppError('SEARCH_INDEX_FAILED', { cause: error });
     }
   }
