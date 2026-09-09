@@ -14,6 +14,7 @@
 | 导出 | [`export-formats.md`](export-formats.md)         | 笔记与批注的稳定导出格式                          |
 | 备份 | [`data-backup.md`](data-backup.md)               | 数据库/完整备份、预检、恢复和迁移快照             |
 | 测试 | [`testing.md`](testing.md)                       | CI、覆盖率基线和交付门禁                          |
+| 发布 | [`release.md`](release.md)                       | 跨平台安装包、版本一致性和真实桌面验收            |
 
 ## AI
 

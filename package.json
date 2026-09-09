@@ -8,6 +8,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "bundle:budget": "node scripts/check-bundle-budget.mjs",
+    "bundle:check": "pnpm build && pnpm bundle:budget",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",

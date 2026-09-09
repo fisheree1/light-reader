@@ -1,292 +1,45 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback } from 'react';
 
-import {
-  defaultReaderSettings,
-  resolveReaderSettings,
-  type ReaderSettingsOverride,
-} from '../domain/reader-settings';
 import { AppError, asAppError } from '../../../lib/app-error';
-import type {
-  Annotation,
-  AnnotationColor,
-} from '../../annotations/domain/annotation';
-import { AnnotationService } from '../../annotations/services/annotation-service';
 import type {
   BookLocator,
   EbookReader,
   ReaderSearchResult,
-  ReaderTocItem,
-  ReaderTextSelection,
 } from '../../../reader-engines/types';
-import { useReaderSettingsStore } from '../../../stores/reader-settings-store';
-import type { Book } from '../../library/domain/book';
+import type { AnnotationColor } from '../../annotations/domain/annotation';
 import { NoteService } from '../../notes/services/note-service';
-import type { ReaderNavigationTarget } from '../domain/reader-navigation';
-import type { ReaderServices } from '../services/reader-services';
 import type { Bookmark } from '../domain/bookmark';
-
-type ReaderPhase = 'error' | 'loading' | 'ready';
-
-const initialLocator: BookLocator = {
-  version: 1,
-  format: 'epub',
-  progression: 0,
-};
-const relocationSaveDelay = 600;
+import type { ReaderNavigationTarget } from '../domain/reader-navigation';
+import {
+  resolveReaderSettings,
+  type ReaderSettingsOverride,
+} from '../domain/reader-settings';
+import type { ReaderServices } from '../services/reader-services';
+import { useReaderSession } from './use-reader-session';
 
 export function useReader(
   bookId: string,
   services: ReaderServices,
   navigationTarget: ReaderNavigationTarget | null = null,
 ) {
-  const [attempt, setAttempt] = useState(0);
-  const [book, setBook] = useState<Book | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [locator, setLocator] = useState<BookLocator>(initialLocator);
-  const [navigationError, setNavigationError] = useState<string | null>(null);
-  const [persistenceError, setPersistenceError] = useState<string | null>(null);
-  const [phase, setPhase] = useState<ReaderPhase>('loading');
-  const [toc, setToc] = useState<ReaderTocItem[]>([]);
-  const [annotations, setAnnotations] = useState<Annotation[]>([]);
-  const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
-  const [annotationError, setAnnotationError] = useState<string | null>(null);
-  const [selection, setSelection] = useState<ReaderTextSelection | null>(null);
-  const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(
-    null,
-  );
-  const [unresolvedAnnotationIds, setUnresolvedAnnotationIds] = useState<
-    string[]
-  >([]);
-  const hostRef = useRef<HTMLDivElement>(null);
-  const readerRef = useRef<EbookReader | null>(null);
-  const annotationServiceRef = useRef<AnnotationService | null>(null);
-  const hydrateSettings = useReaderSettingsStore((state) => state.hydrate);
-  const setBookOverride = useReaderSettingsStore(
-    (state) => state.setBookOverride,
-  );
-  const bookOverride = useReaderSettingsStore((state) => state.bookOverride);
-  const globalSettings = useReaderSettingsStore(
-    (state) => state.globalSettings,
-  );
-  const effectiveSettings = useMemo(
-    () => resolveReaderSettings(globalSettings, bookOverride),
-    [bookOverride, globalSettings],
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-    const isCancelled = () => cancelled;
-    let reader: EbookReader | null = null;
-    let unsubscribe: () => void = () => undefined;
-    let unsubscribeSelection: () => void = () => undefined;
-    let unsubscribeHighlightActivation: () => void = () => undefined;
-    let saveTimer: ReturnType<typeof setTimeout> | undefined;
-    let pendingLocator: BookLocator | null = null;
-    let readingSessionId: string | null = null;
-    const host = hostRef.current;
-    const sessionHost = host ? document.createElement('div') : null;
-    if (host && sessionHost) {
-      sessionHost.className = 'h-full w-full';
-      host.replaceChildren(sessionHost);
-    }
-
-    const savePendingLocator = () => {
-      if (!pendingLocator) return;
-      const value = pendingLocator;
-      pendingLocator = null;
-      void services.settingsRepository
-        .saveReadingState(bookId, value)
-        .catch((reason: unknown) => {
-          if (!cancelled) {
-            setPersistenceError(
-              asAppError(reason, 'READING_STATE_WRITE_FAILED').userMessage,
-            );
-          }
-        });
-    };
-
-    const restoreLocator = async (
-      activeReader: EbookReader,
-      value: BookLocator,
-    ): Promise<boolean> => {
-      try {
-        await activeReader.goTo(value);
-        return true;
-      } catch (reason) {
-        if (
-          value.progression !== undefined &&
-          value.format === 'epub' &&
-          (value.cfi !== undefined || value.chapterHref !== undefined)
-        ) {
-          try {
-            await activeReader.goTo({
-              version: 1,
-              format: 'epub',
-              progression: value.progression,
-            });
-            return true;
-          } catch {
-            // The renderer remains at its safe initial location.
-          }
-        }
-        if (!isCancelled()) {
-          setNavigationError(
-            asAppError(reason, 'READER_NAVIGATION_FAILED').userMessage,
-          );
-        }
-        return false;
-      }
-    };
-
-    Promise.all([
-      services.repository.findById(bookId),
-      services.settingsRepository
-        .getGlobal()
-        .catch(() => defaultReaderSettings),
-      services.settingsRepository.getBookOverride(bookId).catch(() => null),
-      services.settingsRepository.getReadingState(bookId).catch(() => null),
-      services.bookmarkRepository?.listByBook(bookId).catch(() => []) ??
-        Promise.resolve([]),
-    ])
-      .then(
-        async ([
-          foundBook,
-          globalSettings,
-          override,
-          readingState,
-          savedBookmarks,
-        ]) => {
-          if (!foundBook) throw new AppError('BOOK_NOT_FOUND');
-          if (isCancelled() || !sessionHost) return;
-
-          setBook(foundBook);
-          setBookmarks(savedBookmarks);
-          hydrateSettings(bookId, globalSettings, override);
-          reader = services.createReader(foundBook.format);
-          readerRef.current = reader;
-          reader.mount(sessionHost);
-
-          const source = await services.source.read(foundBook.filePath);
-          if (isCancelled()) return;
-          await reader.open(source);
-          if (isCancelled()) {
-            await reader.close();
-            return;
-          }
-          reader.applyDisplaySettings(
-            resolveReaderSettings(globalSettings, override),
-          );
-          if (!navigationTarget && readingState) {
-            if (await restoreLocator(reader, readingState.locator)) {
-              setLocator(readingState.locator);
-            }
-          }
-          const annotationService = new AnnotationService(
-            services.annotationRepository,
-            reader,
-          );
-          annotationServiceRef.current = annotationService;
-          unsubscribeSelection = reader.subscribeToSelection(
-            (nextSelection) => {
-              if (!isCancelled()) setSelection(nextSelection);
-            },
-          );
-          unsubscribeHighlightActivation =
-            reader.subscribeToHighlightActivation((annotationId) => {
-              if (!isCancelled()) setActiveAnnotationId(annotationId);
-            });
-          let navigationTargetLocated = false;
-          try {
-            const restored = await annotationService.restore(bookId);
-            if (!isCancelled()) {
-              setAnnotations(restored.annotations);
-              const unresolved = restored.restoreResults
-                .filter((result) => result.status === 'unresolved')
-                .map((result) => result.id);
-              setUnresolvedAnnotationIds(unresolved);
-              if (unresolved.length > 0) {
-                setAnnotationError(
-                  new AppError('ANNOTATION_RESTORE_PARTIAL').userMessage,
-                );
-              }
-              if (
-                navigationTarget?.annotationId &&
-                restored.annotations.some(
-                  (annotation) =>
-                    annotation.id === navigationTarget.annotationId,
-                )
-              ) {
-                const located = await annotationService.navigateTo(
-                  navigationTarget.annotationId,
-                );
-                if (located) {
-                  navigationTargetLocated = true;
-                  setActiveAnnotationId(navigationTarget.annotationId);
-                  setLocator(await reader.getCurrentLocator());
-                }
-              }
-            }
-          } catch (reason) {
-            if (!isCancelled()) {
-              setAnnotationError(
-                asAppError(reason, 'ANNOTATION_READ_FAILED').userMessage,
-              );
-            }
-          }
-          if (navigationTarget && !navigationTargetLocated && !isCancelled()) {
-            if (await restoreLocator(reader, navigationTarget.locator)) {
-              setLocator(navigationTarget.locator);
-            }
-          }
-          unsubscribe = reader.subscribeToRelocation((nextLocator) => {
-            if (isCancelled()) return;
-            setLocator(nextLocator);
-            setPersistenceError(null);
-            pendingLocator = nextLocator;
-            clearTimeout(saveTimer);
-            saveTimer = setTimeout(savePendingLocator, relocationSaveDelay);
-          });
-          setToc(reader.getTableOfContents());
-          readingSessionId = crypto.randomUUID();
-          void services.readingActivityRepository
-            ?.startSession({
-              id: readingSessionId,
-              bookId,
-              startedAt: Date.now(),
-              endedAt: null,
-              durationSeconds: 0,
-            })
-            .catch(() => {
-              readingSessionId = null;
-            });
-          setPhase('ready');
-        },
-      )
-      .catch((reason: unknown) => {
-        if (isCancelled()) return;
-        setError(asAppError(reason, 'READER_OPEN_FAILED').userMessage);
-        setPhase('error');
-      });
-
-    return () => {
-      cancelled = true;
-      clearTimeout(saveTimer);
-      savePendingLocator();
-      unsubscribe();
-      unsubscribeSelection();
-      unsubscribeHighlightActivation();
-      if (readingSessionId) {
-        void services.readingActivityRepository
-          ?.finishSession(readingSessionId, Date.now())
-          .catch(() => undefined);
-      }
-      reader?.clearSearch?.();
-      readerRef.current = null;
-      annotationServiceRef.current = null;
-      void reader?.close();
-      if (sessionHost?.parentElement === host) sessionHost.remove();
-    };
-  }, [attempt, bookId, hydrateSettings, navigationTarget, services]);
+  const session = useReaderSession(bookId, services, navigationTarget);
+  const {
+    annotationServiceRef,
+    annotations,
+    book,
+    globalSettings,
+    locator,
+    readerRef,
+    setActiveAnnotationId,
+    setAnnotationError,
+    setAnnotations,
+    setBookmarks,
+    setBookOverride,
+    setLocator,
+    setNavigationError,
+    setPersistenceError,
+    setUnresolvedAnnotationIds,
+  } = session;
 
   const runNavigation = useCallback(
     async (action: (reader: EbookReader) => Promise<void>) => {
@@ -301,7 +54,7 @@ export function useReader(
         );
       }
     },
-    [],
+    [readerRef, setNavigationError],
   );
 
   const saveBookSettings = useCallback(
@@ -322,7 +75,14 @@ export function useReader(
         throw appError;
       }
     },
-    [bookId, globalSettings, services.settingsRepository, setBookOverride],
+    [
+      bookId,
+      globalSettings,
+      readerRef,
+      services.settingsRepository,
+      setBookOverride,
+      setPersistenceError,
+    ],
   );
 
   const clearBookSettings = useCallback(async () => {
@@ -336,7 +96,14 @@ export function useReader(
       setPersistenceError(appError.userMessage);
       throw appError;
     }
-  }, [bookId, globalSettings, services.settingsRepository, setBookOverride]);
+  }, [
+    bookId,
+    globalSettings,
+    readerRef,
+    services.settingsRepository,
+    setBookOverride,
+    setPersistenceError,
+  ]);
 
   const createHighlight = useCallback(
     async (color: AnnotationColor) => {
@@ -352,7 +119,7 @@ export function useReader(
         throw appError;
       }
     },
-    [bookId],
+    [annotationServiceRef, bookId, setAnnotationError, setAnnotations],
   );
 
   const updateAnnotationNote = useCallback(
@@ -367,7 +134,7 @@ export function useReader(
       );
       return updated;
     },
-    [],
+    [annotationServiceRef, setAnnotations],
   );
 
   const deleteAnnotation = useCallback(
@@ -393,21 +160,38 @@ export function useReader(
         throw appError;
       }
     },
-    [annotations],
+    [
+      annotationServiceRef,
+      annotations,
+      setActiveAnnotationId,
+      setAnnotationError,
+      setAnnotations,
+      setUnresolvedAnnotationIds,
+    ],
   );
 
-  const navigateToAnnotation = useCallback(async (annotationId: string) => {
-    const located =
-      (await annotationServiceRef.current?.navigateTo(annotationId)) ?? false;
-    setActiveAnnotationId(annotationId);
-    if (!located) {
-      setUnresolvedAnnotationIds((current) =>
-        current.includes(annotationId) ? current : [...current, annotationId],
-      );
-      setAnnotationError(new AppError('ANNOTATION_LOCATE_FAILED').userMessage);
-    }
-    return located;
-  }, []);
+  const navigateToAnnotation = useCallback(
+    async (annotationId: string) => {
+      const located =
+        (await annotationServiceRef.current?.navigateTo(annotationId)) ?? false;
+      setActiveAnnotationId(annotationId);
+      if (!located) {
+        setUnresolvedAnnotationIds((current) =>
+          current.includes(annotationId) ? current : [...current, annotationId],
+        );
+        setAnnotationError(
+          new AppError('ANNOTATION_LOCATE_FAILED').userMessage,
+        );
+      }
+      return located;
+    },
+    [
+      annotationServiceRef,
+      setActiveAnnotationId,
+      setAnnotationError,
+      setUnresolvedAnnotationIds,
+    ],
+  );
 
   const insertAnnotationIntoNote = useCallback(
     async (annotationId: string) => {
@@ -439,7 +223,7 @@ export function useReader(
         await reader.goTo(value);
         setLocator(await reader.getCurrentLocator());
       }),
-    [runNavigation],
+    [runNavigation, setLocator],
   );
   const previousPage = useCallback(
     () => runNavigation((reader) => reader.previousPage()),
@@ -467,7 +251,7 @@ export function useReader(
       setBookmarks((current) => [bookmark, ...current]);
       return bookmark;
     },
-    [bookId, locator, services.bookmarkRepository],
+    [bookId, locator, services.bookmarkRepository, setBookmarks],
   );
 
   const deleteBookmark = useCallback(
@@ -478,7 +262,7 @@ export function useReader(
       await services.bookmarkRepository.delete(id);
       setBookmarks((current) => current.filter((item) => item.id !== id));
     },
-    [services.bookmarkRepository],
+    [services.bookmarkRepository, setBookmarks],
   );
 
   const renameBookmark = useCallback(
@@ -492,7 +276,7 @@ export function useReader(
       );
       return updated;
     },
-    [services.bookmarkRepository],
+    [services.bookmarkRepository, setBookmarks],
   );
 
   const navigateToBookmark = useCallback(
@@ -501,7 +285,7 @@ export function useReader(
         await reader.goTo(bookmark.locator);
         setLocator(await reader.getCurrentLocator());
       }),
-    [runNavigation],
+    [runNavigation, setLocator],
   );
 
   const searchCurrentChapter = useCallback(
@@ -512,65 +296,48 @@ export function useReader(
         ? reader.searchCurrentChapter(query)
         : [];
     },
-    [],
+    [readerRef],
   );
 
   const clearChapterSearch = useCallback(() => {
     readerRef.current?.clearSearch?.();
-  }, []);
-
-  const retry = useCallback(() => {
-    setBook(null);
-    setError(null);
-    setLocator(initialLocator);
-    setNavigationError(null);
-    setPersistenceError(null);
-    setPhase('loading');
-    setToc([]);
-    setAnnotations([]);
-    setBookmarks([]);
-    setAnnotationError(null);
-    setSelection(null);
-    setActiveAnnotationId(null);
-    setUnresolvedAnnotationIds([]);
-    setAttempt((current) => current + 1);
-  }, []);
+  }, [readerRef]);
 
   return {
-    book,
-    activeAnnotationId,
-    annotationError,
-    annotations,
-    bookmarks,
-    bookOverride,
+    activeAnnotationId: session.activeAnnotationId,
+    annotationError: session.annotationError,
+    annotations: session.annotations,
+    bookmarks: session.bookmarks,
+    book: session.book,
+    bookOverride: session.bookOverride,
     clearBookSettings,
     clearChapterSearch,
     createBookmark,
     createHighlight,
     deleteAnnotation,
     deleteBookmark,
-    effectiveSettings,
-    error,
+    effectiveSettings: session.effectiveSettings,
+    error: session.error,
     goToChapter,
     goToLocator,
-    hostRef,
+    hostRef: session.hostRef,
     insertAnnotationIntoNote,
-    locator,
-    navigationError,
-    nextPage,
+    locator: session.locator,
+    navigationError: session.navigationError,
     navigateToAnnotation,
     navigateToBookmark,
-    persistenceError,
-    phase,
+    nextPage,
+    persistenceError: session.persistenceError,
+    phase: session.phase,
     previousPage,
-    retry,
     renameBookmark,
+    retry: session.retry,
     saveBookSettings,
     searchCurrentChapter,
-    selection,
-    setActiveAnnotationId,
-    toc,
-    unresolvedAnnotationIds,
+    selection: session.selection,
+    setActiveAnnotationId: session.setActiveAnnotationId,
+    toc: session.toc,
+    unresolvedAnnotationIds: session.unresolvedAnnotationIds,
     updateAnnotationNote,
   };
 }

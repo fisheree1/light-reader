@@ -5,6 +5,13 @@ LightReader backup is a local, versioned data-maintenance boundary. React calls
 `BackupPlatform`; SQLite snapshot and restore operations run in focused Tauri
 commands. No backup data is sent to a network service.
 
+The native implementation is split by responsibility: `backup.rs` owns command
+orchestration and public data contracts, `backup/database.rs` owns SQLite
+inspection/snapshot/restore transactions, `backup/assets.rs` owns managed-file
+validation and rollback, and `backup/migration.rs` owns migration safety
+snapshots and pruning. New backup behavior belongs in the narrowest matching
+module; command handlers must not absorb database or filesystem algorithms.
+
 ## Backup modes
 
 The settings page exposes two explicit modes:

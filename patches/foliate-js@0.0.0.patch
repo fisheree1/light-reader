@@ -1,0 +1,16 @@
+diff --git a/paginator.js b/paginator.js
+index 7980c20297049e38b5e5a1d44a9eee11b1fbd68e..2143cc28e0d979f93b5737843551b30037f6f2ff 100644
+--- a/paginator.js
++++ b/paginator.js
+@@ -752,7 +752,10 @@ export class Paginator extends HTMLElement {
+         return { height, width, margin, gap, columnWidth }
+     }
+     render() {
+-        if (!this.#view) return
++        // A queued ResizeObserver callback can run while an iframe is being
++        // replaced. Ignore that transient state instead of rendering a null
++        // contentDocument.
++        if (!this.#view?.document?.documentElement) return
+         this.#view.render(this.#beforeRender({
+             vertical: this.#vertical,
+             rtl: this.#rtl,

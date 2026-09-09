@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  foliate-js@0.0.0: 33522ae260b7ff258b6eb457c47dae0eab3eea2af2cd324400256991e853fa31
+
 importers:
 
   .:
@@ -82,7 +85,7 @@ importers:
         version: 0.8.3
       foliate-js:
         specifier: github:johnfactotum/foliate-js#78914aef4466eb960965702401634c2cb348e9b1
-        version: https://codeload.github.com/johnfactotum/foliate-js/tar.gz/78914aef4466eb960965702401634c2cb348e9b1
+        version: https://codeload.github.com/johnfactotum/foliate-js/tar.gz/78914aef4466eb960965702401634c2cb348e9b1(patch_hash=33522ae260b7ff258b6eb457c47dae0eab3eea2af2cd324400256991e853fa31)
       lucide-react:
         specifier: ^1.28.0
         version: 1.28.0(react@19.2.8)
@@ -4285,7 +4288,7 @@ snapshots:
 
   flatted@3.4.4: {}
 
-  foliate-js@https://codeload.github.com/johnfactotum/foliate-js/tar.gz/78914aef4466eb960965702401634c2cb348e9b1: {}
+  foliate-js@https://codeload.github.com/johnfactotum/foliate-js/tar.gz/78914aef4466eb960965702401634c2cb348e9b1(patch_hash=33522ae260b7ff258b6eb457c47dae0eab3eea2af2cd324400256991e853fa31): {}
 
   fraction.js@5.3.4: {}
 

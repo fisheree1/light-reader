@@ -68,9 +68,10 @@ pnpm format:check
 pnpm test:run
 pnpm test:coverage
 pnpm test:e2e
+pnpm bundle:check
 ```
 
-首次运行端到端测试前执行 `pnpm exec playwright install chromium`。桌面安装包使用 `pnpm tauri:build` 构建。CI、覆盖率基线、原生测试范围和专项测试命令见[测试与交付文档](docs/testing.md)。
+首次运行端到端测试前执行 `pnpm exec playwright install chromium`。桌面安装包使用 `pnpm tauri:build` 构建。CI、覆盖率基线、原生测试范围和专项测试命令见[测试与交付文档](docs/testing.md)，跨平台打包与真实桌面验收见[发布清单](docs/release.md)。
 
 ## 项目结构
 
@@ -105,6 +106,7 @@ React 组件不直接调用 Tauri API。平台能力通过 Adapter/Service 隔�
 - [AI Agent 开发设计](docs/ai-agent-development.md)
 - [云同步评估](docs/cloud-sync-evaluation.md)
 - [测试与交付](docs/testing.md)
+- [跨平台发布清单](docs/release.md)
 
 ## 尚未实现
 

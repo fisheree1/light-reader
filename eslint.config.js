@@ -58,4 +58,11 @@ export default defineConfig(
       globals: globals.node,
     },
   },
+  {
+    files: ['scripts/**/*.mjs'],
+    extends: [tseslint.configs.disableTypeChecked],
+    languageOptions: {
+      globals: globals.node,
+    },
+  },
 );

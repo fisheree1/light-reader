@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "total": {
+    "maxBytes": 3150000,
+    "maxGzipBytes": 950000
+  },
+  "assets": [
+    {
+      "name": "application shell",
+      "pattern": "^index-[^.]+\\.js$",
+      "maxBytes": 365000,
+      "maxGzipBytes": 115000
+    },
+    {
+      "name": "notes page",
+      "pattern": "^notes-page-[^.]+\\.js$",
+      "maxBytes": 485000,
+      "maxGzipBytes": 150000
+    },
+    {
+      "name": "notes services",
+      "pattern": "^notes-services-[^.]+\\.js$",
+      "maxBytes": 290000,
+      "maxGzipBytes": 92000
+    },
+    {
+      "name": "PDF runtime",
+      "pattern": "^pdf-[^.]+\\.js$",
+      "maxBytes": 455000,
+      "maxGzipBytes": 135000
+    },
+    {
+      "name": "PDF worker",
+      "pattern": "^pdf\\.worker\\.min-[^.]+\\.mjs$",
+      "maxBytes": 1330000,
+      "maxGzipBytes": 395000
+    },
+    {
+      "name": "reader page",
+      "pattern": "^reader-page-[^.]+\\.js$",
+      "maxBytes": 60000,
+      "maxGzipBytes": 20000
+    },
+    {
+      "name": "application CSS",
+      "pattern": "^index-[^.]+\\.css$",
+      "maxBytes": 40000,
+      "maxGzipBytes": 10000
+    }
+  ]
+}

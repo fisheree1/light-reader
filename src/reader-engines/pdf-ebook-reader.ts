@@ -1,12 +1,5 @@
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import type {
-  PDFDocumentLoadingTask,
-  PDFDocumentProxy,
-  PDFPageProxy,
-  RenderTask,
-  TextLayer,
-} from 'pdfjs-dist';
-import type { TextContent } from 'pdfjs-dist/types/src/display/api.js';
+import type { PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist';
 
 import { AppError } from '../lib/app-error';
 import {
@@ -23,130 +16,19 @@ import {
   type RelocationListener,
   type SelectionListener,
 } from './types';
-
-type PdfJsRuntime = Pick<
-  typeof import('pdfjs-dist'),
-  'GlobalWorkerOptions' | 'TextLayer' | 'getDocument'
->;
-type PdfJsRuntimeLoader = () => Promise<PdfJsRuntime>;
-
-interface RenderedPage {
-  page: PDFPageProxy;
-  renderTask: RenderTask | null;
-  textLayer: TextLayer | null;
-}
-
-const maxActivePages = 5;
-const maxCanvasDimension = 8_192;
-const maxCanvasPixels = 16_777_216;
-const maxSearchResults = 500;
-const maxTextCachePages = 32;
-
-const highlightColors = {
-  yellow: '#facc15',
-  blue: '#60a5fa',
-  green: '#4ade80',
-  red: '#f87171',
-} as const;
-
-async function loadPdfJsRuntime(): Promise<PdfJsRuntime> {
-  return import('pdfjs-dist');
-}
-
-function clamp(value: number, minimum: number, maximum: number): number {
-  return Math.min(maximum, Math.max(minimum, value));
-}
-
-function normalizedPageText(content: TextContent): string {
-  return content.items
-    .flatMap((item) =>
-      'str' in item ? [item.str, ...(item.hasEOL ? ['\n'] : [])] : [],
-    )
-    .join('');
-}
-
-async function readPageTextContent(page: PDFPageProxy): Promise<TextContent> {
-  const stream = page.streamTextContent() as ReadableStream<TextContent>;
-  const reader = stream.getReader();
-  const content: TextContent = {
-    items: [],
-    styles: Object.create(null) as TextContent['styles'],
-    lang: null,
-  };
-  try {
-    let chunk = await reader.read();
-    while (!chunk.done) {
-      content.lang ??= chunk.value.lang;
-      Object.assign(content.styles, chunk.value.styles);
-      content.items.push(...chunk.value.items);
-      chunk = await reader.read();
-    }
-    return content;
-  } finally {
-    reader.releaseLock();
-  }
-}
-
-function findTextOffset(
-  root: HTMLElement,
-  node: Node,
-  offset: number,
-): number | null {
-  if (!root.contains(node)) return null;
-  try {
-    const range = root.ownerDocument.createRange();
-    range.selectNodeContents(root);
-    range.setEnd(node, offset);
-    return range.toString().length;
-  } catch {
-    return null;
-  }
-}
-
-function createTextRange(
-  root: HTMLElement,
-  start: number,
-  end: number,
-): Range | null {
-  const walker = root.ownerDocument.createTreeWalker(
-    root,
-    NodeFilter.SHOW_TEXT,
-  );
-  let cursor = 0;
-  let startNode: Text | null = null;
-  let endNode: Text | null = null;
-  let startOffset = 0;
-  let endOffset = 0;
-  let candidate = walker.nextNode();
-  while (candidate) {
-    const textNode = candidate as Text;
-    const next = cursor + textNode.data.length;
-    if (!startNode && start <= next) {
-      startNode = textNode;
-      startOffset = clamp(start - cursor, 0, textNode.data.length);
-    }
-    if (end <= next) {
-      endNode = textNode;
-      endOffset = clamp(end - cursor, 0, textNode.data.length);
-      break;
-    }
-    cursor = next;
-    candidate = walker.nextNode();
-  }
-  if (!startNode || !endNode) return null;
-  const range = root.ownerDocument.createRange();
-  range.setStart(startNode, startOffset);
-  range.setEnd(endNode, endOffset);
-  return range;
-}
-
-function selectionContext(text: string, start: number, end: number) {
-  const normalize = (value: string) => value.replace(/\s+/g, ' ').trim();
-  return {
-    textBefore: normalize(text.slice(Math.max(0, start - 160), start)) || null,
-    textAfter: normalize(text.slice(end, end + 160)) || null,
-  };
-}
+import {
+  clamp,
+  createPdfPageShells,
+  drawPdfPageOverlays,
+  loadPdfJsRuntime,
+  normalizedPageText,
+  pdfRenderLimits,
+  readPdfSelection,
+  readPageTextContent,
+  type PdfJsRuntime,
+  type PdfJsRuntimeLoader,
+  type RenderedPage,
+} from './pdf-reader-support';
 
 /**
  * PDF.js adapter. PDF.js workers, pages, canvases and text-layer DOM never
@@ -309,13 +191,17 @@ export class PdfEbookReader implements EbookReader {
     try {
       for (
         let pageIndex = 0;
-        pageIndex < document.numPages && results.length < maxSearchResults;
+        pageIndex < document.numPages &&
+        results.length < pdfRenderLimits.searchResults;
         pageIndex += 1
       ) {
         const text = await this.getPageText(pageIndex);
         const haystack = text.toLocaleLowerCase();
         let start = 0;
-        while (start < haystack.length && results.length < maxSearchResults) {
+        while (
+          start < haystack.length &&
+          results.length < pdfRenderLimits.searchResults
+        ) {
           const matchStart = haystack.indexOf(needle, start);
           if (matchStart < 0) break;
           const end = matchStart + normalized.length;
@@ -477,7 +363,7 @@ export class PdfEbookReader implements EbookReader {
   ): Promise<PDFDocumentProxy> {
     const task = runtime.getDocument({
       data: Uint8Array.from(new Uint8Array(source)),
-      maxImageSize: maxCanvasPixels,
+      maxImageSize: pdfRenderLimits.canvasPixels,
       stopAtErrors: false,
     });
     this.loadingTask = task;
@@ -487,26 +373,13 @@ export class PdfEbookReader implements EbookReader {
   private async createPageShells(document: PDFDocumentProxy): Promise<void> {
     const host = this.host;
     if (!host) throw new AppError('READER_OPEN_FAILED');
-    const firstPage = await document.getPage(1);
-    const firstViewport = firstPage.getViewport({ scale: 1 });
-    firstPage.cleanup();
-    const aspectRatio = firstViewport.width / firstViewport.height;
-    const scroller = host.ownerDocument.createElement('div');
-    scroller.className = 'pdf-reader';
-    scroller.setAttribute('aria-label', 'PDF 文档');
-    scroller.tabIndex = 0;
-    for (let pageIndex = 0; pageIndex < document.numPages; pageIndex += 1) {
-      const shell = host.ownerDocument.createElement('section');
-      shell.className = 'pdf-page';
-      shell.dataset.pdfPageIndex = String(pageIndex);
-      shell.setAttribute('aria-label', `第 ${String(pageIndex + 1)} 页`);
-      shell.style.aspectRatio = String(aspectRatio);
-      shell.style.maxWidth = `${String(this.settings.contentWidth)}px`;
-      scroller.append(shell);
-      this.pageShells.push(shell);
-    }
-    host.replaceChildren(scroller);
-    this.scroller = scroller;
+    const result = await createPdfPageShells(
+      host,
+      document,
+      this.settings.contentWidth,
+    );
+    this.pageShells = result.pageShells;
+    this.scroller = result.scroller;
   }
 
   private installListeners(): void {
@@ -585,61 +458,10 @@ export class PdfEbookReader implements EbookReader {
   private readonly handleSelection = () => {
     const host = this.host;
     if (!host) return;
-    const selection = host.ownerDocument.getSelection();
-    if (!selection?.rangeCount || selection.isCollapsed) {
-      this.setSelection(null);
-      return;
-    }
-    const range = selection.getRangeAt(0);
-    const shell =
-      range.commonAncestorContainer instanceof Element
-        ? range.commonAncestorContainer.closest<HTMLElement>('.pdf-page')
-        : range.commonAncestorContainer.parentElement?.closest<HTMLElement>(
-            '.pdf-page',
-          );
-    const textLayer = shell?.querySelector<HTMLElement>('.textLayer');
-    const pageIndex = Number(shell?.dataset.pdfPageIndex);
-    if (!shell || !textLayer || !Number.isInteger(pageIndex)) {
-      this.setSelection(null);
-      return;
-    }
-    const start = findTextOffset(
-      textLayer,
-      range.startContainer,
-      range.startOffset,
-    );
-    const end = findTextOffset(textLayer, range.endContainer, range.endOffset);
-    if (start === null || end === null || end <= start) {
-      this.setSelection(null);
-      return;
-    }
-    const pageText = this.textCache.get(pageIndex) ?? textLayer.textContent;
-    const text = pageText.slice(start, end).replace(/\s+/g, ' ').trim();
-    if (!text) {
-      this.setSelection(null);
-      return;
-    }
-    const shellRect = shell.getBoundingClientRect();
-    const selectionRect = range.getBoundingClientRect();
-    const withinPageProgression = clamp(
-      (selectionRect.top - shellRect.top) / Math.max(1, shellRect.height),
-      0,
-      1,
-    );
     const document = this.requireDocument();
-    this.setSelection({
-      text,
-      ...selectionContext(pageText, start, end),
-      locator: {
-        version: 1,
-        format: 'pdf',
-        pageIndex,
-        withinPageProgression,
-        textRange: { start, end },
-        progression:
-          document.numPages === 1 ? 1 : pageIndex / (document.numPages - 1),
-      },
-    });
+    this.setSelection(
+      readPdfSelection(host, this.textCache, document.numPages),
+    );
   };
 
   private async renderWindow(center: number): Promise<void> {
@@ -653,7 +475,7 @@ export class PdfEbookReader implements EbookReader {
     );
     const retained = [...this.renderedPages.keys()]
       .sort((left, right) => Math.abs(left - center) - Math.abs(right - center))
-      .slice(0, maxActivePages);
+      .slice(0, pdfRenderLimits.activePages);
     const retainedSet = new Set(retained);
     for (const pageIndex of [...this.renderedPages.keys()]) {
       if (!retainedSet.has(pageIndex)) this.releasePage(pageIndex);
@@ -708,9 +530,11 @@ export class PdfEbookReader implements EbookReader {
       Number.EPSILON,
       Math.min(
         deviceScale,
-        maxCanvasDimension / viewport.width,
-        maxCanvasDimension / viewport.height,
-        Math.sqrt(maxCanvasPixels / (viewport.width * viewport.height)),
+        pdfRenderLimits.canvasDimension / viewport.width,
+        pdfRenderLimits.canvasDimension / viewport.height,
+        Math.sqrt(
+          pdfRenderLimits.canvasPixels / (viewport.width * viewport.height),
+        ),
       ),
     );
     canvas.width = Math.max(1, Math.floor(viewport.width * outputScale));
@@ -802,7 +626,7 @@ export class PdfEbookReader implements EbookReader {
   private cachePageText(pageIndex: number, text: string): void {
     this.textCache.delete(pageIndex);
     this.textCache.set(pageIndex, text);
-    while (this.textCache.size > maxTextCachePages) {
+    while (this.textCache.size > pdfRenderLimits.textCachePages) {
       const oldest = this.textCache.keys().next().value;
       if (oldest === undefined) break;
       this.textCache.delete(oldest);
@@ -811,62 +635,17 @@ export class PdfEbookReader implements EbookReader {
 
   private drawPageOverlays(pageIndex: number): void {
     const shell = this.pageShells[pageIndex];
-    const textLayer = shell.querySelector<HTMLElement>('.textLayer');
-    const overlay = shell.querySelector<HTMLElement>('.pdf-page-overlay');
-    if (!textLayer || !overlay) return;
-    overlay.replaceChildren();
-    for (const range of this.searchRanges.get(pageIndex) ?? []) {
-      this.drawTextRange(shell, textLayer, overlay, range, '#fde047', null);
-    }
-    for (const highlight of this.highlights.values()) {
-      if (highlight.locator.format !== 'pdf') continue;
-      if (highlight.locator.pageIndex !== pageIndex) continue;
-      const range = highlight.locator.textRange;
-      if (!range) continue;
-      this.drawTextRange(
-        shell,
-        textLayer,
-        overlay,
-        range,
-        highlightColors[highlight.color],
-        highlight.id,
-      );
-    }
-  }
-
-  private drawTextRange(
-    shell: HTMLElement,
-    textLayer: HTMLElement,
-    overlay: HTMLElement,
-    textRange: { start: number; end: number },
-    color: string,
-    highlightId: string | null,
-  ): void {
-    const range = createTextRange(textLayer, textRange.start, textRange.end);
-    if (!range || typeof range.getClientRects !== 'function') return;
-    const shellRect = shell.getBoundingClientRect();
-    for (const rect of range.getClientRects()) {
-      const element = shell.ownerDocument.createElement(
-        highlightId ? 'button' : 'span',
-      );
-      element.className = highlightId
-        ? 'pdf-highlight pdf-highlight-interactive'
-        : 'pdf-search-highlight';
-      element.style.left = `${String(rect.left - shellRect.left)}px`;
-      element.style.top = `${String(rect.top - shellRect.top)}px`;
-      element.style.width = `${String(rect.width)}px`;
-      element.style.height = `${String(rect.height)}px`;
-      element.style.background = color;
-      if (highlightId) {
-        element.setAttribute('aria-label', '打开高亮批注');
-        element.addEventListener('click', () => {
-          for (const listener of this.highlightActivationListeners) {
-            listener(highlightId);
-          }
-        });
-      }
-      overlay.append(element);
-    }
+    drawPdfPageOverlays({
+      highlights: this.highlights.values(),
+      onActivate: (highlightId) => {
+        for (const listener of this.highlightActivationListeners) {
+          listener(highlightId);
+        }
+      },
+      pageIndex,
+      searchRanges: this.searchRanges.get(pageIndex) ?? [],
+      shell,
+    });
   }
 
   private updateLocator(

@@ -5,6 +5,11 @@ at commit `78914aef4466eb960965702401634c2cb348e9b1`. The upstream project does 
 publish a stable API, so upgrades must change the pinned commit deliberately and
 rerun adapter, E2E and Tauri checks.
 
+`patches/foliate-js@0.0.0.patch` guards a known paginator race where a queued
+`ResizeObserver` callback can run while the section iframe has no document. The
+patch is declared in `pnpm-workspace.yaml`, is applied by every frozen install,
+and must be revalidated or removed when the pinned Foliate commit changes.
+
 ## Boundaries
 
 ```text
@@ -28,6 +33,20 @@ React does not import Foliate, PDF.js or Tauri modules. Custom elements,
 workers, upstream event payloads, Blob/File objects, canvases, text layers and
 renderer cleanup stay inside their engine adapter. Tauri reads only the managed
 relative path already validated on the `Book` domain object.
+
+The adapter files keep orchestration and lifecycle ownership, while focused
+support modules contain engine-specific pure mapping and DOM helpers:
+
+- `foliate-reader-support.ts`: Foliate loading, locator/TOC mapping, display CSS,
+  interaction limits, selection context, and overlay drawing;
+- `pdf-reader-support.ts`: PDF.js loading and worker wiring, text normalization,
+  range mapping, page shells, selection, and overlay drawing;
+- `use-reader-session.ts`: source opening, session initialization, persisted
+  position, settings hydration, annotation restoration, and teardown;
+- `use-reader.ts`: user actions and view-facing state composition only.
+
+Keep new renderer internals in these boundaries instead of growing the React
+page or exposing third-party objects through `EbookReader`.
 
 The browser test runtime uses the same Foliate adapter with a minimal EPUB
 generated from LightReader-owned text. Only its source adapter is mocked.

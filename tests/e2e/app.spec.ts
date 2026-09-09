@@ -14,7 +14,7 @@ test.beforeEach(({ page }) => {
   };
   diagnosticsByPage.set(page, diagnostics);
   page.on('pageerror', (error) => {
-    diagnostics.pageErrors.push(error.message);
+    diagnostics.pageErrors.push(error.stack ?? error.message);
   });
   page.on('console', (message) => {
     if (
