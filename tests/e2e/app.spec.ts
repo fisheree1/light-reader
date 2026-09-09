@@ -174,7 +174,9 @@ test('searches notes, highlights, and EPUB content entirely in Web mocks', async
   ).toBeVisible();
   await page.getByRole('button', { name: /第一章/ }).click();
   await expect(page).toHaveURL(/\/reader\/search-book$/);
-  await expect(page.getByRole('button', { name: '第一章' })).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: '第一章', exact: true }),
+  ).toBeVisible();
 });
 
 test('switches theme', async ({ page }) => {
@@ -368,6 +370,7 @@ test('completes the release user loop through the real Foliate Web engine', asyn
     page.getByRole('button', { name: '开篇书签', exact: true }),
   ).toBeVisible();
   const importedReaderUrl = page.url();
+  await page.getByRole('button', { name: '显示高亮与批注' }).click();
 
   await page
     .getByText('这是 LightReader 自制的无版权测试内容。', { exact: true })
@@ -440,25 +443,60 @@ test('creates a note through the consented local AI selection flow', async ({
   await contentFrame
     .getByText('这是 LightReader 自制的无版权测试内容。')
     .selectText();
-  const aiButton = page.getByRole('button', { name: 'AI 助手' });
+  const aiButton = page.getByRole('button', { name: 'AI 助手', exact: true });
   await aiButton.click();
 
-  const dialog = page.getByRole('dialog', { name: '本地 AI 阅读助手' });
-  await expect(dialog.getByLabel('将发送的准确文本')).toHaveValue(
+  const sidebar = page.getByRole('complementary', {
+    name: '本地 AI 阅读助手',
+  });
+  await expect(sidebar.getByLabel('将发送的准确文本')).toHaveValue(
     '这是 LightReader 自制的无版权测试内容。',
   );
-  await dialog.getByRole('button', { name: '发送给本地模型' }).click();
-  await expect(dialog.getByText('已生成独立 AI 草稿')).toBeVisible();
-  await dialog.getByRole('button', { name: '创建新笔记' }).click();
+  await sidebar.getByLabel('任务').selectOption('custom');
+  await sidebar
+    .getByRole('textbox', { name: '自定义需求' })
+    .fill('找出这段话最重要的一个信息');
+  await sidebar.getByRole('button', { name: '发送给本地模型' }).click();
+  await expect(sidebar.getByText('已生成独立 AI 草稿')).toBeVisible();
+  await sidebar.getByRole('button', { name: '创建新笔记' }).click();
 
   await expect(page).toHaveURL(/\/notes\?noteId=/);
   await expect(
     page.getByRole('textbox', { name: '笔记标题', exact: true }),
-  ).toHaveValue('总结：AI 阅读草稿');
+  ).toHaveValue('自定义需求：AI 阅读草稿');
   await expect(
     page
       .getByLabel('笔记正文')
       .getByText('这是本地 AI 测试草稿。它只基于你确认发送的选中文本生成。'),
+  ).toBeVisible();
+});
+
+test('asks the current book a free-form question with a navigable citation', async ({
+  page,
+}) => {
+  await page.goto('/settings');
+  await page.getByLabel('启用本地 AI 助手').check();
+  await page.getByRole('button', { name: '保存 AI 设置' }).click();
+
+  await page.goto('/library');
+  await page.getByRole('button', { name: '导入电子书' }).click();
+  await page.getByRole('button', { name: '打开《Web 测试 EPUB》' }).click();
+  await expect(page.getByRole('button', { name: '第一章' })).toBeVisible();
+  await findContentFrame(page, '这是 LightReader 自制的无版权测试内容。');
+  await page.getByRole('button', { name: '显示 AI 助手' }).click();
+
+  const sidebar = page.getByRole('complementary', {
+    name: '本地 AI 阅读助手',
+  });
+  await sidebar.getByLabel('向本书提问').fill('本书有哪些测试内容？');
+  await sidebar.getByRole('button', { name: '检索本书并提问' }).click();
+
+  await expect(sidebar.getByText('已生成独立 AI 草稿')).toBeVisible();
+  const citation = sidebar.getByRole('button', { name: /依据 1 · 第一章/ });
+  await expect(citation).toBeVisible();
+  await citation.click();
+  await expect(
+    page.getByRole('button', { name: '第一章', exact: true }),
   ).toBeVisible();
 });
 

@@ -1,6 +1,7 @@
 import type { AiSettingsRepository } from '../../../database/repositories/ai-settings-repository';
 import { AppError } from '../../../lib/app-error';
 import type { ReaderTextSelection } from '../../../reader-engines/types';
+import type { Book } from '../../library/domain/book';
 import type {
   AgentProviderEvent,
   ModelProviderGateway,
@@ -13,23 +14,38 @@ import {
   type PreparedSelectionRun,
 } from './agent-consent-service';
 import { AgentRunner, type AgentRunResult } from './agent-runner';
+import { BookQaRunner, type BookQaRunResult } from './book-qa-runner';
 
 export class AgentFacade {
   private readonly consentService: AgentConsentService;
   private readonly provider: ModelProviderGateway;
   private readonly runner: AgentRunner;
   private readonly settingsRepository: AiSettingsRepository;
+  private readonly bookQaRunner: BookQaRunner | null;
 
   constructor(
     settingsRepository: AiSettingsRepository,
     provider: ModelProviderGateway,
     consentService = new AgentConsentService(),
     runner = new AgentRunner(provider),
+    bookQaRunner: BookQaRunner | null = null,
   ) {
+    this.bookQaRunner = bookQaRunner;
     this.consentService = consentService;
     this.provider = provider;
     this.runner = runner;
     this.settingsRepository = settingsRepository;
+  }
+
+  async runBookQuestion(
+    book: Book,
+    question: string,
+    signal: AbortSignal,
+    onEvent?: (event: AgentProviderEvent) => void,
+  ): Promise<BookQaRunResult> {
+    if (!this.bookQaRunner) throw new AppError('AI_REQUEST_FAILED');
+    const settings = await this.requireAvailableSettings();
+    return this.bookQaRunner.run(book, question, settings, signal, onEvent);
   }
 
   getSettings(): Promise<AiSettings> {
@@ -48,6 +64,7 @@ export class AgentFacade {
     action: SelectionAiAction;
     bookId: string;
     bookTitle: string;
+    instruction?: string;
     selection: ReaderTextSelection;
   }): Promise<PreparedSelectionRun> {
     const settings = await this.getSettings();
@@ -75,5 +92,16 @@ export class AgentFacade {
     }
     const approved = this.consentService.approve(prepared, approvedText);
     return this.runner.runSelection(approved, settings, signal, onEvent);
+  }
+
+  private async requireAvailableSettings(): Promise<AiSettings> {
+    const settings = await this.getSettings();
+    if (!settings.enabled) throw new AppError('AI_DISABLED');
+    const status = await this.provider.getStatus(settings);
+    if (!status.available) throw new AppError('AI_PROVIDER_UNAVAILABLE');
+    if (!status.models.includes(settings.model)) {
+      throw new AppError('AI_MODEL_NOT_FOUND');
+    }
+    return settings;
   }
 }

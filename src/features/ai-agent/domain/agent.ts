@@ -8,6 +8,7 @@ export const selectionAiActionSchema = z.enum([
   'translate',
   'outline',
   'questions',
+  'custom',
 ]);
 
 export type SelectionAiAction = z.infer<typeof selectionAiActionSchema>;
@@ -18,7 +19,10 @@ export const selectionAiActionLabels: Record<SelectionAiAction, string> = {
   translate: '翻译为中文',
   outline: '生成提纲',
   questions: '生成阅读问题',
+  custom: '自定义需求',
 };
+
+export const customAiInstructionSchema = z.string().trim().min(1).max(1_000);
 
 export const agentRunStatusSchema = z.enum([
   'preparing-context',
@@ -32,11 +36,14 @@ export const agentRunStatusSchema = z.enum([
 
 export type AgentRunStatus = z.infer<typeof agentRunStatusSchema>;
 
+export const agentTaskSchema = z.enum(['selection-assist', 'book-qa']);
+
 export const agentRunSchema = z.object({
   schemaVersion: z.literal(1),
   id: z.string().trim().min(1).max(128),
-  task: z.literal('selection-assist'),
+  task: agentTaskSchema,
   action: selectionAiActionSchema,
+  instruction: customAiInstructionSchema.nullable().default(null),
   status: agentRunStatusSchema,
   provider: z.literal('ollama'),
   model: z.string().trim().min(1).max(200),
@@ -55,6 +62,10 @@ export type AgentRun = z.infer<typeof agentRunSchema>;
 
 export const agentToolNameSchema = z.enum([
   'get_current_selection',
+  'search_books',
+  'read_passage',
+  'search_notes',
+  'search_annotations',
   'create_ai_draft',
 ]);
 
@@ -67,13 +78,13 @@ export const agentCapabilityGrantSchema = z.object({
   provider: z.literal('ollama'),
   model: z.string().trim().min(1).max(200),
   remoteProcessingAllowed: z.literal(false),
-  allowedTools: z.array(agentToolNameSchema).max(2),
+  allowedTools: z.array(agentToolNameSchema).max(8),
   allowedBookIds: z.array(z.string().trim().min(1).max(128)).max(1),
-  allowedNoteIds: z.array(z.string().trim().min(1).max(128)).max(0),
-  allowedAnnotationIds: z.array(z.string().trim().min(1).max(128)).max(0),
+  allowedNoteIds: z.array(z.string().trim().min(1).max(128)).max(50),
+  allowedAnnotationIds: z.array(z.string().trim().min(1).max(128)).max(100),
   maxCharsPerToolResult: z.number().int().positive().max(12_000),
   maxTotalContextChars: z.number().int().positive().max(12_000),
-  maxToolCalls: z.number().int().nonnegative().max(2),
+  maxToolCalls: z.number().int().nonnegative().max(8),
   expiresAt: z.number().int().nonnegative(),
   approvedAt: z.number().int().nonnegative().nullable(),
 });
@@ -100,7 +111,7 @@ export const aiDraftSchema = z.object({
   schemaVersion: z.literal(1),
   id: z.string().trim().min(1).max(128),
   runId: z.string().trim().min(1).max(128),
-  task: z.literal('selection-assist'),
+  task: agentTaskSchema,
   action: selectionAiActionSchema,
   title: z.string().trim().min(1).max(500),
   content: z.string().trim().min(1).max(8_000),

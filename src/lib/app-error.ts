@@ -38,6 +38,8 @@ export const appErrorMessages = {
   NOTE_DOCUMENT_INVALID: '笔记内容损坏，已使用空白文档安全打开。',
   SEARCH_FAILED: '无法完成本地搜索，请稍后重试。',
   SEARCH_INDEX_FAILED: '无法更新本地搜索索引，请稍后重试。',
+  TEXT_UNAVAILABLE: '这本书没有可用的文本内容，扫描版 PDF 暂不支持 AI 问答。',
+  AI_NO_EVIDENCE: '未在本书中找到足够依据，请换个更具体的问法。',
   AI_DISABLED: 'AI 助手尚未启用，请先前往设置开启。',
   AI_SETTINGS_READ_FAILED: '无法加载 AI 设置，请稍后重试。',
   AI_SETTINGS_WRITE_FAILED: '无法保存 AI 设置，请稍后重试。',

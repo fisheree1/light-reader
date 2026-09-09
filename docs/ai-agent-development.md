@@ -1,15 +1,18 @@
 # LightReader AI Agent 开发设计
 
-状态：Phase A/B 已实现本地 Ollama 选中文本助手；Phase C～F 尚未实现。
+状态：Phase A～D 的本地优先基线已实现；Phase E/F 尚未实现。
 
 更新日期：2026-09-08。
 
 当前实现采用固定回环地址的 Ollama Provider，默认模型为
 `deepseek-r1:8b`。领域 schema、授权状态机、预算、Fake Provider、敏感内容
-提示、精确文本确认、流式取消、内存 AI 草稿、设置页和确认后新建笔记已经
-接入。实现决策见 [`adr/0001-local-ollama-provider.md`](adr/0001-local-ollama-provider.md)，
-模型基线见 [`ai-local-model-baseline.md`](ai-local-model-baseline.md)。单书 RAG、
-引用、工具型 Agent、受控追加和高级能力仍按本文后续阶段实施。
+提示、精确文本确认、预设或自定义需求、单书 EPUB/PDF 文本检索、可跳转
+引用、受限只读工具、阅读页侧边栏、流式取消、内存 AI 草稿、设置页和确认后
+新建笔记已经接入。实现决策见
+[`adr/0001-local-ollama-provider.md`](adr/0001-local-ollama-provider.md)，
+模型基线见 [`ai-local-model-baseline.md`](ai-local-model-baseline.md)，检索与工具
+边界见 [`adr/0002-local-rag-readonly-agent.md`](adr/0002-local-rag-readonly-agent.md)。
+语义向量检索、跨书/笔记研究、受控追加和高级能力仍按本文后续阶段实施。
 
 本文定义 LightReader 后续引入 AI Agent 能力时的产品范围、架构边界、
 数据模型、工具协议、RAG、隐私、安全、测试和交付顺序。它建立在现有
@@ -925,7 +928,7 @@ Agent 无法获得 `NoteRepository.update` 或任意平台能力。
 
 - 选择一种 Provider 形态并完成 ADR。
 - 实现流式 Gateway、超时、取消、用量和错误映射。
-- 支持总结、解释、翻译、提纲和问题生成。
+- 支持总结、解释、翻译、提纲、问题生成和有长度上限的自定义需求。
 - 结果只生成 `AiDraft`。
 - 加入 Provider disclosure 和关闭 AI 的设置。
 
@@ -933,6 +936,12 @@ Agent 无法获得 `NoteRepository.update` 或任意平台能力。
 WebView、SQLite、localStorage、日志或备份。
 
 ### Phase C — 单书本地 RAG
+
+实现状态：已完成本地关键词检索基线。EPUB 章节和 PDF 文本层会切成带版本、
+文件哈希与 locator 的稳定 chunk，按书惰性写入 FTS5 trigram 派生索引；检索有
+top-k 和总字符预算，可合并相邻片段并生成本地校验引用。删除图书会同步清理
+索引，文件哈希变化会触发重建。embedding、混合召回和 reranker 暂未启用，需
+在本地 eval 证明收益后再选型。
 
 - 抽象 EPUB/PDF `BookTextExtractor`。
 - 定义 chunk、版本和 locator 映射。
@@ -944,6 +953,13 @@ WebView、SQLite、localStorage、日志或备份。
 派生索引；远程模型只收到范围内 top-k passage。
 
 ### Phase D — 工具型单 Agent
+
+实现状态：已完成单书问答所需的受限只读基线。固定 Tool Registry 目前只开放
+`search_books` 和受搜索结果约束的 `read_passage`，并执行单书 grant、过期时间、
+调用次数、重复调用、单次/总文本预算检查。轨迹只记录工具名、状态、字符数和
+结果哈希，不记录原文。由于当前 Ollama Gateway 未声明 function-tools 能力，
+第一版由应用确定性执行一次检索，再调用模型生成草稿；这保留了 Agent 安全
+边界，也避免让模型伪造工具调用。跨书、笔记和批注工具仍未开放。
 
 - 实现只读 Tool Registry。
 - 加入有限 Agent loop、工具次数、并发和停止规则。

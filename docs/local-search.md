@@ -41,3 +41,23 @@ Search results navigate using stable application data:
 
 No DOM selector, page number, arbitrary external path, or full EPUB archive is
 stored in the search index.
+
+## AI single-book retrieval index
+
+Migration `0011_ai_book_chunks.sql` adds the separate, rebuildable
+`ai_book_chunks` FTS5 trigram index. It is not canonical user data and is not the
+same index used by the global search page. Each row stores a bounded plain-text
+chunk, its source file hash, chapter snapshot, stable EPUB/PDF locator, ordinal,
+text hash, and an estimated token count.
+
+The AI retrieval service lazily rebuilds one book when its file hash differs.
+EPUB content comes from the package spine; PDF content comes from the local
+PDF.js text layer, page by page. Scanned PDFs with no text layer return an
+explicit `TEXT_UNAVAILABLE` state. Queries are scoped to one book and return at
+most eight chunks under a total context budget. Adjacent chunks may be merged,
+but their source ids remain attached for validation and traceability.
+
+Deleting a SQLite book triggers removal of its AI chunks. The browser test
+adapter performs the same cleanup in localStorage. Neither index copies the
+original EPUB/PDF binary, calls a network service, or gives the model access to
+SQL and managed file paths.

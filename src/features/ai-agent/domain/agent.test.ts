@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   agentEventSchema,
   agentRunSchema,
+  customAiInstructionSchema,
   hashAgentText,
   transitionAgentRun,
 } from './agent';
@@ -13,6 +14,7 @@ function createRun() {
     id: 'run-1',
     task: 'selection-assist',
     action: 'summarize',
+    instruction: null,
     status: 'awaiting-consent',
     provider: 'ollama',
     model: 'deepseek-r1:8b',
@@ -65,5 +67,11 @@ describe('agent domain', () => {
       agentEventSchema.safeParse({ type: 'execute-shell', runId: 'run-1' })
         .success,
     ).toBe(false);
+  });
+
+  it('bounds custom instructions without weakening preset actions', () => {
+    expect(customAiInstructionSchema.parse('分析论证')).toBe('分析论证');
+    expect(() => customAiInstructionSchema.parse('')).toThrow();
+    expect(() => customAiInstructionSchema.parse('x'.repeat(1_001))).toThrow();
   });
 });

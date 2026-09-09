@@ -7,6 +7,10 @@ import { SqliteNoteRepository } from '../../../database/repositories/sqlite-note
 import { WebLibraryRepository } from '../../../database/repositories/web-library-repository';
 import { WebNoteRepository } from '../../../database/repositories/web-note-repository';
 import { WebReaderSettingsRepository } from '../../../database/repositories/web-reader-settings-repository';
+import {
+  removeWebBookChunks,
+  WEB_AI_BOOK_CHUNKS_KEY,
+} from '../../../database/repositories/web-book-chunk-repository';
 import { bookmarkSchema } from '../../reader/domain/bookmark';
 import { readingSessionSchema } from '../../reader/domain/reading-activity';
 import { WEB_BOOKMARKS_KEY } from '../../../database/repositories/web-bookmark-repository';
@@ -89,6 +93,12 @@ class WebBookRepository implements BookRepository {
         );
       }
       this.save((await this.list()).filter((book) => book.id !== id));
+      try {
+        removeWebBookChunks(id);
+      } catch {
+        // The index is derived; discard a corrupt cache after canonical delete.
+        localStorage.removeItem(WEB_AI_BOOK_CHUNKS_KEY);
+      }
     } catch (error) {
       if (bookmarks === null) localStorage.removeItem(WEB_BOOKMARKS_KEY);
       else localStorage.setItem(WEB_BOOKMARKS_KEY, bookmarks);

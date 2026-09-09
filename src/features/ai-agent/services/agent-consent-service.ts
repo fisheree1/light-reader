@@ -3,6 +3,7 @@ import type { AiSettings } from '../domain/ai-settings';
 import {
   agentCapabilityGrantSchema,
   agentRunSchema,
+  customAiInstructionSchema,
   transitionAgentRun,
   type AgentCapabilityGrant,
   type AgentRun,
@@ -37,6 +38,7 @@ export class AgentConsentService {
     action: SelectionAiAction;
     bookId: string;
     bookTitle: string;
+    instruction?: string;
     selection: ReaderTextSelection;
     settings: AiSettings;
   }): PreparedSelectionRun {
@@ -49,15 +51,20 @@ export class AgentConsentService {
     const now = this.now();
     const runId = this.createId();
     const grantId = this.createId();
+    const instruction =
+      input.action === 'custom'
+        ? customAiInstructionSchema.parse(input.instruction)
+        : null;
     const run = agentRunSchema.parse({
       schemaVersion: 1,
       id: runId,
       task: 'selection-assist',
       action: input.action,
+      instruction,
       status: 'awaiting-consent',
       provider: 'ollama',
       model: input.settings.model,
-      promptVersion: 'selection-assist-v1',
+      promptVersion: 'selection-assist-v2',
       scopeGrantId: grantId,
       createdAt: now,
       startedAt: null,

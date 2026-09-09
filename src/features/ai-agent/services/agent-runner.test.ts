@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { defaultAiSettings } from '../domain/ai-settings';
 import type {
+  AgentModelRequest,
   AgentProviderEvent,
   ModelProviderGateway,
 } from '../../../platform/ai/model-provider-gateway';
@@ -80,6 +81,59 @@ describe('AgentRunner', () => {
     expect(result.draft.status).toBe('draft');
     expect(result.draft.citations).toEqual([]);
     expect(result.draft.sourceSnapshotHash).not.toContain('用户确认后的文本');
+  });
+
+  it('keeps a custom request separate from untrusted book text', async () => {
+    let nextId = 0;
+    const consent = new AgentConsentService(
+      () => `custom-${String((nextId += 1))}`,
+      () => 100,
+    );
+    const prepared = consent.prepare({
+      action: 'custom',
+      bookId: 'book-1',
+      bookTitle: '测试书',
+      instruction: '分析作者的论证漏洞',
+      selection,
+      settings: { ...defaultAiSettings, enabled: true },
+    });
+    const approved = consent.approve(prepared, '用户确认后的文本');
+    const capturedRequests: AgentModelRequest[] = [];
+    const provider: ModelProviderGateway = {
+      capabilities: {
+        streaming: true,
+        structuredOutput: false,
+        functionTools: false,
+      },
+      getStatus: () =>
+        Promise.resolve({ available: true, errorCode: null, models: [] }),
+      async *run(request): AsyncIterable<AgentProviderEvent> {
+        await Promise.resolve();
+        capturedRequests.push(request);
+        yield { type: 'output-delta', delta: '自定义草稿' };
+        yield { type: 'completed' };
+      },
+    };
+
+    const result = await new AgentRunner(
+      provider,
+      new AgentScopePolicy(),
+      new AiDraftService(),
+      () => 101,
+    ).runSelection(
+      approved,
+      { ...defaultAiSettings, enabled: true },
+      new AbortController().signal,
+    );
+
+    expect(capturedRequests).toHaveLength(1);
+    expect(capturedRequests[0]?.prompt).toContain(
+      '<USER_REQUEST>\n分析作者的论证漏洞\n</USER_REQUEST>',
+    );
+    expect(capturedRequests[0]?.prompt).toContain(
+      '<UNTRUSTED_BOOK_TEXT>\n用户确认后的文本\n</UNTRUSTED_BOOK_TEXT>',
+    );
+    expect(result.draft.title).toBe('自定义需求：AI 阅读草稿');
   });
 
   it('stops without creating a draft after cancellation', async () => {

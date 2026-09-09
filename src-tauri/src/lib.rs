@@ -70,6 +70,12 @@ pub fn run() {
             sql: include_str!("../migrations/0010_pdf_books.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 11,
+            description: "create local AI book chunk index",
+            sql: include_str!("../migrations/0011_ai_book_chunks.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();

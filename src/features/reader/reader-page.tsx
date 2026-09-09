@@ -7,8 +7,9 @@ import {
   Highlighter,
   RotateCcw,
   Search,
+  Sparkles,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { EmptyState } from '../../components/common/empty-state';
@@ -39,6 +40,8 @@ interface ReaderPageProps {
   agentFacade?: AgentFacade;
   services?: ReaderServices;
 }
+
+type ReaderRightSidebar = 'annotations' | 'bookmarks' | 'ai';
 
 function isEditingTarget(target: EventTarget | null) {
   return (
@@ -97,10 +100,18 @@ export function ReaderPage({
     updateAnnotationNote,
   } = useReader(bookId, services, navigationTarget);
   const [isTocOpen, setIsTocOpen] = useState(true);
-  const [isAnnotationSidebarOpen, setIsAnnotationSidebarOpen] = useState(true);
-  const [isBookmarkSidebarOpen, setIsBookmarkSidebarOpen] = useState(false);
+  const [rightSidebar, setRightSidebar] = useState<ReaderRightSidebar | null>(
+    'annotations',
+  );
   const [isChapterSearchOpen, setIsChapterSearchOpen] = useState(false);
-  const [isAiAssistantOpen, setIsAiAssistantOpen] = useState(false);
+  const [aiSelection, setAiSelection] = useState(selection);
+  const [aiSelectionBookId, setAiSelectionBookId] = useState<string | null>(
+    null,
+  );
+  const aiReturnFocusRef = useRef<HTMLElement | null>(null);
+  const isAnnotationSidebarOpen = rightSidebar === 'annotations';
+  const isBookmarkSidebarOpen = rightSidebar === 'bookmarks';
+  const isAiAssistantOpen = rightSidebar === 'ai';
   const activeAnnotation =
     annotations.find((annotation) => annotation.id === activeAnnotationId) ??
     null;
@@ -121,6 +132,36 @@ export function ReaderPage({
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [nextPage, phase, previousPage]);
+
+  useEffect(() => {
+    if (!isAiAssistantOpen || !selection) return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setAiSelection(selection);
+      setAiSelectionBookId(bookId);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [bookId, isAiAssistantOpen, selection]);
+
+  function openAiAssistant() {
+    aiReturnFocusRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    setAiSelection(selection);
+    setAiSelectionBookId(bookId);
+    setRightSidebar('ai');
+  }
+
+  function closeAiAssistant() {
+    setRightSidebar(null);
+    queueMicrotask(() => {
+      aiReturnFocusRef.current?.focus();
+    });
+  }
 
   const progress = Math.round((locator.progression ?? 0) * 100);
 
@@ -184,7 +225,9 @@ export function ReaderPage({
           icon={<Bookmark aria-hidden="true" size={17} />}
           label={isBookmarkSidebarOpen ? '隐藏书签' : '显示书签'}
           onClick={() => {
-            setIsBookmarkSidebarOpen((current) => !current);
+            setRightSidebar((current) =>
+              current === 'bookmarks' ? null : 'bookmarks',
+            );
           }}
           variant="ghost"
         />
@@ -193,7 +236,19 @@ export function ReaderPage({
           icon={<Highlighter aria-hidden="true" size={17} />}
           label={isAnnotationSidebarOpen ? '隐藏高亮与批注' : '显示高亮与批注'}
           onClick={() => {
-            setIsAnnotationSidebarOpen((current) => !current);
+            setRightSidebar((current) =>
+              current === 'annotations' ? null : 'annotations',
+            );
+          }}
+          variant="ghost"
+        />
+        <IconButton
+          aria-pressed={isAiAssistantOpen}
+          icon={<Sparkles aria-hidden="true" size={17} />}
+          label={isAiAssistantOpen ? '隐藏 AI 助手' : '显示 AI 助手'}
+          onClick={() => {
+            if (isAiAssistantOpen) closeAiAssistant();
+            else openAiAssistant();
           }}
           variant="ghost"
         />
@@ -229,10 +284,11 @@ export function ReaderPage({
           />
 
           <SelectionToolbar
-            onCreate={createHighlight}
-            onOpenAi={() => {
-              setIsAiAssistantOpen(true);
+            onCreate={async (color) => {
+              await createHighlight(color);
+              setRightSidebar('annotations');
             }}
+            onOpenAi={openAiAssistant}
             selection={selection}
           />
 
@@ -366,6 +422,30 @@ export function ReaderPage({
             }}
           />
         ) : null}
+        {book && isAiAssistantOpen ? (
+          <AiSelectionAssistant
+            book={book}
+            bookId={book.id}
+            bookTitle={book.title}
+            facade={agentFacade}
+            onClose={closeAiAssistant}
+            onNavigate={(target) => {
+              void goToLocator(target);
+            }}
+            onCreateNote={async (draft: AiDraft) => {
+              if (!services.noteRepository) {
+                throw new Error('Note repository is unavailable.');
+              }
+              const note = await new NoteService(
+                services.noteRepository,
+              ).createFromPlainText(draft.title, draft.content);
+              await navigate(`/notes?noteId=${encodeURIComponent(note.id)}`);
+            }}
+            selection={
+              selection ?? (aiSelectionBookId === bookId ? aiSelection : null)
+            }
+          />
+        ) : null}
       </div>
 
       {activeAnnotation ? (
@@ -381,26 +461,6 @@ export function ReaderPage({
             await navigate(`/notes?noteId=${encodeURIComponent(note.id)}`);
           }}
           onSave={updateAnnotationNote}
-        />
-      ) : null}
-
-      {book && selection ? (
-        <AiSelectionAssistant
-          bookId={book.id}
-          bookTitle={book.title}
-          facade={agentFacade}
-          onCreateNote={async (draft: AiDraft) => {
-            if (!services.noteRepository) {
-              throw new Error('Note repository is unavailable.');
-            }
-            const note = await new NoteService(
-              services.noteRepository,
-            ).createFromPlainText(draft.title, draft.content);
-            await navigate(`/notes?noteId=${encodeURIComponent(note.id)}`);
-          }}
-          onOpenChange={setIsAiAssistantOpen}
-          open={isAiAssistantOpen}
-          selection={selection}
         />
       ) : null}
     </div>

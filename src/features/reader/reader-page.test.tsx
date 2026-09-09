@@ -281,6 +281,35 @@ describe('ReaderPage', () => {
     );
   });
 
+  it('uses one accessible right sidebar and restores focus after closing AI', async () => {
+    const user = userEvent.setup();
+    renderReader({
+      annotationRepository: createAnnotationRepository(),
+      repository: createRepository(),
+      settingsRepository: createSettingsRepository(),
+      source: { read: () => Promise.resolve(new ArrayBuffer(1)) },
+      createReader: () => new FakeReader(),
+    });
+    await screen.findByRole('button', { name: '第一章' });
+
+    const trigger = screen.getByRole('button', { name: '显示 AI 助手' });
+    await user.click(trigger);
+    expect(
+      await screen.findByRole('complementary', {
+        name: '本地 AI 阅读助手',
+      }),
+    ).toBeVisible();
+    expect(screen.queryByLabelText('高亮与批注')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '关闭 AI 阅读助手' }));
+    expect(
+      screen.queryByRole('complementary', {
+        name: '本地 AI 阅读助手',
+      }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '显示 AI 助手' })).toHaveFocus();
+  });
+
   it('shows a friendly error and retries', async () => {
     const user = userEvent.setup();
     let attempt = 0;

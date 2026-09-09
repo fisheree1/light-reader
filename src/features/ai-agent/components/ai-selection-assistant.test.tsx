@@ -7,7 +7,30 @@ import { WebAiSettingsRepository } from '../../../database/repositories/web-ai-s
 import { FakeModelProvider } from '../../../platform/ai/fake-model-provider';
 import { defaultAiSettings } from '../domain/ai-settings';
 import { AgentFacade } from '../services/agent-facade';
+import type { AiDraft } from '../domain/agent';
+import type { BookLocator } from '../../../reader-engines/types';
 import { AiSelectionAssistant } from './ai-selection-assistant';
+
+const book = {
+  id: 'book-1',
+  title: '公共领域测试书',
+  author: null,
+  format: 'pdf' as const,
+  filePath: 'light-reader/books/book-1/book.pdf',
+  fileHash: 'a'.repeat(64),
+  coverPath: null,
+  metadata: {
+    title: '公共领域测试书',
+    creators: [],
+    language: null,
+    publisher: null,
+    description: null,
+    identifier: null,
+  },
+  fileSize: 100,
+  createdAt: 1,
+  updatedAt: 1,
+};
 
 const selection = {
   text: '需要总结的公开文本',
@@ -26,9 +49,11 @@ function TestHost({
   onCreateNote = () => {
     return Promise.resolve();
   },
+  onNavigate,
 }: {
   facade: AgentFacade;
   onCreateNote?: (draft: { content: string }) => Promise<void>;
+  onNavigate?: (locator: BookLocator) => void;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -41,15 +66,20 @@ function TestHost({
       >
         打开助手
       </button>
-      <AiSelectionAssistant
-        bookId="book-1"
-        bookTitle="公共领域测试书"
-        facade={facade}
-        onCreateNote={onCreateNote}
-        onOpenChange={setOpen}
-        open={open}
-        selection={selection}
-      />
+      {open ? (
+        <AiSelectionAssistant
+          book={book}
+          bookId="book-1"
+          bookTitle="公共领域测试书"
+          facade={facade}
+          onClose={() => {
+            setOpen(false);
+          }}
+          onCreateNote={onCreateNote}
+          onNavigate={onNavigate}
+          selection={selection}
+        />
+      ) : null}
     </>
   );
 }
@@ -91,7 +121,7 @@ describe('AiSelectionAssistant', () => {
     });
   });
 
-  it('does not call the provider when the consent dialog is closed', async () => {
+  it('does not call the provider when the consent sidebar is closed', async () => {
     const user = userEvent.setup();
     const repository = new WebAiSettingsRepository();
     await repository.save({ ...defaultAiSettings, enabled: true });
@@ -104,8 +134,92 @@ describe('AiSelectionAssistant', () => {
     await user.click(screen.getByRole('button', { name: '取消' }));
 
     expect(run).not.toHaveBeenCalled();
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('complementary', { name: '本地 AI 阅读助手' }),
+    ).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '打开助手' })).toHaveFocus();
+  });
+
+  it('accepts a bounded custom request for the selected text', async () => {
+    const user = userEvent.setup();
+    const facade = await createEnabledFacade();
+    const prepare = vi.spyOn(facade, 'prepareSelection');
+    render(<TestHost facade={facade} />);
+
+    await user.click(screen.getByRole('button', { name: '打开助手' }));
+    await user.selectOptions(await screen.findByLabelText('任务'), 'custom');
+    const instruction = screen.getByRole('textbox', { name: '自定义需求' });
+    await user.type(instruction, '分析论证漏洞，用三个要点回答');
+    await user.click(screen.getByRole('button', { name: '发送给本地模型' }));
+
+    expect(await screen.findByText('生成的安全草稿')).toBeVisible();
+    expect(prepare).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'custom',
+        instruction: '分析论证漏洞，用三个要点回答',
+      }),
+    );
+  });
+
+  it('accepts a free-form book question and navigates through verified evidence', async () => {
+    const user = userEvent.setup();
+    const facade = await createEnabledFacade();
+    const locator = {
+      version: 1 as const,
+      format: 'pdf' as const,
+      pageIndex: 4,
+      textRange: { start: 10, end: 30 },
+    };
+    const draft = {
+      schemaVersion: 1,
+      id: 'draft-book-qa',
+      runId: 'run-book-qa',
+      task: 'book-qa',
+      action: 'custom',
+      title: '本书问答：AI 阅读草稿',
+      content: '作者认为本地优先更尊重隐私 [S1]。',
+      citations: [
+        {
+          schemaVersion: 1,
+          id: 'citation-1',
+          runId: 'run-book-qa',
+          bookId: book.id,
+          bookTitleSnapshot: book.title,
+          chapterTitleSnapshot: 'PDF 第 5 页',
+          locator,
+          quote: '本地优先更尊重隐私。',
+          sourceChunkId: 'passage-1',
+          sourceTextHash: 'fnv1a-deadbeef',
+          validation: 'verified',
+        },
+      ],
+      sourceSnapshotHash: 'fnv1a-cafebabe',
+      provider: 'ollama',
+      model: defaultAiSettings.model,
+      promptVersion: 'book-qa-v1',
+      status: 'draft',
+      createdAt: 1,
+      decidedAt: null,
+    } satisfies AiDraft;
+    vi.spyOn(facade, 'runBookQuestion').mockResolvedValue({
+      draft,
+      run: {} as never,
+      trace: [],
+    });
+    const onNavigate = vi.fn();
+    render(<TestHost facade={facade} onNavigate={onNavigate} />);
+
+    await user.click(screen.getByRole('button', { name: '打开助手' }));
+    await user.click(await screen.findByRole('button', { name: '本书问答' }));
+    await user.type(
+      screen.getByLabelText('向本书提问'),
+      '作者的核心观点是什么？',
+    );
+    await user.click(screen.getByRole('button', { name: '检索本书并提问' }));
+
+    expect(await screen.findByText(draft.content)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '依据 1 · 第 5 页' }));
+    expect(onNavigate).toHaveBeenCalledWith(locator);
   });
 
   it('explains how to recover when AI is disabled', async () => {

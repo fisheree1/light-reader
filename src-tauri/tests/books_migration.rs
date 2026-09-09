@@ -7,7 +7,7 @@ use std::{
 
 static NEXT_DATABASE_ID: AtomicU64 = AtomicU64::new(0);
 
-const MIGRATIONS: [&str; 10] = [
+const MIGRATIONS: [&str; 11] = [
     include_str!("../migrations/0001_initial.sql"),
     include_str!("../migrations/0002_create_books.sql"),
     include_str!("../migrations/0003_reader_settings.sql"),
@@ -18,6 +18,7 @@ const MIGRATIONS: [&str; 10] = [
     include_str!("../migrations/0008_library_management.sql"),
     include_str!("../migrations/0009_bookmarks_and_reading_activity.sql"),
     include_str!("../migrations/0010_pdf_books.sql"),
+    include_str!("../migrations/0011_ai_book_chunks.sql"),
 ];
 
 fn temporary_database_path() -> PathBuf {
@@ -66,7 +67,7 @@ async fn all_migrations_apply_to_a_fresh_database() {
         WHERE type = 'table' AND name IN (
           'app_meta', 'books', 'reader_settings', 'book_reader_settings',
           'reading_states', 'annotations', 'notes', 'book_tags',
-          'book_content_index'
+          'book_content_index', 'ai_book_chunks'
         )"#,
     )
     .fetch_one(&mut connection)
@@ -77,7 +78,7 @@ async fn all_migrations_apply_to_a_fresh_database() {
             .fetch_one(&mut connection)
             .await
             .expect("fresh schema foreign keys should validate");
-    assert_eq!(required_tables, 9);
+    assert_eq!(required_tables, 10);
     assert_eq!(foreign_key_failures, 0);
 
     connection.close().await.expect("database should close");
@@ -144,6 +145,49 @@ async fn old_database_upgrades_sequentially_without_losing_records() {
             .await
             .expect("upgraded foreign keys should remain valid");
     assert_eq!(foreign_key_failures, 0);
+
+    connection.close().await.expect("database should close");
+    std::fs::remove_file(path).expect("test database should be removable");
+}
+
+#[tokio::test]
+async fn ai_chunks_are_searchable_and_follow_book_deletion() {
+    let path = temporary_database_path();
+    let mut connection = connect(&path).await;
+    apply_migrations(&mut connection).await;
+    insert_book(&mut connection, "rag-book", "RAG book", 'r', 10).await;
+    sqlx::query(
+        r#"INSERT INTO ai_book_chunks (
+          schema_version, chunk_id, book_id, source_file_hash,
+          chapter_href, chapter_title, start_locator_json,
+          end_locator_json, text, text_hash, estimated_tokens, ordinal
+        ) VALUES (1, 'chunk-rag', 'rag-book', ?, 'one.xhtml', '第一章',
+          '{"version":1,"format":"epub","chapterHref":"one.xhtml"}',
+          NULL, '本地优先阅读助手', 'fnv1a-test', 10, 0)"#,
+    )
+    .bind("r".repeat(64))
+    .execute(&mut connection)
+    .await
+    .expect("AI chunk should be inserted");
+
+    let matches: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM ai_book_chunks WHERE ai_book_chunks MATCH '\"本地优\"' AND book_id = 'rag-book'",
+    )
+    .fetch_one(&mut connection)
+    .await
+    .expect("trigram AI index should be searchable");
+    assert_eq!(matches, 1);
+
+    sqlx::query("DELETE FROM books WHERE id = 'rag-book'")
+        .execute(&mut connection)
+        .await
+        .expect("book should delete");
+    let remaining: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM ai_book_chunks WHERE book_id = 'rag-book'")
+            .fetch_one(&mut connection)
+            .await
+            .expect("derived chunks should remain queryable");
+    assert_eq!(remaining, 0);
 
     connection.close().await.expect("database should close");
     std::fs::remove_file(path).expect("test database should be removable");

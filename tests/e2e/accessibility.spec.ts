@@ -91,7 +91,7 @@ test('audits the Tiptap toolbar and supports keyboard formatting', async ({
   await expect(editor).toBeFocused();
 });
 
-test('keeps local AI settings and consent dialog accessible', async ({
+test('keeps local AI settings and reader sidebar accessible', async ({
   page,
 }) => {
   await page.goto('/settings');
@@ -122,13 +122,17 @@ test('keeps local AI settings and consent dialog accessible', async ({
     .getByText('这是 LightReader 自制的无版权测试内容。')
     .selectText();
 
-  const trigger = page.getByRole('button', { name: 'AI 助手' });
+  const trigger = page.getByRole('button', { name: 'AI 助手', exact: true });
   await trigger.focus();
   await page.keyboard.press('Enter');
-  const dialog = page.getByRole('dialog', { name: '本地 AI 阅读助手' });
-  await expect(dialog).toBeVisible();
-  await expectNoAccessibilityViolations(page, ['[role="dialog"]']);
+  const sidebar = page.getByRole('complementary', {
+    name: '本地 AI 阅读助手',
+  });
+  await expect(sidebar).toBeVisible();
+  await expectNoAccessibilityViolations(page, [
+    '[aria-label="本地 AI 阅读助手"]',
+  ]);
   await page.keyboard.press('Escape');
-  await expect(dialog).toBeHidden();
+  await expect(sidebar).toBeHidden();
   await expect(trigger).toBeFocused();
 });

@@ -88,9 +88,12 @@ describe('OllamaModelProvider', () => {
     mocks.invoke.mockImplementation((command: string) => {
       if (command === 'ai_ollama_chat') {
         return Promise.reject(
-          Object.assign(new Error('/private/path and native transport details'), {
-            code: 'AI_MODEL_NOT_FOUND',
-          }),
+          Object.assign(
+            new Error('/private/path and native transport details'),
+            {
+              code: 'AI_MODEL_NOT_FOUND',
+            },
+          ),
         );
       }
       return Promise.resolve();
