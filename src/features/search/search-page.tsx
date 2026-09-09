@@ -157,14 +157,14 @@ export function SearchPage({ services = searchServices }: SearchPageProps) {
           disabled={search.isRebuilding || search.phase === 'loading'}
           onClick={() => void search.rebuild()}
           type="button"
-          variant="secondary"
+          variant="ghost"
         >
           <RefreshCw
             aria-hidden="true"
             className={search.isRebuilding ? 'animate-spin' : undefined}
             size={16}
           />
-          {search.isRebuilding ? '重建中…' : '重建索引'}
+          {search.isRebuilding ? '重建中…' : '索引维护'}
         </Button>
       </form>
 

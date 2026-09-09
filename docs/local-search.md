@@ -29,7 +29,7 @@ Foliate or DOM types outside the parser.
 
 `LocalSearchService` lazily indexes books missing from `book_content_index`
 before a search. A corrupt book is reported as a partial indexing failure while
-search results from healthy local data remain available. “重建索引” repopulates
+search results from healthy local data remain available. “索引维护” repopulates
 the note and annotation FTS tables, clears EPUB derived data, and recreates every
 readable book index from the managed application data directory.
 

@@ -23,14 +23,6 @@ runtime types.
 
 ## Backup format
 
-`.lightreader-backup` archives use `formatVersion: 2`.
-
-- Database mode contains `database.sqlite`, `manifest.json`, and the summary.
-- Full mode additionally contains hashed files below
-  `assets/light-reader/books/` and `assets/light-reader/covers/`.
-
-Full restore checks archive hashes, managed paths, required capacity, and
-conflicts before confirmation. Confirmation uses backup-wins semantics for the
-database and managed EPUB/cover paths. Native restore keeps the previous asset
-directories until the database transaction succeeds and restores them on
-failure.
+`.lightreader-backup` is a recovery and migration format rather than a content
+export format. Its manifest version, database/full modes, validation rules and
+restore transaction are defined in [`data-backup.md`](data-backup.md).

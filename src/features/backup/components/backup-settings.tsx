@@ -113,8 +113,8 @@ export function BackupSettings({ manager }: BackupSettingsProps) {
     <section className="bg-surface mt-4 rounded-lg border p-5">
       <h2 className="font-medium">数据导出与备份</h2>
       <p className="text-muted-foreground mt-1 text-sm leading-6">
-        数据库备份体积较小；完整备份额外包含 EPUB 和封面，可用于跨设备迁移。
-        两种备份都只保存在你选择的位置，不会上传到云端。
+        数据库备份体积较小；完整备份额外包含 EPUB、PDF
+        和封面，可用于跨设备迁移。两种备份都只保存在你选择的位置。
       </p>
 
       {!manager.available ? (

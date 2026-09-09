@@ -1,5 +1,12 @@
-import { Download, FilePlus2, NotebookPen, Search, Trash2 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  ChevronDown,
+  Download,
+  FilePlus2,
+  NotebookPen,
+  Search,
+  Trash2,
+} from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { EmptyState } from '../../components/common/empty-state';
@@ -26,6 +33,7 @@ export function NotesPage({ services = notesServices }: NotesPageProps) {
     activeNote,
     createNote,
     deleteActiveNote,
+    hasNotes,
     load,
     loading,
     loadError,
@@ -41,9 +49,8 @@ export function NotesPage({ services = notesServices }: NotesPageProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [bookTitles, setBookTitles] = useState<Record<string, string>>({});
   const [bookTitlesReady, setBookTitlesReady] = useState(false);
-  const [exportFormat, setExportFormat] =
-    useState<NoteExportFormat>('markdown');
   const [exportStatus, setExportStatus] = useState('');
+  const exportMenuRef = useRef<HTMLDetailsElement>(null);
   const exportService = useMemo(() => {
     const platform = services.exportPlatform ?? notesServices.exportPlatform;
     if (!platform) throw new Error('Note export platform is unavailable.');
@@ -54,14 +61,14 @@ export function NotesPage({ services = notesServices }: NotesPageProps) {
     );
   }, [services]);
 
-  async function runExport(scope: 'all' | 'one') {
+  async function runExport(scope: 'all' | 'one', format: NoteExportFormat) {
     if (scope === 'one' && !activeNote) return;
     setExportStatus('正在导出…');
     try {
       if (scope === 'one' && activeNote) {
-        await exportService.exportOne(activeNote, exportFormat);
+        await exportService.exportOne(activeNote, format);
       } else {
-        await exportService.exportAll(exportFormat);
+        await exportService.exportAll(format);
       }
       setExportStatus('导出完成');
     } catch {
@@ -131,192 +138,237 @@ export function NotesPage({ services = notesServices }: NotesPageProps) {
             用结构化笔记整理阅读想法和原文引用。
           </p>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <label className="sr-only" htmlFor="note-export-format">
-            笔记导出格式
-          </label>
-          <select
-            className="bg-background h-9 rounded-md border px-2 text-sm"
-            id="note-export-format"
-            onChange={(event) => {
-              setExportFormat(event.currentTarget.value as NoteExportFormat);
-            }}
-            value={exportFormat}
-          >
-            <option value="markdown">Markdown</option>
-            <option value="html">HTML</option>
-          </select>
-          <Button
-            disabled={!activeNote}
-            onClick={() => void runExport('one')}
-            size="sm"
-            variant="secondary"
-          >
-            <Download aria-hidden="true" size={15} />
-            导出当前
-          </Button>
-          <Button
-            onClick={() => void runExport('all')}
-            size="sm"
-            variant="secondary"
-          >
-            批量导出
-          </Button>
-          <Button onClick={() => void createNote()}>
-            <FilePlus2 aria-hidden="true" size={16} />
-            新建笔记
-          </Button>
-          <span
-            aria-live="polite"
-            className="text-muted-foreground w-full text-right text-xs"
-          >
-            {exportStatus}
-          </span>
-        </div>
+        {hasNotes ? (
+          <div className="flex items-center gap-2">
+            <details
+              className="relative"
+              onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget)) {
+                  event.currentTarget.open = false;
+                }
+              }}
+              ref={exportMenuRef}
+            >
+              <summary
+                aria-label="导出"
+                className="bg-muted text-foreground hover:bg-border inline-flex h-8 cursor-pointer list-none items-center justify-center gap-2 rounded-md px-3 text-xs font-medium transition-colors [&::-webkit-details-marker]:hidden"
+                role="button"
+              >
+                <Download aria-hidden="true" size={15} />
+                导出
+                <ChevronDown aria-hidden="true" size={14} />
+              </summary>
+              <div className="bg-surface absolute top-full right-0 z-50 mt-1.5 min-w-52 rounded-lg border p-1 shadow-lg">
+                <p className="text-muted-foreground px-2 py-1.5 text-xs">
+                  当前笔记
+                </p>
+                {(['markdown', 'html'] as const).map((format) => (
+                  <button
+                    className="hover:bg-muted focus-visible:bg-muted w-full rounded-md px-2 py-2 text-left text-sm outline-none disabled:opacity-50"
+                    disabled={!activeNote}
+                    key={`one-${format}`}
+                    onClick={() => {
+                      exportMenuRef.current?.removeAttribute('open');
+                      void runExport('one', format);
+                    }}
+                    type="button"
+                  >
+                    导出为 {format === 'markdown' ? 'Markdown' : 'HTML'}
+                  </button>
+                ))}
+                <div className="bg-border my-1 h-px" />
+                <p className="text-muted-foreground px-2 py-1.5 text-xs">
+                  全部笔记
+                </p>
+                {(['markdown', 'html'] as const).map((format) => (
+                  <button
+                    className="hover:bg-muted focus-visible:bg-muted w-full rounded-md px-2 py-2 text-left text-sm outline-none"
+                    key={`all-${format}`}
+                    onClick={() => {
+                      exportMenuRef.current?.removeAttribute('open');
+                      void runExport('all', format);
+                    }}
+                    type="button"
+                  >
+                    批量导出为 {format === 'markdown' ? 'Markdown' : 'HTML'}
+                  </button>
+                ))}
+              </div>
+            </details>
+            <Button onClick={() => void createNote()}>
+              <FilePlus2 aria-hidden="true" size={16} />
+              新建笔记
+            </Button>
+          </div>
+        ) : null}
       </header>
 
-      <div className="min-h-0 flex-1 overflow-hidden rounded-xl border lg:flex">
-        <aside className="bg-surface flex w-full shrink-0 flex-col border-b lg:w-72 lg:border-r lg:border-b-0">
-          <label className="relative m-3 block">
-            <span className="sr-only">搜索笔记标题</span>
-            <Search
-              aria-hidden="true"
-              className="text-muted-foreground absolute top-1/2 left-3 -translate-y-1/2"
-              size={15}
-            />
-            <input
-              aria-label="搜索笔记标题"
-              className="bg-background h-9 w-full rounded-md border pr-3 pl-9 text-sm"
-              onChange={(event) => {
-                setQuery(event.currentTarget.value);
-              }}
-              placeholder="搜索标题"
-              type="search"
-              value={query}
-            />
-          </label>
+      {exportStatus ? (
+        <p
+          aria-live="polite"
+          className="text-muted-foreground mb-3 text-right text-xs"
+        >
+          {exportStatus}
+        </p>
+      ) : null}
 
-          <div className="max-h-56 flex-1 overflow-auto border-t lg:max-h-none">
-            {visibleNotes.length === 0 ? (
-              <p className="text-muted-foreground p-6 text-center text-sm">
-                {query ? '没有匹配的笔记。' : '还没有笔记。'}
-              </p>
-            ) : (
-              <ol className="space-y-1 p-2">
-                {visibleNotes.map((note) => (
-                  <li key={note.id}>
-                    <button
-                      aria-current={
-                        activeNote?.id === note.id ? 'page' : undefined
-                      }
-                      className={cn(
-                        'hover:bg-muted focus-visible:bg-muted w-full rounded-md px-3 py-2 text-left',
-                        activeNote?.id === note.id && 'bg-muted',
-                      )}
-                      onClick={() => void selectNote(note.id)}
-                      type="button"
-                    >
-                      <span className="block truncate text-sm font-medium">
-                        {note.title}
-                      </span>
-                      <span className="text-muted-foreground mt-1 block truncate text-xs">
-                        {note.plainText || '空白笔记'}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </div>
-        </aside>
+      {!hasNotes ? (
+        <EmptyState
+          action={
+            <Button onClick={() => void createNote()}>
+              <FilePlus2 aria-hidden="true" size={16} />
+              新建笔记
+            </Button>
+          }
+          className="min-h-[28rem] flex-1"
+          description="记录想法，或在阅读时把高亮和出处保存到笔记。"
+          icon={<NotebookPen size={28} />}
+          title="创建第一条笔记"
+        />
+      ) : (
+        <div className="min-h-0 flex-1 overflow-hidden rounded-xl border lg:flex">
+          <aside className="bg-surface flex w-full shrink-0 flex-col border-b lg:w-72 lg:border-r lg:border-b-0">
+            <label className="relative m-3 block">
+              <span className="sr-only">搜索笔记标题</span>
+              <Search
+                aria-hidden="true"
+                className="text-muted-foreground absolute top-1/2 left-3 -translate-y-1/2"
+                size={15}
+              />
+              <input
+                aria-label="搜索笔记标题"
+                className="bg-background h-9 w-full rounded-md border pr-3 pl-9 text-sm"
+                onChange={(event) => {
+                  setQuery(event.currentTarget.value);
+                }}
+                placeholder="搜索标题"
+                type="search"
+                value={query}
+              />
+            </label>
 
-        <main className="bg-surface flex min-h-[36rem] min-w-0 flex-1 flex-col p-4">
-          {activeNote ? (
-            <>
-              <div className="mb-3 flex items-center gap-3">
-                <label className="min-w-0 flex-1">
-                  <span className="sr-only">笔记标题</span>
-                  <input
-                    aria-label="笔记标题"
-                    className="focus-visible:ring-primary w-full truncate border-0 bg-transparent px-1 text-xl font-semibold outline-none focus-visible:ring-2"
-                    maxLength={500}
-                    onChange={(event) => {
-                      updateDraft({ title: event.currentTarget.value });
-                    }}
-                    value={activeNote.title}
-                  />
-                </label>
-                <span
-                  aria-live="polite"
-                  className={cn(
-                    'text-muted-foreground text-xs',
-                    saveStatus === 'error' && 'text-destructive',
-                  )}
-                >
-                  {saveStatus === 'saving' ? '保存中…' : null}
-                  {saveStatus === 'saved' ? '已保存' : null}
-                  {saveStatus === 'error' ? '保存失败，内容已保留' : null}
-                </span>
-                {saveStatus === 'error' ? (
-                  <Button
-                    onClick={() => void retrySave()}
-                    size="sm"
-                    variant="secondary"
-                  >
-                    重试保存
-                  </Button>
-                ) : null}
-                <Button
-                  onClick={() => {
-                    if (!confirmDelete) {
-                      setConfirmDelete(true);
-                      return;
-                    }
-                    void deleteActiveNote().then((deleted) => {
-                      if (deleted) setConfirmDelete(false);
-                    });
-                  }}
-                  size="sm"
-                  variant="destructive"
-                >
-                  <Trash2 aria-hidden="true" size={14} />
-                  {confirmDelete ? '确认删除' : '删除笔记'}
-                </Button>
-              </div>
-
-              {mutationError ? (
-                <p className="text-destructive mb-3 text-sm" role="alert">
-                  {mutationError}
+            <div className="max-h-56 flex-1 overflow-auto border-t lg:max-h-none">
+              {visibleNotes.length === 0 ? (
+                <p className="text-muted-foreground p-6 text-center text-sm">
+                  {query ? '没有匹配的笔记。' : '还没有笔记。'}
                 </p>
-              ) : null}
-
-              {bookTitlesReady ? (
-                <NoteEditor
-                  key={activeNote.id}
-                  note={activeNote}
-                  onChange={(document) => {
-                    updateDraft({ document });
-                  }}
-                  onFlush={() => {
-                    void retrySave();
-                  }}
-                  onNavigate={navigateToReference}
-                  resolveBookTitle={resolveBookTitle}
-                />
               ) : (
-                <p aria-live="polite">正在准备编辑器…</p>
+                <ol className="space-y-1 p-2">
+                  {visibleNotes.map((note) => (
+                    <li key={note.id}>
+                      <button
+                        aria-current={
+                          activeNote?.id === note.id ? 'page' : undefined
+                        }
+                        className={cn(
+                          'hover:bg-muted focus-visible:bg-muted w-full rounded-md px-3 py-2 text-left',
+                          activeNote?.id === note.id && 'bg-muted',
+                        )}
+                        onClick={() => void selectNote(note.id)}
+                        type="button"
+                      >
+                        <span className="block truncate text-sm font-medium">
+                          {note.title}
+                        </span>
+                        <span className="text-muted-foreground mt-1 block truncate text-xs">
+                          {note.plainText || '空白笔记'}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ol>
               )}
-            </>
-          ) : (
-            <EmptyState
-              className="h-full"
-              description="创建一条独立笔记，或在阅读器中把高亮引用到新笔记。"
-              icon={<NotebookPen size={28} />}
-              title="暂无笔记"
-            />
-          )}
-        </main>
-      </div>
+            </div>
+          </aside>
+
+          <main className="bg-surface flex min-h-[36rem] min-w-0 flex-1 flex-col p-4">
+            {activeNote ? (
+              <>
+                <div className="mb-3 flex items-center gap-3">
+                  <label className="min-w-0 flex-1">
+                    <span className="sr-only">笔记标题</span>
+                    <input
+                      aria-label="笔记标题"
+                      className="focus-visible:ring-primary w-full truncate border-0 bg-transparent px-1 text-xl font-semibold outline-none focus-visible:ring-2"
+                      maxLength={500}
+                      onChange={(event) => {
+                        updateDraft({ title: event.currentTarget.value });
+                      }}
+                      value={activeNote.title}
+                    />
+                  </label>
+                  <span
+                    aria-live="polite"
+                    className={cn(
+                      'text-muted-foreground text-xs',
+                      saveStatus === 'error' && 'text-destructive',
+                    )}
+                  >
+                    {saveStatus === 'saving' ? '保存中…' : null}
+                    {saveStatus === 'saved' ? '已保存' : null}
+                    {saveStatus === 'error' ? '保存失败，内容已保留' : null}
+                  </span>
+                  {saveStatus === 'error' ? (
+                    <Button
+                      onClick={() => void retrySave()}
+                      size="sm"
+                      variant="secondary"
+                    >
+                      重试保存
+                    </Button>
+                  ) : null}
+                  <Button
+                    onClick={() => {
+                      if (!confirmDelete) {
+                        setConfirmDelete(true);
+                        return;
+                      }
+                      void deleteActiveNote().then((deleted) => {
+                        if (deleted) setConfirmDelete(false);
+                      });
+                    }}
+                    size="sm"
+                    variant="destructive"
+                  >
+                    <Trash2 aria-hidden="true" size={14} />
+                    {confirmDelete ? '确认删除' : '删除笔记'}
+                  </Button>
+                </div>
+
+                {mutationError ? (
+                  <p className="text-destructive mb-3 text-sm" role="alert">
+                    {mutationError}
+                  </p>
+                ) : null}
+
+                {bookTitlesReady ? (
+                  <NoteEditor
+                    key={activeNote.id}
+                    note={activeNote}
+                    onChange={(document) => {
+                      updateDraft({ document });
+                    }}
+                    onFlush={() => {
+                      void retrySave();
+                    }}
+                    onNavigate={navigateToReference}
+                    resolveBookTitle={resolveBookTitle}
+                  />
+                ) : (
+                  <p aria-live="polite">正在准备编辑器…</p>
+                )}
+              </>
+            ) : (
+              <EmptyState
+                className="h-full"
+                description="创建一条独立笔记，或在阅读器中把高亮引用到新笔记。"
+                icon={<NotebookPen size={28} />}
+                title="暂无笔记"
+              />
+            )}
+          </main>
+        </div>
+      )}
     </div>
   );
 }

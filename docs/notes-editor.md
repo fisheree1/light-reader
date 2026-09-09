@@ -33,8 +33,9 @@ The extension list is centralized in `note-extensions.ts`:
 - `BookQuoteNode` for immutable EPUB source snapshots.
 
 StarterKit links are disabled because opening and sanitizing arbitrary URL
-protocols is outside this slice. Markdown export/import UI is also not exposed
-yet; JSON remains the persisted representation.
+protocols is outside this slice. JSON remains the persisted representation;
+Markdown/HTML export is handled by the separate export service, while Markdown
+import is not exposed.
 
 ## BookQuoteNode
 

@@ -111,22 +111,15 @@ export function SettingsPage({
   }
 
   return (
-    <div>
+    <div className="mx-auto max-w-4xl">
       <header className="mb-6">
         <h1 className="text-2xl font-semibold">设置</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          应用偏好与开发诊断。
+          管理阅读偏好、数据备份和本地 AI。
         </p>
       </header>
 
-      <section className="bg-surface rounded-lg border p-5">
-        <h2 className="font-medium">应用外观</h2>
-        <p className="text-muted-foreground mt-1 text-sm">
-          可通过左下角按钮切换应用界面的浅色或深色主题。
-        </p>
-      </section>
-
-      <section className="bg-surface mt-4 rounded-lg border p-5">
+      <section className="bg-surface rounded-xl border p-5 sm:p-6">
         <h2 className="font-medium">全局阅读设置</h2>
         <p className="text-muted-foreground mt-1 text-sm">
           新打开的 EPUB 默认使用这些主题和排版。单本图书可在阅读页覆盖。

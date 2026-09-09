@@ -253,7 +253,7 @@ test('verifies the import interaction through the Web mock adapter', async ({
 }) => {
   await page.goto('/library');
   await expect(
-    page.getByRole('heading', { name: '书架还是空的' }),
+    page.getByRole('heading', { name: '导入第一本书' }),
   ).toBeVisible();
 
   await page.getByRole('button', { name: '导入电子书' }).click();

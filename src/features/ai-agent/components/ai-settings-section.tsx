@@ -67,8 +67,8 @@ export function AiSettingsSection({ facade }: AiSettingsSectionProps) {
         本地 AI 助手
       </h2>
       <p className="text-muted-foreground mt-1 text-sm">
-        使用本机 Ollama 处理你逐次确认的选中文本。AI
-        默认关闭，不会读取整本书或自动修改笔记。
+        使用本机 Ollama 处理选中文本或回答本书问题。AI
+        默认关闭，结果不会自动覆盖笔记。
       </p>
 
       <div className="mt-5 max-w-xl space-y-4">

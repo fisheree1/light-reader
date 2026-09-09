@@ -30,11 +30,11 @@ export function AppLayout() {
   const toggleNavigation = useAppStore((state) => state.toggleNavigation);
 
   return (
-    <div className="bg-background text-foreground flex min-h-screen">
+    <div className="bg-background text-foreground flex h-screen overflow-hidden">
       <aside
         className={cn(
-          'bg-surface flex shrink-0 flex-col border-r px-3 py-4 transition-[width] duration-200',
-          isNavigationExpanded ? 'w-56' : 'w-16',
+          'bg-surface flex h-full shrink-0 flex-col border-r px-3 py-4 transition-[width] duration-200',
+          isNavigationExpanded ? 'w-52' : 'w-16',
         )}
       >
         <div className="flex h-10 items-center justify-between gap-2 px-1">
@@ -92,8 +92,8 @@ export function AppLayout() {
         />
       </aside>
 
-      <main className="min-w-0 flex-1 overflow-auto">
-        <div className="mx-auto max-w-6xl p-8">
+      <main className="min-w-0 flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-7xl p-5 sm:p-7 lg:p-8">
           <Outlet />
         </div>
       </main>

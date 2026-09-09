@@ -3,6 +3,10 @@ import { AppError, isAppError } from '../../../lib/app-error';
 import type { ReaderBookSource } from '../../reader/services/reader-book-source';
 import type { Book } from '../../library/domain/book';
 import { hashAgentText } from '../domain/agent';
+import {
+  LocalHybridBookCandidateRetriever,
+  type BookCandidateRetriever,
+} from './book-candidate-retriever';
 import { BookChunker } from './book-chunker';
 import type { BookTextExtractor } from './book-text-extractor';
 import {
@@ -11,7 +15,6 @@ import {
   type BookRetrievalOptions,
 } from './book-indexing';
 import {
-  extractBookQueryTerms,
   retrievedPassageSchema,
   type BookChunkMatch,
   type RetrievedPassage,
@@ -70,6 +73,7 @@ function mergePassages(
 }
 
 export class BookRetrievalService {
+  private readonly candidateRetriever: BookCandidateRetriever;
   private readonly chunker: BookChunker;
   private readonly extractor: BookTextExtractor;
   private readonly indexing = new Map<string, Promise<void>>();
@@ -81,7 +85,11 @@ export class BookRetrievalService {
     source: ReaderBookSource,
     extractor: BookTextExtractor,
     chunker = new BookChunker(),
+    candidateRetriever: BookCandidateRetriever = new LocalHybridBookCandidateRetriever(
+      repository,
+    ),
   ) {
+    this.candidateRetriever = candidateRetriever;
     this.repository = repository;
     this.source = source;
     this.extractor = extractor;
@@ -123,12 +131,11 @@ export class BookRetrievalService {
     await this.ensureIndexed(book, options);
     throwIfBookIndexingAborted(options.signal);
     emitBookIndexingProgress(options, 'searching-index');
-    const terms = extractBookQueryTerms(question);
-    if (terms.length === 0) return [];
-    const matches = await this.repository.searchBookChunks(
+    const matches = await this.candidateRetriever.retrieve(
       book.id,
-      terms,
+      question,
       Math.max(1, Math.min(8, limit)),
+      options.signal,
     );
     throwIfBookIndexingAborted(options.signal);
     const passages: RetrievedPassage[] = [];

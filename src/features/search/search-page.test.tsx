@@ -72,7 +72,7 @@ describe('SearchPage', () => {
       await screen.findByRole('heading', { name: '没有搜索结果' }),
     ).toBeVisible();
 
-    await user.click(screen.getByRole('button', { name: '重建索引' }));
+    await user.click(screen.getByRole('button', { name: '索引维护' }));
     expect(await screen.findByRole('status')).toHaveTextContent(
       '已重建索引：0 本 EPUB，全部成功',
     );

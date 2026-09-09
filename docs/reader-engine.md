@@ -139,9 +139,10 @@ the Annotation still exists, the restored highlight is activated as well.
 ## Lifecycle and navigation
 
 1. Resolve the `Book` through `BookRepository`.
-2. Read its managed EPUB once through `ReaderBookSource`.
+2. Read its managed EPUB or PDF once through `ReaderBookSource`.
 3. Load global settings, the optional book override and saved locator.
-4. Mount one `foliate-view`, open the EPUB Blob and apply resolved appearance.
+4. Mount the format-specific reader, open the book Blob and apply supported
+   appearance settings.
 5. Restore the saved locator and map the EPUB TOC into nested `ReaderTocItem` values.
 6. Load annotations and restore each highlight without failing the reading session.
 7. Translate later relocation events into locators and debounce persistence.

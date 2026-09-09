@@ -1,27 +1,23 @@
-# Cloud sync and AI capability evaluation
+# Cloud sync evaluation
 
 Status: evaluation complete; implementation is not started.
 
-This document records the architecture decision for optional cloud sync and AI
-assistance. Both capabilities must preserve LightReader's local-first behavior:
-the application remains fully usable without an account, a network connection,
-or an AI provider. This evaluation does not select a vendor, add an SDK, create
-network capabilities, or change the database schema.
+This document records the architecture decision for optional cloud sync.
+LightReader must remain fully usable without an account or network connection.
+This evaluation does not select a vendor, add an SDK, create network
+capabilities, or change the database schema. AI product and architecture work
+is tracked separately in [`ai-agent-development.md`](ai-agent-development.md).
 
 ## Decision summary
 
-| Capability                        | Decision                    | Reason                                                                                                                                                         |
-| --------------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Cloud sync                        | Conditional go              | Existing domain IDs and Repository boundaries are reusable, but revisions, tombstones, atomic change capture, key recovery, and conflict UX are prerequisites. |
-| Encrypted book-file sync          | Defer to sync phase 2       | It needs resumable encrypted chunks, capacity controls, and local path reconstruction. Metadata and user data should prove reliable first.                     |
-| Selected-text AI assistance       | Conditional go              | A narrow, user-initiated flow can provide value without granting library-wide access.                                                                          |
-| Whole-book or whole-library AI    | No-go for the first release | It creates unnecessary privacy, copyright, cost, and prompt-injection exposure.                                                                                |
-| AI actions or background indexing | No-go                       | Generated output must not act on files, the database, or the network, and must never run without a visible user action.                                        |
-| Collaborative rich-text editing   | Out of scope                | Whole-document conflict copies are safer and much cheaper than introducing a CRDT before real-time collaboration is a product requirement.                     |
+| Capability                      | Decision              | Reason                                                                                                                                                         |
+| ------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cloud sync                      | Conditional go        | Existing domain IDs and Repository boundaries are reusable, but revisions, tombstones, atomic change capture, key recovery, and conflict UX are prerequisites. |
+| Encrypted book-file sync        | Defer to sync phase 2 | It needs resumable encrypted chunks, capacity controls, and local path reconstruction. Metadata and user data should prove reliable first.                     |
+| Collaborative rich-text editing | Out of scope          | Whole-document conflict copies are safer and much cheaper than introducing a CRDT before real-time collaboration is a product requirement.                     |
 
 The first cloud release must be opt-in, end-to-end encrypted, and metadata-only
-for managed book binaries. The first AI release, if approved, must operate only
-on an exact text range shown in a send preview and return a separate draft.
+for managed book binaries.
 
 ## Current readiness
 
@@ -245,108 +241,6 @@ Logging may include mutation IDs, entity types, byte counts, status codes, and
 durations. It must not include plaintext payloads, tokens, keys, titles, quotes,
 notes, search queries, or full filesystem paths.
 
-## AI capability scope
-
-AI is an optional application service, not part of note persistence or the
-reader engine. The application must start with AI disabled and make no model
-request during startup, import, indexing, reading, selection, autosave, search,
-backup, or sync.
-
-The safe first-release tasks are:
-
-- summarize an explicit selection;
-- explain or translate an explicit selection;
-- turn selected text into an outline or questions; and
-- generate a draft from an explicit selection plus a user-written instruction.
-
-Allowed text scopes are exact and user-visible:
-
-| Scope                   | First release                 | Rule                                                            |
-| ----------------------- | ----------------------------- | --------------------------------------------------------------- |
-| Current selection       | Allow                         | Default and recommended; show exact source and character count  |
-| One annotation or quote | Allow                         | Send only its visible quote/comment fields                      |
-| Current note            | Allow with extra confirmation | Preview the complete extracted text and exclude hidden metadata |
-| Custom excerpt          | Allow                         | User edits the final text before sending                        |
-| Visible chapter         | Defer by default              | Allow only after a dedicated confirmation and size limit        |
-| Whole book or library   | Disallow                      | No implicit retrieval, embedding, or background upload          |
-
-Before every remote request, a send-preview dialog shows:
-
-- the exact editable text that will leave the device;
-- source labels and character/token estimate;
-- provider and model identity;
-- whether conversation history is included (off by default);
-- the provider-specific retention/training disclosure; and
-- a clear Send action. Closing or cancelling performs no request.
-
-Provider disclosure is data owned by each adapter and must be reviewed when a
-provider policy changes. A generic statement such as "processed securely" is
-not sufficient. Local-model execution may skip the network-send confirmation,
-but it must still show scope and resource use and remain explicitly enabled.
-
-### Privacy and sensitive-content warning
-
-The preview runs a small local warning pass for likely credentials, private
-keys, access tokens, email addresses, phone numbers, financial identifiers, and
-other obvious sensitive patterns. A warning explains that detection is
-incomplete and offers Edit, Redact, Cancel, or Send anyway. It does not upload
-text for classification, silently change the text, or claim to identify all
-personal information.
-
-The settings page and preview must explain:
-
-- local-only behavior is the default;
-- exactly when content is sent and to which provider;
-- what metadata and diagnostics may be retained;
-- how to disable the provider and delete any provider-side history; and
-- that copyrighted, confidential, medical, financial, or identifying text may
-  be inappropriate to send to a third party.
-
-### Generated output never replaces original notes
-
-An AI provider returns an `AiDraft`, not a `NoteSaveInput`:
-
-```ts
-interface AiDraft {
-  id: string;
-  sourceSnapshotHash: string;
-  sourceLabels: string[];
-  generatedAt: number;
-  provider: string;
-  model: string;
-  content: string;
-  status: 'draft' | 'accepted' | 'discarded';
-}
-```
-
-`AiService` has no `NoteRepository.update` access. A draft is displayed in a
-separate, clearly labelled result area. The only first-release actions are
-Copy, Create new note, and Append to note. There is no Replace note action.
-Appending goes through the normal editor transaction and autosave path and
-keeps all original user-authored nodes. Provider failure, cancellation, or an
-invalid response therefore cannot mutate a note.
-
-Book, chapter, note, and annotation content is untrusted model input and may
-contain prompt injection. It must be structurally separated from application
-instructions and treated only as quoted data. The model gets no tools, database
-handle, filesystem access, URL fetching, or sync credentials. Rendered Markdown
-or HTML is sanitized and cannot load remote resources. These controls reflect
-OWASP's guidance on
-[prompt injection](https://cheatsheetseries.owasp.org/cheatsheets/LLM_Prompt_Injection_Prevention_Cheat_Sheet.html): input filtering alone is
-not a complete defense, so capability isolation and human approval are the
-primary controls.
-
-Recommended AI boundaries are:
-
-```text
-Reader or note UI
-  -> AiContextSelection (only the reviewed text)
-  -> AiConsentService (preview, disclosure, warning, approval)
-  -> AiService
-  -> AiProviderGateway (local or remote adapter)
-  -> AiDraft (separate result; no Repository write access)
-```
-
 ## Delivery plan
 
 ### P0 — synchronization prerequisites
@@ -398,35 +292,6 @@ discarded; and disabling sync requires no domain Repository replacement.
 Acceptance: a new device can restore a readable library without receiving an
 absolute path; corrupt or incomplete assets never replace a valid local file.
 
-### P0 — AI safety foundation
-
-- Define `AiContextSelection`, `AiProviderDisclosure`, `AiRequest`, and
-  `AiDraft` schemas independently of notes and reader-engine types.
-- Build the exact-text preview, editable redaction, basic local sensitive-data
-  warning, explicit approval, and accessible keyboard/focus behavior.
-- Add a fake provider and prove that startup, selection, cancellation, provider
-  failure, and invalid output perform no note write and no unexpected network
-  call.
-- Add structured prompt boundaries, output size/type validation, sanitization,
-  abort/timeout handling, and content-free diagnostics.
-
-Acceptance: tests fail if any request is sent without approval, if the sent
-text differs from the preview, or if provider output calls a note update path.
-
-### P1 — narrow AI pilot
-
-- Enable selection, one-annotation, custom-excerpt, and separately confirmed
-  current-note scopes behind an off-by-default setting.
-- Support Copy, Create new note, and Append to note; do not add Replace.
-- Display provider/model identity and applicable retention/training terms at
-  send time, and expose a one-click disable action.
-- Add adversarial EPUB/PDF/note fixtures containing prompt injection, remote
-  Markdown images, oversized responses, and malformed structured output.
-
-Acceptance: only previewed text reaches the configured provider; generated
-content stays visibly labelled and separate until a user accepts it; original
-note nodes survive every accepted action.
-
 ## Go/no-go gates
 
 Cloud sync must not ship until all of the following are demonstrated:
@@ -438,14 +303,3 @@ Cloud sync must not ship until all of the following are demonstrated:
 - no provider or sync concept in a domain Repository interface; and
 - offline reading, editing, import, export, and backup remain available with no
   account.
-
-AI must not ship until all of the following are demonstrated:
-
-- AI is off by default and every remote send follows an exact-text preview and
-  explicit approval;
-- provider/model and current privacy/retention information are visible;
-- no whole-book/library access, tools, URL fetching, or background requests;
-- result drafts cannot call the note update path and offer no Replace action;
-  and
-- cancellation, failure, malicious book content, and malformed output cannot
-  mutate user content or load remote resources.

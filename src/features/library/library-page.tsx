@@ -25,6 +25,7 @@ export function LibraryPage({ services = libraryServices }: LibraryPageProps) {
   const managedBook =
     library.books.find((book) => book.id === managedBookId) ?? null;
   const hasFilter = Boolean(library.query.trim()) || library.favoritesOnly;
+  const showLibraryControls = library.books.length > 0 || hasFilter;
 
   return (
     <div>
@@ -35,64 +36,70 @@ export function LibraryPage({ services = libraryServices }: LibraryPageProps) {
             本地图书保存在应用受控目录中，支持 EPUB 和 PDF。
           </p>
         </div>
-        <ImportBookButton
-          isImporting={library.isImporting}
-          onImport={() => {
-            void library.importBook();
-          }}
-        />
+        {library.isLoading || showLibraryControls ? (
+          <ImportBookButton
+            isImporting={library.isImporting}
+            onImport={() => {
+              void library.importBook();
+            }}
+          />
+        ) : null}
       </header>
 
-      <section
-        aria-label="书架筛选"
-        className="bg-surface mb-6 flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center"
-      >
-        <label className="relative min-w-0 flex-1">
-          <span className="sr-only">搜索书架</span>
-          <Search
-            aria-hidden="true"
-            className="text-muted-foreground absolute top-1/2 left-3 -translate-y-1/2"
-            size={16}
-          />
-          <input
-            aria-label="搜索书架"
-            className="bg-background h-9 w-full rounded-md border pr-3 pl-9 text-sm"
-            maxLength={200}
-            onChange={(event) => {
-              library.setQuery(event.currentTarget.value);
-            }}
-            placeholder="搜索书名、作者或标签"
-            type="search"
-            value={library.query}
-          />
-        </label>
-        <label className="flex items-center gap-2 text-sm">
-          <span className="text-muted-foreground">排序</span>
-          <select
-            aria-label="书架排序"
-            className="bg-background h-9 rounded-md border px-2"
-            onChange={(event) => {
-              library.setSort(event.currentTarget.value as typeof library.sort);
-            }}
-            value={library.sort}
-          >
-            <option value="recent">最近阅读</option>
-            <option value="added">添加时间</option>
-            <option value="title">标题</option>
-          </select>
-        </label>
-        <label className="flex h-9 items-center gap-2 px-2 text-sm">
-          <input
-            checked={library.favoritesOnly}
-            className="accent-primary size-4"
-            onChange={(event) => {
-              library.setFavoritesOnly(event.currentTarget.checked);
-            }}
-            type="checkbox"
-          />
-          仅显示收藏
-        </label>
-      </section>
+      {showLibraryControls ? (
+        <section
+          aria-label="书架筛选"
+          className="bg-surface mb-6 flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-center"
+        >
+          <label className="relative min-w-0 flex-1">
+            <span className="sr-only">搜索书架</span>
+            <Search
+              aria-hidden="true"
+              className="text-muted-foreground absolute top-1/2 left-3 -translate-y-1/2"
+              size={16}
+            />
+            <input
+              aria-label="搜索书架"
+              className="bg-background h-9 w-full rounded-md border pr-3 pl-9 text-sm"
+              maxLength={200}
+              onChange={(event) => {
+                library.setQuery(event.currentTarget.value);
+              }}
+              placeholder="搜索书名、作者或标签"
+              type="search"
+              value={library.query}
+            />
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <span className="text-muted-foreground">排序</span>
+            <select
+              aria-label="书架排序"
+              className="bg-background h-9 rounded-md border px-2"
+              onChange={(event) => {
+                library.setSort(
+                  event.currentTarget.value as typeof library.sort,
+                );
+              }}
+              value={library.sort}
+            >
+              <option value="recent">最近阅读</option>
+              <option value="added">添加时间</option>
+              <option value="title">标题</option>
+            </select>
+          </label>
+          <label className="flex h-9 items-center gap-2 px-2 text-sm">
+            <input
+              checked={library.favoritesOnly}
+              className="accent-primary size-4"
+              onChange={(event) => {
+                library.setFavoritesOnly(event.currentTarget.checked);
+              }}
+              type="checkbox"
+            />
+            仅显示收藏
+          </label>
+        </section>
+      ) : null}
 
       {library.notice ? (
         <div
@@ -140,9 +147,17 @@ export function LibraryPage({ services = libraryServices }: LibraryPageProps) {
         />
       ) : library.books.length === 0 ? (
         <EmptyState
-          description="点击右上角“导入电子书”，把 EPUB 或 PDF 添加到书架。"
+          action={
+            <ImportBookButton
+              isImporting={library.isImporting}
+              onImport={() => {
+                void library.importBook();
+              }}
+            />
+          }
+          description="导入 EPUB 或 PDF，阅读数据只保存在当前设备。"
           icon={<BookOpen size={28} />}
-          title="书架还是空的"
+          title="导入第一本书"
         />
       ) : (
         <section

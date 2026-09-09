@@ -7,7 +7,7 @@ use std::{
 };
 use tauri::{AppHandle, Manager};
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 10;
+pub const CURRENT_SCHEMA_VERSION: i64 = 11;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -125,13 +125,14 @@ async fn inspect_database(path: &Path) -> Result<DatabaseBackupSummary, String> 
         WHERE type = 'table' AND name IN (
           'app_meta', 'books', 'reader_settings', 'book_reader_settings',
           'reading_states', 'annotations', 'notes', 'book_tags',
-          'book_content_index', 'bookmarks', 'reading_sessions'
+          'book_content_index', 'bookmarks', 'reading_sessions',
+          'ai_book_chunks'
         )"#,
     )
     .fetch_one(&mut connection)
     .await
     .map_err(|error| error.to_string())?;
-    if required_table_count != 11 {
+    if required_table_count != 12 {
         return Err("backup database is missing required tables".to_string());
     }
 
@@ -147,6 +148,7 @@ async fn inspect_database(path: &Path) -> Result<DatabaseBackupSummary, String> 
         "SELECT book_id, chapter_href, chapter_title, text FROM book_content_index LIMIT 1",
         "SELECT id, book_id, name, locator_json, created_at, updated_at FROM bookmarks LIMIT 1",
         "SELECT id, book_id, started_at, ended_at, duration_seconds FROM reading_sessions LIMIT 1",
+        "SELECT schema_version, chunk_id, book_id, source_file_hash, chapter_href, chapter_title, start_locator_json, end_locator_json, text, text_hash, estimated_tokens, ordinal FROM ai_book_chunks LIMIT 1",
     ];
     for query in validation_queries {
         sqlx::query(query)
@@ -586,6 +588,10 @@ async fn restore_database(
         .map_err(|error| error.to_string())?;
     let restore_result = async {
         let statements = [
+            // AI chunks are derived from managed book files. Clear them during
+            // restore so stale or partially built indexes are never promoted to
+            // canonical backup data; the application rebuilds them on demand.
+            "DELETE FROM main.ai_book_chunks",
             "DELETE FROM main.book_content_index",
             "DELETE FROM main.annotations",
             "DELETE FROM main.bookmarks",
@@ -789,6 +795,7 @@ mod tests {
             include_str!("../migrations/0008_library_management.sql"),
             include_str!("../migrations/0009_bookmarks_and_reading_activity.sql"),
             include_str!("../migrations/0010_pdf_books.sql"),
+            include_str!("../migrations/0011_ai_book_chunks.sql"),
         ] {
             connection
                 .execute(migration)
@@ -845,6 +852,19 @@ mod tests {
         .execute(&mut *connection)
         .await
         .expect("note should seed");
+        sqlx::query(
+            r#"INSERT INTO ai_book_chunks (
+              schema_version, chunk_id, book_id, source_file_hash,
+              chapter_href, chapter_title, start_locator_json,
+              end_locator_json, text, text_hash, estimated_tokens, ordinal
+            ) VALUES (1, 'backup-chunk', 'backup-book', ?, 'chapter.xhtml',
+              'Chapter', ?, NULL, 'derived text', 'derived-hash', 3, 0)"#,
+        )
+        .bind("a".repeat(64))
+        .bind(r#"{"version":1,"format":"epub","chapterHref":"chapter.xhtml"}"#)
+        .execute(&mut *connection)
+        .await
+        .expect("derived AI chunk should seed");
     }
 
     #[tokio::test]
@@ -907,6 +927,14 @@ mod tests {
             .await
             .expect("note should restore");
         assert_eq!(note_count, 1);
+        let ai_chunk_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ai_book_chunks")
+            .fetch_one(&mut restored)
+            .await
+            .expect("derived AI index should remain queryable");
+        assert_eq!(
+            ai_chunk_count, 0,
+            "derived AI chunks must rebuild on demand"
+        );
         restored.close().await.expect("database should close");
 
         fs::remove_file(live_path).expect("live database should be removed");

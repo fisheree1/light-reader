@@ -233,6 +233,7 @@ export function useNotes(
     activeNote,
     createNote,
     deleteActiveNote,
+    hasNotes: notes.length > 0,
     load,
     loading,
     loadError,

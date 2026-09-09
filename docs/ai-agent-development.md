@@ -1,6 +1,7 @@
 # LightReader AI Agent 开发设计
 
-状态：Phase A～D 的本地优先基线和 P1 稳定性加固已实现；
+状态：Phase A～D 的本地优先基线、P1 稳定性加固和本地多路
+检索升级已实现；
 Phase E/F 尚未实现。
 
 更新日期：2026-09-09。
@@ -15,17 +16,19 @@ Phase E/F 尚未实现。
 模型基线见 [`ai-local-model-baseline.md`](ai-local-model-baseline.md)，检索与工具
 边界见 [`adr/0002-local-rag-readonly-agent.md`](adr/0002-local-rag-readonly-agent.md)。
 引用校验只保留回答实际使用的 `[S#]`，并明确区分“来源位置/版本
-已验证”和“这段证据是否足以支持回答，尚未自动判定”。语义向量检索、
-跨书/笔记研究、受控追加和高级能力仍按本文后续阶段实施。
+已验证”和“这段证据是否足以支持回答，尚未自动判定”。P2 已加入原词/
+多语言同义表达召回、RRF 融合和确定性重排，决策见
+[`adr/0003-local-hybrid-lexical-retrieval.md`](adr/0003-local-hybrid-lexical-retrieval.md)。
+语义向量检索、跨书/笔记研究、受控追加和高级能力仍按本文后续阶段实施。
 
 本文定义 LightReader 后续引入 AI Agent 能力时的产品范围、架构边界、
 数据模型、工具协议、RAG、隐私、安全、测试和交付顺序。它建立在现有
 本地优先阅读、稳定 locator、Repository、Tauri 平台隔离和 Tiptap 笔记
 模型之上。
 
-本文不授权安装 AI SDK、增加网络权限、创建数据库迁移、选择具体模型，
-也不改变 [`cloud-sync-ai-evaluation.md`](cloud-sync-ai-evaluation.md) 中已经
-确定的原则：AI 默认关闭、远程发送必须明确授权、用户决定发送范围、
+本文不授权安装远程 AI SDK、增加网络权限或接入云服务。云同步作为独立
+能力在 [`cloud-sync-evaluation.md`](cloud-sync-evaluation.md) 中评估，不应侵入
+本文定义的 AI、Repository 或阅读器边界。AI 默认关闭、用户决定输入范围，
 模型输出不得覆盖原始笔记。
 
 ## 1. 产品定位
@@ -943,16 +946,21 @@ WebView、SQLite、localStorage、日志或备份。
 
 ### Phase C — 单书本地 RAG
 
-实现状态：已完成本地关键词检索基线。EPUB 章节和 PDF 文本层会切成带版本、
+实现状态：已完成本地多路检索基线。EPUB 章节和 PDF 文本层会切成带版本、
 文件哈希与 locator 的稳定 chunk，按书惰性写入 FTS5 trigram 派生索引；检索有
-top-k 和总字符预算，可合并相邻片段并生成本地校验引用。删除图书会同步清理
-索引，文件哈希变化会触发重建。embedding、混合召回和 reranker 暂未启用，需
-在本地 eval 证明收益后再选型。
+top-k 和总字符预算，原词与受审查的多语言同义表达两路召回并发执行，
+再经 RRF 去重融合和确定性重排。最终结果仍会合并相邻片段并生成本地校验
+引用。删除图书会同步清理索引，文件哈希变化会触发重建。固定 eval 保留
+V1 关键词基线，并在 V2 对
+Recall@6 设置 90% 下限，对无答案用例要求 100% 正确。真实 embedding 和
+模型 reranker 暂未启用，需在更大的本地 eval 证明额外收益后再选型。
 
 - 抽象 EPUB/PDF `BookTextExtractor`。
 - 定义 chunk、版本和 locator 映射。
-- 建立 FTS5 chunk index；评估本地 embedding index。
-- 实现混合检索、预算、相邻合并和 citation validator。
+- 建立 FTS5 chunk index；用可替换的 candidate retriever 隔离召回策略。
+- 实现原词/语义表达多路召回、RRF、确定性重排、预算、相邻合并和
+  citation validator。
+- 评估本地 embedding index，但不在没有 eval 收益时强制下载模型。
 - 增加单书问答和无证据 eval。
 
 验收：所有显示为已验证的引用均能跳回原书；删除/替换书籍会清理或重建

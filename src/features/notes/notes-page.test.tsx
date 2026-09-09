@@ -91,8 +91,12 @@ describe('NotesPage', () => {
     renderPage(services);
 
     expect(
-      await screen.findByRole('heading', { name: '暂无笔记' }),
+      await screen.findByRole('heading', { name: '创建第一条笔记' }),
     ).toBeVisible();
+    expect(screen.queryByLabelText('搜索笔记标题')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: '导出' }),
+    ).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '新建笔记' }));
     expect(await screen.findByLabelText('笔记标题')).toHaveValue('未命名笔记');
     expect(screen.getByRole('textbox', { name: '笔记正文' })).toBeVisible();
@@ -118,6 +122,25 @@ describe('NotesPage', () => {
       { timeout: 1800 },
     );
     expect(await screen.findByText('已保存')).toBeVisible();
+  });
+
+  it('keeps note export choices in one secondary menu', async () => {
+    const user = userEvent.setup();
+    const { services } = createServices([createNote()]);
+    renderPage(services);
+
+    await screen.findByLabelText('笔记标题');
+    expect(
+      screen.queryByRole('button', { name: '批量导出' }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '导出' }));
+    expect(
+      screen.getByRole('button', { name: '导出为 Markdown' }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: '批量导出为 HTML' }),
+    ).toBeVisible();
   });
 
   it('preserves the draft and offers retry after a save failure', async () => {

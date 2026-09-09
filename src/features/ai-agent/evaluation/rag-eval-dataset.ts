@@ -6,7 +6,8 @@ export type RagEvalCategory =
   | 'cross-chapter'
   | 'no-answer'
   | 'prompt-injection'
-  | 'semantic-gap';
+  | 'semantic-gap'
+  | 'semantic-paraphrase';
 
 export interface RagEvalPassage {
   chapterTitle: string;
@@ -162,3 +163,14 @@ export const ragEvalDatasetV1: RagEvalCase[] = [
     ],
   },
 ];
+
+export const ragEvalDatasetV2: RagEvalCase[] = ragEvalDatasetV1.map(
+  (testCase) =>
+    testCase.id === 'synonym-offline'
+      ? {
+          ...testCase,
+          category: 'semantic-paraphrase',
+          knownLimitation: false,
+        }
+      : testCase,
+);

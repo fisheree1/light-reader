@@ -146,9 +146,12 @@ describe('LibraryPage', () => {
     renderLibrary(createServices());
 
     expect(
-      await screen.findByRole('heading', { name: '书架还是空的' }),
+      await screen.findByRole('heading', { name: '导入第一本书' }),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '导入电子书' })).toBeEnabled();
+    expect(
+      screen.queryByRole('region', { name: '书架筛选' }),
+    ).not.toBeInTheDocument();
   });
 
   it('shows a loading state while books are loading', () => {
@@ -174,7 +177,7 @@ describe('LibraryPage', () => {
     const user = userEvent.setup();
     const pending = new Promise<ImportBookResult>(() => undefined);
     renderLibrary(createServices({ importEpub: () => pending }));
-    await screen.findByRole('heading', { name: '书架还是空的' });
+    await screen.findByRole('heading', { name: '导入第一本书' });
 
     await user.click(screen.getByRole('button', { name: '导入电子书' }));
     expect(screen.getByRole('button', { name: '正在导入…' })).toBeDisabled();
@@ -183,7 +186,7 @@ describe('LibraryPage', () => {
   it('adds a successfully imported book immediately', async () => {
     const user = userEvent.setup();
     renderLibrary(createServices());
-    await screen.findByRole('heading', { name: '书架还是空的' });
+    await screen.findByRole('heading', { name: '导入第一本书' });
 
     await user.click(screen.getByRole('button', { name: '导入电子书' }));
 
@@ -228,7 +231,7 @@ describe('LibraryPage', () => {
         },
       }),
     );
-    await screen.findByRole('heading', { name: '书架还是空的' });
+    await screen.findByRole('heading', { name: '导入第一本书' });
 
     await user.click(screen.getByRole('button', { name: '导入电子书' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
