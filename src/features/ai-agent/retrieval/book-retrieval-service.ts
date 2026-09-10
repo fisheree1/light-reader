@@ -136,6 +136,7 @@ export class BookRetrievalService {
       question,
       Math.max(1, Math.min(8, limit)),
       options.signal,
+      options.semanticTerms,
     );
     throwIfBookIndexingAborted(options.signal);
     const passages: RetrievedPassage[] = [];
@@ -156,6 +157,35 @@ export class BookRetrievalService {
       if (totalChars + candidate.text.length > maxContextChars) break;
       passages.push(candidate);
       totalChars += candidate.text.length;
+    }
+    return passages;
+  }
+
+  async retrieveAcrossBooks(
+    books: Book[],
+    question: string,
+    limit = 8,
+    options: BookRetrievalOptions = {},
+  ): Promise<RetrievedPassage[]> {
+    const selected = books.slice(0, 8);
+    const candidates: RetrievedPassage[] = [];
+    for (const book of selected) {
+      throwIfBookIndexingAborted(options.signal);
+      candidates.push(
+        ...(await this.retrieve(book, question, Math.min(4, limit), options)),
+      );
+    }
+    const ranked = candidates.sort((left, right) => right.score - left.score);
+    const passages: RetrievedPassage[] = [];
+    const perBook = new Map<string, number>();
+    let totalChars = 0;
+    for (const passage of ranked) {
+      if ((perBook.get(passage.bookId) ?? 0) >= 3) continue;
+      if (totalChars + passage.text.length > maxContextChars) continue;
+      passages.push(passage);
+      perBook.set(passage.bookId, (perBook.get(passage.bookId) ?? 0) + 1);
+      totalChars += passage.text.length;
+      if (passages.length >= Math.max(1, Math.min(8, limit))) break;
     }
     return passages;
   }

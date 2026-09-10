@@ -6,6 +6,7 @@ import {
   type AnnotationSearchResult,
   type BookContentChapter,
   type BookContentSearchResult,
+  type BookSearchResult,
   type NoteSearchResult,
 } from '../../features/search/domain/search';
 import { AppError } from '../../lib/app-error';
@@ -13,9 +14,11 @@ import { getDatabase, type SqlDatabase } from '../client';
 import {
   mapAnnotationSearchRecord,
   mapBookContentSearchRecord,
+  mapBookSearchRecord,
   mapNoteSearchRecord,
   type AnnotationSearchRecord,
   type BookContentSearchRecord,
+  type BookSearchRecord,
   type NoteSearchRecord,
 } from '../schema/search-record';
 import type { SearchRepository } from './search-repository';
@@ -61,6 +64,31 @@ export class SqliteSearchRepository implements SearchRepository {
 
   constructor(databaseProvider: DatabaseProvider = getDatabase) {
     this.databaseProvider = databaseProvider;
+  }
+
+  async searchBooks(
+    value: string,
+    valueLimit = 20,
+  ): Promise<BookSearchResult[]> {
+    const query = normalizeSearchQuery(value);
+    const limit = resultLimitSchema.parse(valueLimit);
+    try {
+      const database = await this.databaseProvider();
+      const rows = await database.select<BookSearchRecord[]>(
+        `SELECT DISTINCT b.id, b.title, b.author, b.format
+         FROM books b
+         LEFT JOIN book_tags bt ON bt.book_id = b.id
+         WHERE b.title LIKE $1 ESCAPE '\\' COLLATE NOCASE
+            OR COALESCE(b.author, '') LIKE $1 ESCAPE '\\' COLLATE NOCASE
+            OR COALESCE(bt.tag, '') LIKE $1 ESCAPE '\\' COLLATE NOCASE
+         ORDER BY b.updated_at DESC, b.title ASC
+         LIMIT $2`,
+        [`%${escapeLike(query)}%`, limit],
+      );
+      return rows.map(mapBookSearchRecord);
+    } catch (error) {
+      throw new AppError('SEARCH_FAILED', { cause: error });
+    }
   }
 
   async searchNotes(
@@ -139,6 +167,7 @@ export class SqliteSearchRepository implements SearchRepository {
       const rows = await database.select<BookContentSearchRecord[]>(
         query.mode === 'fts'
           ? `SELECT book_content_index.book_id, b.title AS book_title,
+               b.format AS book_format,
                book_content_index.chapter_href,
                book_content_index.chapter_title,
                snippet(book_content_index, 3, '', '', '…', 32) AS excerpt
@@ -148,6 +177,7 @@ export class SqliteSearchRepository implements SearchRepository {
              ORDER BY bm25(book_content_index, 0.0, 0.0, 2.0, 1.0)
              LIMIT $2`
           : `SELECT book_content_index.book_id, b.title AS book_title,
+               b.format AS book_format,
                book_content_index.chapter_href,
                book_content_index.chapter_title,
                substr(book_content_index.text, 1, 400) AS excerpt

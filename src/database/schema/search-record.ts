@@ -2,9 +2,11 @@ import { z } from 'zod';
 
 import {
   annotationSearchResultSchema,
+  bookSearchResultSchema,
   bookContentSearchResultSchema,
   noteSearchResultSchema,
   type AnnotationSearchResult,
+  type BookSearchResult,
   type BookContentSearchResult,
   type NoteSearchResult,
 } from '../../features/search/domain/search';
@@ -32,7 +34,15 @@ export const bookContentSearchRecordSchema = z.object({
   book_title: z.string().min(1),
   chapter_href: z.string().min(1),
   chapter_title: z.string().min(1),
+  book_format: z.enum(['epub', 'pdf']),
   excerpt: z.string().nullable(),
+});
+
+export const bookSearchRecordSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  author: z.string().nullable(),
+  format: z.enum(['epub', 'pdf']),
 });
 
 export type NoteSearchRecord = z.infer<typeof noteSearchRecordSchema>;
@@ -42,6 +52,7 @@ export type AnnotationSearchRecord = z.infer<
 export type BookContentSearchRecord = z.infer<
   typeof bookContentSearchRecordSchema
 >;
+export type BookSearchRecord = z.infer<typeof bookSearchRecordSchema>;
 
 export function mapNoteSearchRecord(value: unknown): NoteSearchResult {
   const row = noteSearchRecordSchema.parse(value);
@@ -78,8 +89,20 @@ export function mapBookContentSearchRecord(
     kind: 'book-content',
     bookId: row.book_id,
     bookTitle: row.book_title,
-    chapterHref: row.chapter_href,
-    chapterTitle: row.chapter_title,
+    sectionLabel: row.chapter_title,
+    locator:
+      row.book_format === 'pdf'
+        ? {
+            version: 1,
+            format: 'pdf',
+            pageIndex: Number(row.chapter_href.replace('pdf-page:', '')),
+          }
+        : { version: 1, format: 'epub', chapterHref: row.chapter_href },
     excerpt: row.excerpt ?? row.chapter_title,
   });
+}
+
+export function mapBookSearchRecord(value: unknown): BookSearchResult {
+  const row = bookSearchRecordSchema.parse(value);
+  return bookSearchResultSchema.parse({ kind: 'book', ...row });
 }

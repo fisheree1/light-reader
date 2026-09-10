@@ -71,6 +71,22 @@ describe('LocalHybridBookCandidateRetriever', () => {
     );
   });
 
+  it('融合本地模型生成的有界语义词，不改变原始词优先级', async () => {
+    const privacy = chunk('chunk-privacy', '个人数据不会离开当前设备。', 0);
+    const retriever = new LocalHybridBookCandidateRetriever(
+      createRepository([privacy]),
+    );
+
+    await expect(
+      retriever.retrieve('book-1', '数据边界是什么？', 6, undefined, [
+        '个人数据',
+      ]),
+    ).resolves.toMatchObject([{ chunk: { id: privacy.id } }]);
+    expect(
+      buildBookQueryPlan('数据边界是什么？', ['个人数据']).expandedTerms,
+    ).toContain('个人数据');
+  });
+
   it('用 RRF 去重多路结果，并优先保留原始问题直接命中', async () => {
     const direct = chunk(
       'chunk-direct',

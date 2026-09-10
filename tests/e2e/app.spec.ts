@@ -73,6 +73,11 @@ test('starts and navigates between the scaffold pages', async ({ page }) => {
     page.getByRole('heading', { level: 1, name: '搜索' }),
   ).toBeVisible();
 
+  await page.getByRole('link', { name: '研究' }).click();
+  await expect(
+    page.getByRole('heading', { level: 1, name: '跨书研究' }),
+  ).toBeVisible();
+
   await page.getByRole('link', { name: '设置' }).click();
   await expect(
     page.getByRole('heading', { level: 1, name: '设置' }),
@@ -258,13 +263,13 @@ test('verifies the import interaction through the Web mock adapter', async ({
 
   await page.getByRole('button', { name: '导入电子书' }).click();
 
-  await expect(page.getByRole('status')).toContainText('已导入书架');
+  await expect(page.getByRole('status')).toContainText('新增 1 本');
   await expect(
     page.getByRole('button', { name: '打开《Web 测试 EPUB》' }),
   ).toBeVisible();
 
   await page.getByRole('button', { name: '导入电子书' }).click();
-  await expect(page.getByRole('status')).toContainText('已经在书架');
+  await expect(page.getByRole('status')).toContainText('重复 1 本');
 });
 
 test('persists global reading settings and a per-book override', async ({
@@ -498,6 +503,65 @@ test('asks the current book a free-form question with a navigable citation', asy
   await expect(
     page.getByRole('button', { name: '第一章', exact: true }),
   ).toBeVisible();
+});
+
+test('researches across an explicitly selected local book set', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const createBook = (id: string, title: string, hash: string) => ({
+      id,
+      title,
+      author: 'LightReader',
+      format: 'epub',
+      filePath: `light-reader/books/${id}/book.epub`,
+      fileHash: hash,
+      coverPath: null,
+      metadata: {
+        title,
+        creators: ['LightReader'],
+        language: 'zh-CN',
+        publisher: null,
+        description: null,
+        identifier: null,
+      },
+      fileSize: 256,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    localStorage.setItem(
+      'light-reader-web-books',
+      JSON.stringify([
+        createBook('research-one', '研究图书一', 'c'.repeat(64)),
+        createBook('research-two', '研究图书二', 'd'.repeat(64)),
+      ]),
+    );
+    localStorage.setItem(
+      'light-reader-ai-settings',
+      JSON.stringify({
+        schemaVersion: 1,
+        enabled: true,
+        provider: 'ollama',
+        endpoint: 'http://127.0.0.1:11434',
+        model: 'deepseek-r1:8b',
+      }),
+    );
+  });
+
+  await page.goto('/research');
+  await page.getByLabel(/研究图书一/).check();
+  await page.getByLabel(/研究图书二/).check();
+  await page
+    .getByRole('textbox', { name: '研究问题' })
+    .fill('比较两本书中的 LightReader 测试内容。');
+  await page.getByRole('button', { name: '开始研究' }).click();
+
+  await expect(page.getByRole('heading', { name: '研究草稿' })).toBeVisible();
+  await expect(page.getByText(/研究完成，共引用/)).toBeVisible();
+  const source = page.getByRole('button', { name: /\[S1\] 研究图书/ });
+  await expect(source).toBeVisible();
+  await source.click();
+  await expect(page).toHaveURL(/\/reader\/research-/);
 });
 
 test('manages favorites, tags, sorting, and protected deletion locally', async ({

@@ -20,7 +20,12 @@ native dialogs without changing production behavior.
 
 ## Import and rollback
 
-The import service follows this order:
+The native picker accepts one or many EPUB/PDF files. A batch is processed
+sequentially so parsing and file copies do not create an unbounded memory spike.
+Every file has an independent result (`created`, `duplicate`, or `failed`); one
+invalid or missing file does not roll back books already committed.
+
+For each selected file, the import service follows this order:
 
 1. select and read the source file;
 2. accept only `.epub` or `.pdf`; validate the EPUB ZIP/package structure or

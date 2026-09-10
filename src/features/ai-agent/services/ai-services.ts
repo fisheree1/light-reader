@@ -15,6 +15,7 @@ import { LocalBookTextExtractor } from '../retrieval/book-text-extractor';
 import { BookRetrievalService } from '../retrieval/book-retrieval-service';
 import { AgentFacade } from './agent-facade';
 import { BookQaRunner } from './book-qa-runner';
+import { ResearchRunner } from './research-runner';
 
 const repository = isTauri()
   ? new SqliteAiSettingsRepository()
@@ -38,4 +39,5 @@ export const agentFacade = new AgentFacade(
   undefined,
   undefined,
   new BookQaRunner(provider, retrieval),
+  new ResearchRunner(provider, retrieval),
 );

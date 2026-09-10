@@ -132,4 +132,64 @@ describe('BookRetrievalService', () => {
     ).rejects.toMatchObject({ code: 'USER_CANCELLED' });
     expect(dependencies.replaceBookChunks).not.toHaveBeenCalled();
   });
+
+  it('跨书检索保持来源隔离并为每本书限制候选数量', async () => {
+    const second = {
+      ...book,
+      id: 'book-2',
+      title: '第二本书',
+      filePath: 'light-reader/books/book-2/book.epub',
+      fileHash: 'b'.repeat(64),
+    };
+    const repository: BookChunkRepository = {
+      findById: () => Promise.resolve(null),
+      getIndexedSourceHash: (bookId) =>
+        Promise.resolve(bookId === book.id ? book.fileHash : second.fileHash),
+      replaceBookChunks: () => Promise.resolve(),
+      searchBookChunks: () => Promise.resolve([]),
+    };
+    const candidate = {
+      retrieve: (bookId: string) =>
+        Promise.resolve([
+          {
+            chunk: {
+              schemaVersion: 1 as const,
+              id: `chunk-${bookId}`,
+              bookId,
+              sourceFileHash:
+                bookId === book.id ? book.fileHash : second.fileHash,
+              chapterHref: 'chapter.xhtml',
+              chapterTitle: '章节',
+              startLocator: {
+                version: 1 as const,
+                format: 'epub' as const,
+                chapterHref: 'chapter.xhtml',
+              },
+              endLocator: null,
+              text: `${bookId} 的共同观点是本地优先。`,
+              textHash: `fnv1a-${bookId}`,
+              estimatedTokens: 10,
+              ordinal: 0,
+            },
+            score: bookId === book.id ? 2 : 1,
+          },
+        ]),
+    };
+    const service = new BookRetrievalService(
+      repository,
+      { read: () => Promise.reject(new Error('index is current')) },
+      { extract: () => Promise.resolve([]) },
+      undefined,
+      candidate,
+    );
+
+    const passages = await service.retrieveAcrossBooks(
+      [book, second],
+      '共同观点',
+    );
+    expect(passages.map((passage) => passage.bookId)).toEqual([
+      'book-1',
+      'book-2',
+    ]);
+  });
 });

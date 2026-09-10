@@ -1,8 +1,7 @@
 # LightReader AI Agent 开发设计
 
-状态：Phase A～D 的本地优先基线、P1 稳定性加固和本地多路
-检索升级已实现；
-Phase E/F 尚未实现。
+状态：Phase A～D 的本地优先基线、P1 稳定性加固、本地多路检索升级和
+跨书研究首版已实现；Phase E/F 尚未实现。
 
 更新日期：2026-09-09。
 
@@ -19,7 +18,10 @@ Phase E/F 尚未实现。
 已验证”和“这段证据是否足以支持回答，尚未自动判定”。P2 已加入原词/
 多语言同义表达召回、RRF 融合和确定性重排，决策见
 [`adr/0003-local-hybrid-lexical-retrieval.md`](adr/0003-local-hybrid-lexical-retrieval.md)。
-语义向量检索、跨书/笔记研究、受控追加和高级能力仍按本文后续阶段实施。
+跨书研究现支持用户明确选择 2–8 本书、本机模型查询扩展、受限检索、带来源
+草稿和原文跳转，决策见
+[`adr/0004-local-semantic-expansion-and-cross-book-research.md`](adr/0004-local-semantic-expansion-and-cross-book-research.md)。
+真正的语义向量检索、跨笔记研究、受控追加和高级能力仍按本文后续阶段实施。
 
 本文定义 LightReader 后续引入 AI Agent 能力时的产品范围、架构边界、
 数据模型、工具协议、RAG、隐私、安全、测试和交付顺序。它建立在现有
@@ -968,12 +970,14 @@ Recall@6 设置 90% 下限，对无答案用例要求 100% 正确。真实 embed
 
 ### Phase D — 工具型单 Agent
 
-实现状态：已完成单书问答所需的受限只读基线。固定 Tool Registry 目前只开放
-`search_books` 和受搜索结果约束的 `read_passage`，并执行单书 grant、过期时间、
+实现状态：已完成单书问答和跨书研究所需的受限只读基线。固定 Tool Registry
+目前只开放 `search_books` 和受搜索结果约束的 `read_passage`，并执行最多八本书
+的显式 grant、过期时间、
 调用次数、重复调用、单次/总文本预算检查。轨迹只记录工具名、状态、字符数和
 结果哈希，不记录原文。由于当前 Ollama Gateway 未声明 function-tools 能力，
 第一版由应用确定性执行一次检索，再调用模型生成草稿；这保留了 Agent 安全
-边界，也避免让模型伪造工具调用。跨书、笔记和批注工具仍未开放。
+边界，也避免让模型伪造工具调用。跨书 `search_books` 已开放；笔记和批注工具
+仍未开放。
 
 - 实现只读 Tool Registry。
 - 加入有限 Agent loop、工具次数、并发和停止规则。

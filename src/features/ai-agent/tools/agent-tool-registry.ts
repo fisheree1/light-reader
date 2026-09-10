@@ -24,8 +24,8 @@ function rejected(
 }
 
 export class AgentToolRegistry {
-  private readonly allowedChunkIds = new Set<string>();
-  private readonly book: Book;
+  private readonly allowedChunkIds = new Map<string, string>();
+  private readonly books: Map<string, Book>;
   private readonly grant: AgentCapabilityGrant;
   private readonly now: () => number;
   private readonly retrieval: BookRetrievalService;
@@ -37,13 +37,14 @@ export class AgentToolRegistry {
   constructor(
     retrieval: BookRetrievalService,
     grant: AgentCapabilityGrant,
-    book: Book,
+    valueBooks: Book | Book[],
     now: () => number = Date.now,
     retrievalOptions: BookRetrievalOptions = {},
   ) {
     this.retrieval = retrieval;
     this.grant = grant;
-    this.book = book;
+    const books = Array.isArray(valueBooks) ? valueBooks : [valueBooks];
+    this.books = new Map(books.map((book) => [book.id, book]));
     this.now = now;
     this.retrievalOptions = retrievalOptions;
   }
@@ -106,8 +107,7 @@ export class AgentToolRegistry {
     }
     if (
       this.now() > this.grant.expiresAt ||
-      !this.grant.allowedTools.includes(call.name) ||
-      !this.grant.allowedBookIds.includes(this.book.id)
+      !this.grant.allowedTools.includes(call.name)
     ) {
       return rejected('OUT_OF_SCOPE', '工具调用不在本次授权范围内。');
     }
@@ -126,11 +126,12 @@ export class AgentToolRegistry {
         ? call.arguments.bookIds
         : [call.arguments.bookId];
     if (
-      requestedBookIds.length !== 1 ||
-      requestedBookIds[0] !== this.book.id ||
-      !this.grant.allowedBookIds.includes(requestedBookIds[0])
+      new Set(requestedBookIds).size !== requestedBookIds.length ||
+      requestedBookIds.some(
+        (id) => !this.books.has(id) || !this.grant.allowedBookIds.includes(id),
+      )
     ) {
-      return rejected('OUT_OF_SCOPE', '工具不能扩大到其他图书。');
+      return rejected('OUT_OF_SCOPE', '工具不能扩大到未授权图书。');
     }
     return null;
   }
@@ -138,14 +139,30 @@ export class AgentToolRegistry {
   private async searchBooks(
     call: Extract<AgentToolCall, { name: 'search_books' }>,
   ): Promise<AgentToolResult<ToolData>> {
-    const passages = await this.retrieval.retrieve(
-      this.book,
-      call.arguments.query,
-      call.arguments.limit,
-      this.retrievalOptions,
-    );
+    const books: Book[] = [];
+    for (const id of call.arguments.bookIds) {
+      const book = this.books.get(id);
+      if (!book) return rejected('OUT_OF_SCOPE', '图书不在本次授权范围内。');
+      books.push(book);
+    }
+    const passages =
+      books.length === 1
+        ? await this.retrieval.retrieve(
+            books[0],
+            call.arguments.query,
+            call.arguments.limit,
+            this.retrievalOptions,
+          )
+        : await this.retrieval.retrieveAcrossBooks(
+            books,
+            call.arguments.query,
+            call.arguments.limit,
+            this.retrievalOptions,
+          );
     passages.forEach((passage) => {
-      passage.sourceChunkIds.forEach((id) => this.allowedChunkIds.add(id));
+      passage.sourceChunkIds.forEach((id) =>
+        this.allowedChunkIds.set(id, passage.bookId),
+      );
     });
     return {
       ok: true,
@@ -161,11 +178,15 @@ export class AgentToolRegistry {
   private async readPassage(
     call: Extract<AgentToolCall, { name: 'read_passage' }>,
   ): Promise<AgentToolResult<ToolData>> {
-    if (!this.allowedChunkIds.has(call.arguments.chunkId)) {
+    if (
+      this.allowedChunkIds.get(call.arguments.chunkId) !== call.arguments.bookId
+    ) {
       return rejected('OUT_OF_SCOPE', '只能读取本次搜索已返回的文本块。');
     }
+    const book = this.books.get(call.arguments.bookId);
+    if (!book) return rejected('OUT_OF_SCOPE', '图书不在本次授权范围内。');
     const passage = await this.retrieval.readChunk(
-      this.book,
+      book,
       call.arguments.chunkId,
       this.retrievalOptions,
     );

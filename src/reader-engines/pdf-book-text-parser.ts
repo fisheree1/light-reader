@@ -90,7 +90,7 @@ export class PdfBookTextParser {
         totalChars += text.length;
         if (totalChars > maxTotalTextChars) {
           throw new AppError('SEARCH_INDEX_FAILED', {
-            message: 'PDF 正文过大，无法建立本地 AI 索引。',
+            message: 'PDF 正文过大，无法建立本地索引。',
           });
         }
         pages.push({ pageIndex, text });

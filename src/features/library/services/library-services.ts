@@ -26,6 +26,7 @@ import {
   BookImportService,
   type BookImporter,
   type ImportBookResult,
+  type ImportBooksResult,
 } from './book-import-service';
 import { FflateEpubMetadataParser } from './epub-metadata-parser';
 import {
@@ -146,6 +147,16 @@ class WebMockBookImporter implements BookImporter {
       updatedAt: now,
     });
     return { status: 'created', book: await this.repository.create(book) };
+  }
+
+  async importBooks(): Promise<ImportBooksResult> {
+    const result = await this.importEpub();
+    return {
+      status: 'completed',
+      created: result.status === 'created' ? [result.book] : [],
+      duplicates: result.status === 'duplicate' ? [result.book] : [],
+      failed: [],
+    };
   }
 }
 

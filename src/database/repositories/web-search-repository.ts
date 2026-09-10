@@ -6,6 +6,7 @@ import type { NoteRepository } from './note-repository';
 import type { SearchRepository } from './search-repository';
 import {
   annotationSearchResultSchema,
+  bookSearchResultSchema,
   bookContentChapterSchema,
   bookContentSearchResultSchema,
   normalizeSearchQuery,
@@ -13,6 +14,7 @@ import {
   type AnnotationSearchResult,
   type BookContentChapter,
   type BookContentSearchResult,
+  type BookSearchResult,
   type NoteSearchResult,
 } from '../../features/search/domain/search';
 import { AppError } from '../../lib/app-error';
@@ -50,6 +52,31 @@ export class WebSearchRepository implements SearchRepository {
     this.noteRepository = noteRepository;
     this.annotationRepository = annotationRepository;
     this.bookRepository = bookRepository;
+  }
+
+  async searchBooks(value: string, limit = 20): Promise<BookSearchResult[]> {
+    const query = normalizeSearchQuery(value);
+    try {
+      const books = await this.bookRepository.list();
+      return books
+        .filter(
+          (book) =>
+            includesQuery(book.title, query) ||
+            includesQuery(book.author ?? '', query),
+        )
+        .slice(0, limit)
+        .map((book) =>
+          bookSearchResultSchema.parse({
+            kind: 'book',
+            id: book.id,
+            title: book.title,
+            author: book.author,
+            format: book.format,
+          }),
+        );
+    } catch (error) {
+      throw new AppError('SEARCH_FAILED', { cause: error });
+    }
   }
 
   async searchNotes(value: string, limit = 20): Promise<NoteSearchResult[]> {
@@ -130,8 +157,18 @@ export class WebSearchRepository implements SearchRepository {
             kind: 'book-content',
             bookId: chapter.bookId,
             bookTitle: bookTitles.get(chapter.bookId) ?? '未知书籍',
-            chapterHref: chapter.chapterHref,
-            chapterTitle: chapter.chapterTitle,
+            sectionLabel: chapter.chapterTitle,
+            locator: chapter.chapterHref.startsWith('pdf-page:')
+              ? {
+                  version: 1,
+                  format: 'pdf',
+                  pageIndex: Number(chapter.chapterHref.slice(9)),
+                }
+              : {
+                  version: 1,
+                  format: 'epub',
+                  chapterHref: chapter.chapterHref,
+                },
             excerpt: excerpt(chapter.text, query),
           }),
         );

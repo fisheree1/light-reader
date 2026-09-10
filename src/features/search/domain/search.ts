@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { bookLocatorSchema } from '../../../reader-engines/types';
+import { bookFormatSchema } from '../../library/domain/book';
 
 const entityIdSchema = z.string().trim().min(1).max(128);
 
@@ -37,9 +38,17 @@ export const bookContentSearchResultSchema = z.object({
   kind: z.literal('book-content'),
   bookId: entityIdSchema,
   bookTitle: z.string().trim().min(1).max(2_000),
-  chapterHref: z.string().trim().min(1).max(4_000),
-  chapterTitle: z.string().trim().min(1).max(2_000),
+  sectionLabel: z.string().trim().min(1).max(2_000),
+  locator: bookLocatorSchema,
   excerpt: z.string().max(4_000),
+});
+
+export const bookSearchResultSchema = z.object({
+  kind: z.literal('book'),
+  id: entityIdSchema,
+  title: z.string().trim().min(1).max(2_000),
+  author: z.string().trim().min(1).max(2_000).nullable(),
+  format: bookFormatSchema,
 });
 
 export type NoteSearchResult = z.infer<typeof noteSearchResultSchema>;
@@ -49,9 +58,11 @@ export type AnnotationSearchResult = z.infer<
 export type BookContentSearchResult = z.infer<
   typeof bookContentSearchResultSchema
 >;
+export type BookSearchResult = z.infer<typeof bookSearchResultSchema>;
 
 export interface LocalSearchResults {
   annotations: AnnotationSearchResult[];
+  books: BookSearchResult[];
   bookContent: BookContentSearchResult[];
   indexFailures: number;
   notes: NoteSearchResult[];

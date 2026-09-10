@@ -5,6 +5,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Search,
+  Sparkles,
   Settings,
   Sun,
 } from 'lucide-react';
@@ -18,6 +19,7 @@ const navigationItems = [
   { icon: BookOpen, label: '书架', to: '/library' },
   { icon: NotebookPen, label: '笔记', to: '/notes' },
   { icon: Search, label: '搜索', to: '/search' },
+  { icon: Sparkles, label: '研究', to: '/research' },
   { icon: Settings, label: '设置', to: '/settings' },
 ] as const;
 

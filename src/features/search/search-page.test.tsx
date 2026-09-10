@@ -11,6 +11,7 @@ import { SearchPage } from './search-page';
 
 function createServices() {
   const repository: SearchRepository = {
+    searchBooks: () => Promise.resolve([]),
     searchNotes: (query) =>
       Promise.resolve(
         query === '中文搜索'
@@ -74,7 +75,7 @@ describe('SearchPage', () => {
 
     await user.click(screen.getByRole('button', { name: '索引维护' }));
     expect(await screen.findByRole('status')).toHaveTextContent(
-      '已重建索引：0 本 EPUB，全部成功',
+      '已重建索引：0 本图书，全部成功',
     );
   });
 });

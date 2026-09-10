@@ -15,7 +15,7 @@ export const agentToolCallSchema = z.discriminatedUnion('name', [
     name: z.literal('search_books'),
     arguments: z.object({
       query: bookQuestionSchema,
-      bookIds: z.array(idSchema).min(1).max(1),
+      bookIds: z.array(idSchema).min(1).max(8),
       limit: z.number().int().min(1).max(8),
     }),
   }),

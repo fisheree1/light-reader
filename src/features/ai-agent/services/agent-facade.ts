@@ -20,6 +20,7 @@ import {
   type BookQaEvent,
   type BookQaRunResult,
 } from './book-qa-runner';
+import { ResearchRunner, type ResearchEvent } from './research-runner';
 
 export class AgentFacade {
   private readonly consentService: AgentConsentService;
@@ -27,6 +28,7 @@ export class AgentFacade {
   private readonly runner: AgentRunner;
   private readonly settingsRepository: AiSettingsRepository;
   private readonly bookQaRunner: BookQaRunner | null;
+  private readonly researchRunner: ResearchRunner | null;
 
   constructor(
     settingsRepository: AiSettingsRepository,
@@ -34,12 +36,25 @@ export class AgentFacade {
     consentService = new AgentConsentService(),
     runner = new AgentRunner(provider),
     bookQaRunner: BookQaRunner | null = null,
+    researchRunner: ResearchRunner | null = null,
   ) {
     this.bookQaRunner = bookQaRunner;
+    this.researchRunner = researchRunner;
     this.consentService = consentService;
     this.provider = provider;
     this.runner = runner;
     this.settingsRepository = settingsRepository;
+  }
+
+  async runResearch(
+    books: Book[],
+    question: string,
+    signal: AbortSignal,
+    onEvent?: (event: ResearchEvent) => void,
+  ): Promise<AgentRunResult> {
+    if (!this.researchRunner) throw new AppError('AI_REQUEST_FAILED');
+    const settings = await this.requireAvailableSettings();
+    return this.researchRunner.run(books, question, settings, signal, onEvent);
   }
 
   async runBookQuestion(

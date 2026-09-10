@@ -164,6 +164,18 @@ class FakeDialog implements FileDialogAdapter {
   selectEpub(): Promise<SelectedBookFile | null> {
     return Promise.resolve(this.selection);
   }
+
+  selectBooks(): Promise<SelectedBookFile[] | null> {
+    return Promise.resolve(
+      this.selection
+        ? [
+            this.selection,
+            { fileName: 'duplicate.epub', path: '/selected/duplicate.epub' },
+            { fileName: 'unsupported.txt', path: '/selected/unsupported.txt' },
+          ]
+        : null,
+    );
+  }
 }
 
 class FakeHasher implements ContentHasher {
@@ -210,6 +222,18 @@ function createSubject() {
 }
 
 describe('BookImportService', () => {
+  it('continues a batch when files are duplicated or invalid', async () => {
+    const { repository, subject } = createSubject();
+
+    await expect(subject.importBooks()).resolves.toMatchObject({
+      status: 'completed',
+      created: [{ title: '新图书' }],
+      duplicates: [{ title: '新图书' }],
+      failed: [{ fileName: 'unsupported.txt' }],
+    });
+    expect(repository.books).toHaveLength(1);
+  });
+
   it('imports a valid EPUB and creates its repository record', async () => {
     const { repository, subject } = createSubject();
 

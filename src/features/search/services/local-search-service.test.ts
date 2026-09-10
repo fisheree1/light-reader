@@ -6,6 +6,7 @@ import type {
   AnnotationSearchResult,
   BookContentChapter,
   BookContentSearchResult,
+  BookSearchResult,
   NoteSearchResult,
 } from '../domain/search';
 import type { EpubContentParser } from './epub-content-parser';
@@ -67,6 +68,22 @@ class MemorySearchRepository implements SearchRepository {
   rebuildCount = 0;
   searchCount = 0;
 
+  searchBooks(query: string): Promise<BookSearchResult[]> {
+    return Promise.resolve(
+      query === 'book-1'
+        ? [
+            {
+              kind: 'book',
+              id: 'book-1',
+              title: 'Book book-1',
+              author: null,
+              format: 'epub',
+            },
+          ]
+        : [],
+    );
+  }
+
   searchNotes(query: string): Promise<NoteSearchResult[]> {
     this.searchCount += 1;
     return Promise.resolve(
@@ -114,8 +131,18 @@ class MemorySearchRepository implements SearchRepository {
           kind: 'book-content' as const,
           bookId,
           bookTitle: `Book ${bookId}`,
-          chapterHref: chapter.chapterHref,
-          chapterTitle: chapter.chapterTitle,
+          sectionLabel: chapter.chapterTitle,
+          locator: chapter.chapterHref.startsWith('pdf-page:')
+            ? {
+                version: 1 as const,
+                format: 'pdf' as const,
+                pageIndex: Number(chapter.chapterHref.slice(9)),
+              }
+            : {
+                version: 1 as const,
+                format: 'epub' as const,
+                chapterHref: chapter.chapterHref,
+              },
           excerpt: chapter.text,
         })),
     );
@@ -173,6 +200,7 @@ describe('LocalSearchService', () => {
 
     await expect(service.search('  ')).resolves.toEqual({
       annotations: [],
+      books: [],
       bookContent: [],
       indexFailures: 0,
       notes: [],
@@ -180,6 +208,28 @@ describe('LocalSearchService', () => {
     });
     expect(repository.searchCount).toBe(0);
     expect(repository.indexed.size).toBe(0);
+  });
+
+  it('indexes PDF pages and returns a page locator', async () => {
+    const repository = new MemorySearchRepository();
+    const pdf = book('pdf-1');
+    pdf.format = 'pdf';
+    pdf.filePath = 'light-reader/books/pdf-1/book.pdf';
+    const service = new LocalSearchService(
+      repository,
+      new MemoryBookRepository([pdf]),
+      new FakeSource(),
+      new FakeParser(),
+      {
+        parse: () => Promise.resolve([{ pageIndex: 4, text: 'PDF 本地检索' }]),
+      },
+    );
+
+    const result = await service.search('PDF');
+    expect(result.bookContent[0]).toMatchObject({
+      sectionLabel: 'PDF 第 5 页',
+      locator: { format: 'pdf', pageIndex: 4 },
+    });
   });
 
   it('indexes missing EPUB content and searches Chinese and English locally', async () => {

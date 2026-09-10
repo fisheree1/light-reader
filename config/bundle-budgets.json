@@ -18,10 +18,16 @@
       "maxGzipBytes": 150000
     },
     {
-      "name": "notes services",
-      "pattern": "^notes-services-[^.]+\\.js$",
+      "name": "shared data services",
+      "pattern": "^(?:notes|library)-services-[^.]+\\.js$",
       "maxBytes": 290000,
       "maxGzipBytes": 92000
+    },
+    {
+      "name": "research page",
+      "pattern": "^research-page-[^.]+\\.js$",
+      "maxBytes": 12000,
+      "maxGzipBytes": 5000
     },
     {
       "name": "PDF runtime",

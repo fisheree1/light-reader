@@ -1,5 +1,6 @@
 import {
   BookText,
+  Library,
   Highlighter,
   NotebookPen,
   RefreshCw,
@@ -12,6 +13,7 @@ import { Button } from '../../components/ui/button';
 import type {
   AnnotationSearchResult,
   BookContentSearchResult,
+  BookSearchResult,
   NoteSearchResult,
 } from './domain/search';
 import { useLocalSearch } from './hooks/use-local-search';
@@ -82,7 +84,8 @@ export function SearchPage({ services = searchServices }: SearchPageProps) {
   const navigate = useNavigate();
   const search = useLocalSearch(services.localSearch);
   const total = search.results
-    ? search.results.notes.length +
+    ? search.results.books.length +
+      search.results.notes.length +
       search.results.annotations.length +
       search.results.bookContent.length
     : 0;
@@ -104,14 +107,13 @@ export function SearchPage({ services = searchServices }: SearchPageProps) {
     void navigate(`/reader/${encodeURIComponent(result.bookId)}`, {
       state: {
         readerNavigation: {
-          locator: {
-            version: 1,
-            format: 'epub',
-            chapterHref: result.chapterHref,
-          },
+          locator: result.locator,
         },
       },
     });
+  };
+  const openBook = (result: BookSearchResult) => {
+    void navigate(`/reader/${encodeURIComponent(result.id)}`);
   };
 
   return (
@@ -119,7 +121,7 @@ export function SearchPage({ services = searchServices }: SearchPageProps) {
       <header className="mb-6">
         <h1 className="text-2xl font-semibold">搜索</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          在本机搜索笔记、高亮和已导入 EPUB 的章节正文。
+          在本机搜索书籍、笔记、高亮，以及 EPUB 和 PDF 正文。
         </p>
       </header>
 
@@ -182,7 +184,7 @@ export function SearchPage({ services = searchServices }: SearchPageProps) {
           className="bg-surface mb-5 rounded-md border px-4 py-3 text-sm"
           role="status"
         >
-          已重建索引：{search.rebuildResult.indexedBooks} 本 EPUB
+          已重建索引：{search.rebuildResult.indexedBooks} 本图书
           {search.rebuildResult.failedBooks > 0
             ? `，${String(search.rebuildResult.failedBooks)} 本失败`
             : '，全部成功'}
@@ -191,7 +193,7 @@ export function SearchPage({ services = searchServices }: SearchPageProps) {
 
       {search.results?.indexFailures ? (
         <p className="text-destructive mb-5 text-sm" role="status">
-          {search.results.indexFailures} 本 EPUB
+          {search.results.indexFailures} 本图书
           暂时无法建立正文索引，可尝试重建。
         </p>
       ) : null}
@@ -201,7 +203,7 @@ export function SearchPage({ services = searchServices }: SearchPageProps) {
           aria-live="polite"
           className="text-muted-foreground py-16 text-center"
         >
-          正在本地搜索并准备 EPUB 索引…
+          正在本地搜索并准备图书索引…
         </p>
       ) : search.phase === 'idle' ? (
         <EmptyState
@@ -218,6 +220,24 @@ export function SearchPage({ services = searchServices }: SearchPageProps) {
       ) : search.results ? (
         <div className="space-y-8" aria-live="polite">
           <p className="text-muted-foreground text-sm">找到 {total} 条结果</p>
+          <ResultSection
+            count={search.results.books.length}
+            icon={<Library aria-hidden="true" size={16} />}
+            title="书籍"
+          >
+            {search.results.books.map((result) => (
+              <li key={result.id}>
+                <ResultButton
+                  description={result.author ?? '未知作者'}
+                  meta={result.format.toUpperCase()}
+                  onClick={() => {
+                    openBook(result);
+                  }}
+                  title={result.title}
+                />
+              </li>
+            ))}
+          </ResultSection>
           <ResultSection
             count={search.results.notes.length}
             icon={<NotebookPen aria-hidden="true" size={16} />}
@@ -259,17 +279,17 @@ export function SearchPage({ services = searchServices }: SearchPageProps) {
           <ResultSection
             count={search.results.bookContent.length}
             icon={<BookText aria-hidden="true" size={16} />}
-            title="EPUB 正文"
+            title="图书正文"
           >
             {search.results.bookContent.map((result) => (
-              <li key={`${result.bookId}:${result.chapterHref}`}>
+              <li key={`${result.bookId}:${JSON.stringify(result.locator)}`}>
                 <ResultButton
                   description={result.excerpt}
                   meta={result.bookTitle}
                   onClick={() => {
                     openBookContent(result);
                   }}
-                  title={result.chapterTitle}
+                  title={result.sectionLabel}
                 />
               </li>
             ))}

@@ -35,9 +35,11 @@ export class AiDraftService {
       task: run.task,
       action: run.action,
       title:
-        run.task === 'book-qa'
-          ? '本书问答：AI 阅读草稿'
-          : `${selectionAiActionLabels[run.action]}：AI 阅读草稿`,
+        run.task === 'research'
+          ? '跨书研究：AI 阅读草稿'
+          : run.task === 'book-qa'
+            ? '本书问答：AI 阅读草稿'
+            : `${selectionAiActionLabels[run.action]}：AI 阅读草稿`,
       content,
       citations,
       sourceSnapshotHash: hashAgentText(sourceText),

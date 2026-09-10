@@ -23,6 +23,7 @@ export type BookIndexingProgress = z.infer<typeof bookIndexingProgressSchema>;
 
 export interface BookRetrievalOptions {
   onProgress?: (progress: BookIndexingProgress) => void;
+  semanticTerms?: string[];
   signal?: AbortSignal;
 }
 

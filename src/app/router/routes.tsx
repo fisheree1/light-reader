@@ -28,6 +28,14 @@ export const routes: RouteObject[] = [
           return { Component: SearchPage };
         },
       },
+      {
+        path: 'research',
+        lazy: async () => {
+          const { ResearchPage } =
+            await import('../../features/ai-agent/research/research-page');
+          return { Component: ResearchPage };
+        },
+      },
       { path: 'settings', element: <SettingsPage /> },
       { path: '*', element: <Navigate replace to="/library" /> },
     ],

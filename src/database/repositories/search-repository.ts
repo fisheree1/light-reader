@@ -2,10 +2,12 @@ import type {
   AnnotationSearchResult,
   BookContentChapter,
   BookContentSearchResult,
+  BookSearchResult,
   NoteSearchResult,
 } from '../../features/search/domain/search';
 
 export interface SearchRepository {
+  searchBooks(query: string, limit?: number): Promise<BookSearchResult[]>;
   searchNotes(query: string, limit?: number): Promise<NoteSearchResult[]>;
   searchAnnotations(
     query: string,

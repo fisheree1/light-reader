@@ -39,11 +39,16 @@ describe('search record mapping', () => {
       mapBookContentSearchRecord({
         book_id: 'book-1',
         book_title: '测试 EPUB',
+        book_format: 'epub',
         chapter_href: 'two.xhtml',
         chapter_title: '第二章',
         excerpt: '大量文本中的关键词',
       }),
-    ).toMatchObject({ kind: 'book-content', chapterTitle: '第二章' });
+    ).toMatchObject({
+      kind: 'book-content',
+      sectionLabel: '第二章',
+      locator: { format: 'epub', chapterHref: 'two.xhtml' },
+    });
   });
 
   it('rejects a corrupt annotation locator', () => {

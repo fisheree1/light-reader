@@ -32,16 +32,16 @@ export function extractCitedPassageIndexes(
 export class CitationValidator {
   create(
     run: AgentRun,
-    book: Book,
+    valueBooks: Book | Book[],
     passages: RetrievedPassage[],
     output: string,
   ): AgentCitation[] {
+    const books = Array.isArray(valueBooks) ? valueBooks : [valueBooks];
+    const byId = new Map(books.map((book) => [book.id, book]));
     return extractCitedPassageIndexes(output, passages.length).map((index) => {
       const passage = passages[index];
-      if (
-        passage.bookId !== book.id ||
-        passage.sourceFileHash !== book.fileHash
-      ) {
+      const book = byId.get(passage.bookId);
+      if (book?.fileHash !== passage.sourceFileHash) {
         throw new Error('Cited passage no longer matches the current book.');
       }
       return agentCitationSchema.parse({

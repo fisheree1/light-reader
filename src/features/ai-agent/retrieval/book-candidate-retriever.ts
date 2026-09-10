@@ -53,6 +53,7 @@ export interface BookCandidateRetriever {
     question: string,
     limit: number,
     signal?: AbortSignal,
+    semanticTerms?: string[],
   ): Promise<BookChunkMatch[]>;
 }
 
@@ -67,17 +68,23 @@ function uniqueTerms(values: string[]): string[] {
   );
 }
 
-export function buildBookQueryPlan(question: string): BookQueryPlan {
+export function buildBookQueryPlan(
+  question: string,
+  semanticTerms: string[] = [],
+): BookQueryPlan {
   const normalizedQuestion = normalizeExpression(question);
   const lexicalTerms = extractBookQueryTerms(question);
   const lexicalSet = new Set(lexicalTerms);
-  const expandedTerms = semanticExpressionGroups.flatMap((group) =>
-    group.expressions.some((expression) =>
-      normalizedQuestion.includes(expression),
-    )
-      ? group.terms
-      : [],
-  );
+  const expandedTerms = [
+    ...semanticTerms,
+    ...semanticExpressionGroups.flatMap((group) =>
+      group.expressions.some((expression) =>
+        normalizedQuestion.includes(expression),
+      )
+        ? group.terms
+        : [],
+    ),
+  ];
   return {
     lexicalTerms,
     expandedTerms: uniqueTerms(expandedTerms).filter(
@@ -150,17 +157,27 @@ export class LocalHybridBookCandidateRetriever implements BookCandidateRetriever
     question: string,
     limit: number,
     signal?: AbortSignal,
+    semanticTerms: string[] = [],
   ): Promise<BookChunkMatch[]> {
     throwIfBookIndexingAborted(signal);
-    const query = buildBookQueryPlan(question);
-    if (query.lexicalTerms.length === 0) return [];
+    const query = buildBookQueryPlan(question, semanticTerms);
+    if (query.lexicalTerms.length === 0 && query.expandedTerms.length === 0) {
+      return [];
+    }
     const recallLimit = Math.max(
       1,
       Math.min(maximumRecallCount, Math.max(limit, limit * 2)),
     );
-    const searches = [
-      this.repository.searchBookChunks(bookId, query.lexicalTerms, recallLimit),
-    ];
+    const searches: Promise<BookChunkMatch[]>[] = [];
+    if (query.lexicalTerms.length > 0) {
+      searches.push(
+        this.repository.searchBookChunks(
+          bookId,
+          query.lexicalTerms,
+          recallLimit,
+        ),
+      );
+    }
     if (query.expandedTerms.length > 0) {
       searches.push(
         this.repository.searchBookChunks(

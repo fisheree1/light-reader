@@ -69,6 +69,27 @@ export function useLibrary(services: LibraryServices) {
     setIsImporting(true);
     setNotice(null);
     try {
+      if (services.importer.importBooks) {
+        const result = await services.importer.importBooks();
+        if (result.status === 'cancelled') return;
+        if (result.created.length > 0) await loadBooks();
+        const summary = `批量导入完成：新增 ${String(result.created.length)} 本，重复 ${String(result.duplicates.length)} 本，失败 ${String(result.failed.length)} 本。`;
+        const firstFailure = result.failed.at(0);
+        setNotice({
+          kind:
+            result.failed.length === 0
+              ? result.created.length > 0
+                ? 'success'
+                : 'info'
+              : result.created.length > 0 || result.duplicates.length > 0
+                ? 'info'
+                : 'error',
+          message: firstFailure
+            ? `${summary} ${firstFailure.fileName}：${firstFailure.message}`
+            : summary,
+        });
+        return;
+      }
       const result = services.importer.importBook
         ? await services.importer.importBook()
         : await services.importer.importEpub();

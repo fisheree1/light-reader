@@ -36,7 +36,11 @@ export const agentRunStatusSchema = z.enum([
 
 export type AgentRunStatus = z.infer<typeof agentRunStatusSchema>;
 
-export const agentTaskSchema = z.enum(['selection-assist', 'book-qa']);
+export const agentTaskSchema = z.enum([
+  'selection-assist',
+  'book-qa',
+  'research',
+]);
 
 export const agentRunSchema = z.object({
   schemaVersion: z.literal(1),
@@ -79,7 +83,7 @@ export const agentCapabilityGrantSchema = z.object({
   model: z.string().trim().min(1).max(200),
   remoteProcessingAllowed: z.literal(false),
   allowedTools: z.array(agentToolNameSchema).max(8),
-  allowedBookIds: z.array(z.string().trim().min(1).max(128)).max(1),
+  allowedBookIds: z.array(z.string().trim().min(1).max(128)).max(8),
   allowedNoteIds: z.array(z.string().trim().min(1).max(128)).max(50),
   allowedAnnotationIds: z.array(z.string().trim().min(1).max(128)).max(100),
   maxCharsPerToolResult: z.number().int().positive().max(12_000),

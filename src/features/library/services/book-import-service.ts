@@ -1,5 +1,8 @@
 import type { BookRepository } from '../../../database/repositories/book-repository';
-import type { FileDialogAdapter } from '../../../platform/dialog/file-dialog-adapter';
+import type {
+  FileDialogAdapter,
+  SelectedBookFile,
+} from '../../../platform/dialog/file-dialog-adapter';
 import type { ContentHasher } from '../../../platform/crypto/content-hasher';
 import type {
   BookFileStorage,
@@ -21,8 +24,23 @@ export type ImportBookResult =
   | { status: 'created'; book: Book }
   | { status: 'duplicate'; book: Book };
 
+export interface ImportBookFailure {
+  fileName: string;
+  message: string;
+}
+
+export type ImportBooksResult =
+  | { status: 'cancelled' }
+  | {
+      status: 'completed';
+      created: Book[];
+      duplicates: Book[];
+      failed: ImportBookFailure[];
+    };
+
 export interface BookImporter {
   importBook?(): Promise<ImportBookResult>;
+  importBooks?(): Promise<ImportBooksResult>;
   importEpub(): Promise<ImportBookResult>;
 }
 
@@ -71,6 +89,46 @@ export class BookImportService implements BookImporter {
       throw new AppError('UNKNOWN', { cause: error });
     }
     if (!selected) return { status: 'cancelled' };
+    return this.importSelectedBook(selected);
+  }
+
+  async importBooks(): Promise<ImportBooksResult> {
+    let selected: SelectedBookFile[] | null;
+    try {
+      if (this.dependencies.dialog.selectBooks) {
+        selected = await this.dependencies.dialog.selectBooks();
+      } else {
+        const single = this.dependencies.dialog.selectBook
+          ? await this.dependencies.dialog.selectBook()
+          : await this.dependencies.dialog.selectEpub();
+        selected = single ? [single] : null;
+      }
+    } catch (error) {
+      throw new AppError('UNKNOWN', { cause: error });
+    }
+    if (!selected) return { status: 'cancelled' };
+
+    const created: Book[] = [];
+    const duplicates: Book[] = [];
+    const failed: ImportBookFailure[] = [];
+    for (const file of selected) {
+      try {
+        const result = await this.importSelectedBook(file);
+        if (result.status === 'created') created.push(result.book);
+        else duplicates.push(result.book);
+      } catch (error) {
+        failed.push({
+          fileName: file.fileName,
+          message: asAppError(error, 'UNKNOWN').userMessage,
+        });
+      }
+    }
+    return { status: 'completed', created, duplicates, failed };
+  }
+
+  private async importSelectedBook(
+    selected: SelectedBookFile,
+  ): Promise<Exclude<ImportBookResult, { status: 'cancelled' }>> {
     const format = detectBookFormat(selected.fileName);
 
     let source: Uint8Array;

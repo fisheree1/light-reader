@@ -10,7 +10,7 @@
 | 书架 | [`library-management.md`](library-management.md) | 收藏、标签、排序和安全删除事务                    |
 | 阅读 | [`reader-engine.md`](reader-engine.md)           | Foliate/PDF.js、locator、交互、生命周期和内容安全 |
 | 笔记 | [`notes-editor.md`](notes-editor.md)             | Tiptap schema、引用块、自动保存和恢复             |
-| 搜索 | [`local-search.md`](local-search.md)             | FTS5、正文抽取、索引重建和 AI 单书检索索引        |
+| 搜索 | [`local-search.md`](local-search.md)             | EPUB/PDF 全文搜索、AI 索引和跨书研究              |
 | 导出 | [`export-formats.md`](export-formats.md)         | 笔记与批注的稳定导出格式                          |
 | 备份 | [`data-backup.md`](data-backup.md)               | 数据库/完整备份、预检、恢复和迁移快照             |
 | 测试 | [`testing.md`](testing.md)                       | CI、覆盖率基线和交付门禁                          |
@@ -33,6 +33,7 @@
 - [`adr/0001-local-ollama-provider.md`](adr/0001-local-ollama-provider.md)
 - [`adr/0002-local-rag-readonly-agent.md`](adr/0002-local-rag-readonly-agent.md)
 - [`adr/0003-local-hybrid-lexical-retrieval.md`](adr/0003-local-hybrid-lexical-retrieval.md)
+- [`adr/0004-local-semantic-expansion-and-cross-book-research.md`](adr/0004-local-semantic-expansion-and-cross-book-research.md)
 
 ## 维护约定
 
