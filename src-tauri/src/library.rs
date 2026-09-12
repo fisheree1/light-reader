@@ -40,44 +40,52 @@ async fn delete_book_transaction(
         return Err("invalid book id".to_string());
     }
     let mut connection = connect(path).await?;
-    let mut transaction = connection
-        .begin()
-        .await
-        .map_err(|error| error.to_string())?;
+    let result = async {
+        let mut transaction = connection
+            .begin()
+            .await
+            .map_err(|error| error.to_string())?;
 
-    for update in note_updates {
-        if update.id.is_empty() || update.id.len() > 128 {
-            return Err("invalid note id".to_string());
+        for update in note_updates {
+            if update.id.is_empty() || update.id.len() > 128 {
+                return Err("invalid note id".to_string());
+            }
+            serde_json::from_str::<serde_json::Value>(&update.content_json)
+                .map_err(|_| "invalid note document".to_string())?;
+            let result = sqlx::query(
+                "UPDATE notes SET content_json = ?, plain_text = ?, updated_at = ? WHERE id = ?",
+            )
+            .bind(update.content_json)
+            .bind(update.plain_text)
+            .bind(update.updated_at)
+            .bind(update.id)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| error.to_string())?;
+            if result.rows_affected() != 1 {
+                return Err("note update target does not exist".to_string());
+            }
         }
-        serde_json::from_str::<serde_json::Value>(&update.content_json)
-            .map_err(|_| "invalid note document".to_string())?;
-        let result = sqlx::query(
-            "UPDATE notes SET content_json = ?, plain_text = ?, updated_at = ? WHERE id = ?",
-        )
-        .bind(update.content_json)
-        .bind(update.plain_text)
-        .bind(update.updated_at)
-        .bind(update.id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(|error| error.to_string())?;
-        if result.rows_affected() != 1 {
-            return Err("note update target does not exist".to_string());
-        }
-    }
 
-    let deleted = sqlx::query("DELETE FROM books WHERE id = ?")
-        .bind(book_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(|error| error.to_string())?;
-    if deleted.rows_affected() != 1 {
-        return Err("book delete target does not exist".to_string());
+        let deleted = sqlx::query("DELETE FROM books WHERE id = ?")
+            .bind(book_id)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| error.to_string())?;
+        if deleted.rows_affected() != 1 {
+            return Err("book delete target does not exist".to_string());
+        }
+        transaction
+            .commit()
+            .await
+            .map_err(|error| error.to_string())
     }
-    transaction
-        .commit()
-        .await
-        .map_err(|error| error.to_string())
+    .await;
+    let close_result = connection.close().await.map_err(|error| error.to_string());
+    match result {
+        Err(error) => Err(error),
+        Ok(()) => close_result,
+    }
 }
 
 #[tauri::command(rename_all = "camelCase")]

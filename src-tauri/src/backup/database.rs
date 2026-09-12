@@ -12,6 +12,20 @@ pub(super) async fn connect(path: &Path, create: bool) -> Result<SqliteConnectio
     .map_err(|error| error.to_string())
 }
 
+pub(super) async fn close_connection<T>(
+    connection: SqliteConnection,
+    result: Result<T, String>,
+) -> Result<T, String> {
+    let close_result = connection.close().await.map_err(|error| error.to_string());
+    match result {
+        Err(error) => Err(error),
+        Ok(value) => {
+            close_result?;
+            Ok(value)
+        }
+    }
+}
+
 async fn count(connection: &mut SqliteConnection, table: &str) -> Result<i64, String> {
     let query = match table {
         "annotations" => "SELECT COUNT(*) FROM annotations",
@@ -33,6 +47,7 @@ pub(super) async fn inspect_database(path: &Path) -> Result<DatabaseBackupSummar
         return Err("backup database does not exist".to_string());
     }
     let mut connection = connect(path, false).await?;
+    let result = async {
     let integrity: String = sqlx::query_scalar("PRAGMA integrity_check")
         .fetch_one(&mut connection)
         .await
@@ -96,7 +111,7 @@ pub(super) async fn inspect_database(path: &Path) -> Result<DatabaseBackupSummar
             .map_err(|error| error.to_string())?;
     }
 
-    Ok(DatabaseBackupSummary {
+    let summary = DatabaseBackupSummary {
         counts: BackupCounts {
             annotations: count(&mut connection, "annotations").await?,
             books: count(&mut connection, "books").await?,
@@ -106,7 +121,11 @@ pub(super) async fn inspect_database(path: &Path) -> Result<DatabaseBackupSummar
             reading_sessions: count(&mut connection, "reading_sessions").await?,
         },
         schema_version,
-    })
+    };
+    Ok(summary)
+    }
+    .await;
+    close_connection(connection, result).await
 }
 
 pub(super) async fn current_schema_version(path: &Path) -> Result<i64, String> {
@@ -114,31 +133,42 @@ pub(super) async fn current_schema_version(path: &Path) -> Result<i64, String> {
         return Ok(0);
     }
     let mut connection = connect(path, false).await?;
-    let migration_table_exists: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = '_sqlx_migrations'",
-    )
-    .fetch_one(&mut connection)
-    .await
-    .map_err(|error| error.to_string())?;
-    if migration_table_exists == 0 {
-        return Ok(0);
-    }
-    sqlx::query_scalar("SELECT COALESCE(MAX(version), 0) FROM _sqlx_migrations WHERE success = 1")
+    let result = async {
+        let migration_table_exists: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = '_sqlx_migrations'",
+        )
         .fetch_one(&mut connection)
         .await
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+        if migration_table_exists == 0 {
+            return Ok(0);
+        }
+        let version = sqlx::query_scalar(
+            "SELECT COALESCE(MAX(version), 0) FROM _sqlx_migrations WHERE success = 1",
+        )
+        .fetch_one(&mut connection)
+        .await
+        .map_err(|error| error.to_string())?;
+        Ok(version)
+    }
+    .await;
+    close_connection(connection, result).await
 }
 
 pub(super) async fn verify_sqlite_integrity(path: &Path) -> Result<(), String> {
     let mut connection = connect(path, false).await?;
-    let integrity: String = sqlx::query_scalar("PRAGMA integrity_check")
-        .fetch_one(&mut connection)
-        .await
-        .map_err(|error| error.to_string())?;
-    if integrity != "ok" {
-        return Err("database safety snapshot failed integrity check".to_string());
+    let result = async {
+        let integrity: String = sqlx::query_scalar("PRAGMA integrity_check")
+            .fetch_one(&mut connection)
+            .await
+            .map_err(|error| error.to_string())?;
+        if integrity != "ok" {
+            return Err("database safety snapshot failed integrity check".to_string());
+        }
+        Ok(())
     }
-    Ok(())
+    .await;
+    close_connection(connection, result).await
 }
 
 pub(super) async fn create_snapshot(source: &Path, destination: &Path) -> Result<(), String> {
@@ -148,16 +178,17 @@ pub(super) async fn create_snapshot(source: &Path, destination: &Path) -> Result
     if destination.exists() {
         fs::remove_file(destination).map_err(|error| error.to_string())?;
     }
-    let mut connection = connect(source, false).await?;
     let destination = destination
         .to_str()
         .ok_or_else(|| "backup path is not valid UTF-8".to_string())?;
-    sqlx::query("VACUUM INTO ?")
+    let mut connection = connect(source, false).await?;
+    let result = sqlx::query("VACUUM INTO ?")
         .bind(destination)
         .execute(&mut connection)
         .await
-        .map_err(|error| error.to_string())?;
-    Ok(())
+        .map(|_| ())
+        .map_err(|error| error.to_string());
+    close_connection(connection, result).await
 }
 
 async fn attached_count(
@@ -210,6 +241,7 @@ pub(super) async fn restore_database(
 ) -> Result<DatabaseBackupSummary, String> {
     let source_summary = inspect_database(source).await?;
     let mut connection = connect(destination, false).await?;
+    let result = async {
     connection
         .execute("PRAGMA foreign_keys = ON")
         .await
@@ -282,4 +314,7 @@ pub(super) async fn restore_database(
         .map_err(|error| error.to_string())?;
     connection.execute("DETACH DATABASE backup").await.ok();
     Ok(source_summary)
+    }
+    .await;
+    close_connection(connection, result).await
 }
