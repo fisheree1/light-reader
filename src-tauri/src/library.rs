@@ -158,7 +158,10 @@ mod tests {
     async fn deletes_pdf_and_updates_note_in_one_connection_transaction() {
         let path = temporary_path("delete-pdf");
         let mut inspection = seeded_database(&path).await;
-        drop(inspection);
+        inspection
+            .close()
+            .await
+            .expect("seed database should close");
 
         delete_book_transaction(
             &path,
@@ -187,7 +190,10 @@ mod tests {
             .await
             .expect("note should remain");
         assert_eq!((books, annotations, note.as_str()), (0, 0, "updated"));
-        drop(inspection);
+        inspection
+            .close()
+            .await
+            .expect("inspection database should close");
         std::fs::remove_file(path).expect("test database should be removable");
     }
 
@@ -195,7 +201,10 @@ mod tests {
     async fn rolls_back_note_updates_when_the_book_is_missing() {
         let path = temporary_path("delete-rollback");
         let mut inspection = seeded_database(&path).await;
-        drop(inspection);
+        inspection
+            .close()
+            .await
+            .expect("seed database should close");
 
         let result = delete_book_transaction(
             &path,
@@ -216,7 +225,10 @@ mod tests {
             .await
             .expect("note should remain");
         assert_eq!(note, "old");
-        drop(inspection);
+        inspection
+            .close()
+            .await
+            .expect("inspection database should close");
         std::fs::remove_file(path).expect("test database should be removable");
     }
 }
