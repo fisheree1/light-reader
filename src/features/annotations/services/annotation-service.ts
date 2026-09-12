@@ -12,6 +12,7 @@ import {
   type AnnotationColor,
 } from '../domain/annotation';
 import { AppError, asAppError } from '../../../lib/app-error';
+import { createUuid } from '../../../lib/id';
 
 export interface AnnotationRestoreResult {
   annotations: Annotation[];
@@ -39,7 +40,7 @@ export class AnnotationService {
   constructor(
     repository: AnnotationRepository,
     reader: EbookReader,
-    idFactory: IdFactory = () => crypto.randomUUID(),
+    idFactory: IdFactory = createUuid,
     now: Now = Date.now,
   ) {
     this.repository = repository;

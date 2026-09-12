@@ -2,6 +2,7 @@ import type { BookRepository } from '../../../database/repositories/book-reposit
 import type { LibraryRepository } from '../../../database/repositories/library-repository';
 import type { NoteRepository } from '../../../database/repositories/note-repository';
 import { AppError, asAppError } from '../../../lib/app-error';
+import { createUuid } from '../../../lib/id';
 import type { BookFileDeletionStorage } from '../../../storage/book-file-storage';
 import {
   bookDeletionModeSchema,
@@ -39,7 +40,7 @@ export class LibraryManagementService implements LibraryManagement {
     bookRepository: BookRepository,
     noteRepository: NoteRepository,
     fileStorage: BookFileDeletionStorage,
-    createId: () => string = () => crypto.randomUUID(),
+    createId: () => string = createUuid,
   ) {
     this.libraryRepository = libraryRepository;
     this.bookRepository = bookRepository;

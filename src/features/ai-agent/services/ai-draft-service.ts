@@ -1,3 +1,4 @@
+import { createUuid } from '../../../lib/id';
 import {
   aiDraftSchema,
   hashAgentText,
@@ -14,10 +15,7 @@ export class AiDraftService {
   private readonly createId: IdFactory;
   private readonly now: Clock;
 
-  constructor(
-    createId: IdFactory = () => crypto.randomUUID(),
-    now: Clock = () => Date.now(),
-  ) {
+  constructor(createId: IdFactory = createUuid, now: Clock = () => Date.now()) {
     this.createId = createId;
     this.now = now;
   }

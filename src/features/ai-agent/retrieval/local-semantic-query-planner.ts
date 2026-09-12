@@ -1,6 +1,7 @@
 import { agentModelRequestSchema } from '../../../platform/ai/model-provider-gateway';
 import type { ModelProviderGateway } from '../../../platform/ai/model-provider-gateway';
 import { isAppError } from '../../../lib/app-error';
+import { createUuid } from '../../../lib/id';
 import type { AiSettings } from '../domain/ai-settings';
 import { bookQuestionSchema } from './book-retrieval';
 import { ProviderTextRunner } from '../services/provider-text-runner';
@@ -45,7 +46,7 @@ export class LocalSemanticQueryPlanner {
       const result = await this.runner.run(
         agentModelRequestSchema.parse({
           schemaVersion: 1,
-          runId: crypto.randomUUID(),
+          runId: createUuid(),
           endpoint: settings.endpoint,
           model: settings.model,
           systemPrompt:

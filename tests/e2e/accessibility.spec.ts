@@ -1,6 +1,8 @@
 import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 
+import { importTestEpub } from './book-fixture.js';
+
 async function expectNoAccessibilityViolations(
   page: Page,
   includes: string[] = [],
@@ -51,7 +53,7 @@ test('restores dialog focus and audits the Foliate content region', async ({
   page,
 }) => {
   await page.goto('/library');
-  await page.getByRole('button', { name: '导入电子书' }).click();
+  await importTestEpub(page);
   await page.getByRole('button', { name: '打开《Web 测试 EPUB》' }).click();
   await expect(page.getByRole('button', { name: '第一章' })).toBeVisible();
 
@@ -102,7 +104,7 @@ test('keeps local AI settings and reader sidebar accessible', async ({
   await page.getByRole('button', { name: '保存 AI 设置' }).click();
 
   await page.goto('/library');
-  await page.getByRole('button', { name: '导入电子书' }).click();
+  await importTestEpub(page);
   await page.getByRole('button', { name: '打开《Web 测试 EPUB》' }).click();
   await expect(page.getByRole('button', { name: '第一章' })).toBeVisible();
 

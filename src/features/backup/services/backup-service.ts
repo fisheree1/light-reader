@@ -1,4 +1,5 @@
 import { AppError, isAppError } from '../../../lib/app-error';
+import { createUuid } from '../../../lib/id';
 import type { ContentHasher } from '../../../platform/crypto/content-hasher';
 import type { BackupPlatform } from '../../../platform/backup/backup-platform';
 import type { BookRepository } from '../../../database/repositories/book-repository';
@@ -68,7 +69,7 @@ export class BackupService implements BackupManager {
     this.hasher = hasher;
     this.available = platform.available;
     this.appVersion = options.appVersion ?? '0.1.0';
-    this.createId = options.createId ?? (() => crypto.randomUUID());
+    this.createId = options.createId ?? createUuid;
     this.now = options.now ?? (() => new Date());
     this.bookRepository = options.bookRepository;
   }

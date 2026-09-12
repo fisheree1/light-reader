@@ -9,6 +9,7 @@ import type {
   StagedBookFiles,
 } from '../../../storage/book-file-storage';
 import { AppError, asAppError, isAppError } from '../../../lib/app-error';
+import { createUuid } from '../../../lib/id';
 import {
   bookMetadataSchema,
   bookSchema,
@@ -70,7 +71,7 @@ export class BookImportService implements BookImporter {
 
   constructor(dependencies: BookImportDependencies) {
     this.dependencies = dependencies;
-    this.idGenerator = dependencies.idGenerator ?? (() => crypto.randomUUID());
+    this.idGenerator = dependencies.idGenerator ?? createUuid;
     this.maxFileSize = dependencies.maxFileSize ?? MAX_EPUB_FILE_SIZE;
     this.now = dependencies.now ?? Date.now;
   }

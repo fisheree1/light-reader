@@ -107,6 +107,7 @@ React 组件不直接调用 Tauri API。平台能力通过 Adapter/Service 隔�
 - [云同步评估](docs/cloud-sync-evaluation.md)
 - [测试与交付](docs/testing.md)
 - [跨平台发布清单](docs/release.md)
+- [云服务器 Web 部署](docs/web-deployment.md)
 
 ## 尚未实现
 

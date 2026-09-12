@@ -1,0 +1,13 @@
+.git
+.github
+.env
+.env.*
+!.env.deploy.example
+.DS_Store
+coverage
+dist
+node_modules
+playwright-report
+test-results
+src-tauri/target
+*.log

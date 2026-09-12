@@ -1,4 +1,5 @@
 import type { NoteRepository } from '../../../database/repositories/note-repository';
+import { createUuid } from '../../../lib/id';
 import type { Annotation } from '../../annotations/domain/annotation';
 import {
   createBookQuoteNode,
@@ -21,7 +22,7 @@ export class NoteService {
 
   constructor(
     repository: NoteRepository,
-    createId: IdFactory = () => crypto.randomUUID(),
+    createId: IdFactory = createUuid,
     now: Clock = () => Date.now(),
   ) {
     this.repository = repository;

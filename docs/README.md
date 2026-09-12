@@ -4,17 +4,18 @@
 
 ## 已实现能力
 
-| 主题 | 权威文档                                         | 内容                                              |
-| ---- | ------------------------------------------------ | ------------------------------------------------- |
-| 导入 | [`book-import.md`](book-import.md)               | EPUB/PDF 导入、文件校验、受控路径与失败回滚       |
-| 书架 | [`library-management.md`](library-management.md) | 收藏、标签、排序和安全删除事务                    |
-| 阅读 | [`reader-engine.md`](reader-engine.md)           | Foliate/PDF.js、locator、交互、生命周期和内容安全 |
-| 笔记 | [`notes-editor.md`](notes-editor.md)             | Tiptap schema、引用块、自动保存和恢复             |
-| 搜索 | [`local-search.md`](local-search.md)             | EPUB/PDF 全文搜索、AI 索引和跨书研究              |
-| 导出 | [`export-formats.md`](export-formats.md)         | 笔记与批注的稳定导出格式                          |
-| 备份 | [`data-backup.md`](data-backup.md)               | 数据库/完整备份、预检、恢复和迁移快照             |
-| 测试 | [`testing.md`](testing.md)                       | CI、覆盖率基线和交付门禁                          |
-| 发布 | [`release.md`](release.md)                       | 跨平台安装包、版本一致性和真实桌面验收            |
+| 主题     | 权威文档                                         | 内容                                              |
+| -------- | ------------------------------------------------ | ------------------------------------------------- |
+| 导入     | [`book-import.md`](book-import.md)               | EPUB/PDF 导入、文件校验、受控路径与失败回滚       |
+| 书架     | [`library-management.md`](library-management.md) | 收藏、标签、排序和安全删除事务                    |
+| 阅读     | [`reader-engine.md`](reader-engine.md)           | Foliate/PDF.js、locator、交互、生命周期和内容安全 |
+| 笔记     | [`notes-editor.md`](notes-editor.md)             | Tiptap schema、引用块、自动保存和恢复             |
+| 搜索     | [`local-search.md`](local-search.md)             | EPUB/PDF 全文搜索、AI 索引和跨书研究              |
+| 导出     | [`export-formats.md`](export-formats.md)         | 笔记与批注的稳定导出格式                          |
+| 备份     | [`data-backup.md`](data-backup.md)               | 数据库/完整备份、预检、恢复和迁移快照             |
+| 测试     | [`testing.md`](testing.md)                       | CI、覆盖率基线和交付门禁                          |
+| 发布     | [`release.md`](release.md)                       | 跨平台安装包、版本一致性和真实桌面验收            |
+| Web 部署 | [`web-deployment.md`](web-deployment.md)         | Docker、HTTPS、浏览器存储与服务器运维边界         |
 
 ## AI
 

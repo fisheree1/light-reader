@@ -30,6 +30,13 @@ export function createEpubFixture({
   const coverManifest = includeCover
     ? '<item id="cover" href="images/cover.png" media-type="image/png" properties="cover-image" />'
     : '';
+  const navigationManifest =
+    chapters.length > 0
+      ? '<item id="navigation" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav" />'
+      : '';
+  const navigationItems = chapters
+    .map((chapter) => `<li><a href="${chapter.href}">${chapter.title}</a></li>`)
+    .join('');
   const chapterManifest = chapters
     .map(
       (chapter) =>
@@ -66,9 +73,18 @@ export function createEpubFixture({
           <dc:identifier>urn:lightreader:test</dc:identifier>
           ${layoutXml}
         </metadata>
-        <manifest>${coverManifest}${chapterManifest}</manifest>
+        <manifest>${coverManifest}${navigationManifest}${chapterManifest}</manifest>
         <spine${spineDirection}>${spineItems}</spine>
       </package>`),
+    ...(chapters.length > 0
+      ? {
+          [`${packageDirectory}nav.xhtml`]: strToU8(`<?xml version="1.0"?>
+            <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"${documentDirection}>
+              <head><title>目录</title></head>
+              <body><nav epub:type="toc"><h1>目录</h1><ol>${navigationItems}</ol></nav></body>
+            </html>`),
+        }
+      : {}),
     ...Object.fromEntries(
       chapters.map((chapter) => [
         `${packageDirectory}${chapter.href}`,

@@ -17,17 +17,14 @@ import { WEB_BOOKMARKS_KEY } from '../../../database/repositories/web-bookmark-r
 import { WEB_READING_SESSIONS_KEY } from '../../../database/repositories/web-reading-activity-repository';
 import { WebCryptoContentHasher } from '../../../platform/crypto/content-hasher';
 import { TauriFileDialogAdapter } from '../../../platform/dialog/file-dialog-adapter';
+import { WebFileDialogAdapter } from '../../../platform/dialog/web-file-dialog-adapter';
+import { TauriBookFileStorage } from '../../../storage/book-file-storage';
 import {
-  TauriBookFileStorage,
-  WebBookFileDeletionStorage,
-} from '../../../storage/book-file-storage';
+  webBookFileStorage,
+  webSelectedBookSourceRegistry,
+} from '../../../storage/web-book-file-storage';
 import { bookSchema, type Book } from '../domain/book';
-import {
-  BookImportService,
-  type BookImporter,
-  type ImportBookResult,
-  type ImportBooksResult,
-} from './book-import-service';
+import { BookImportService, type BookImporter } from './book-import-service';
 import { FflateEpubMetadataParser } from './epub-metadata-parser';
 import {
   type LibraryManagement,
@@ -40,10 +37,10 @@ export interface LibraryServices {
   management: LibraryManagement;
   releaseCoverUrl(url: string): void;
   repository: BookRepository;
+  storageDescription?: string;
 }
 
 const WEB_BOOKS_KEY = 'light-reader-web-books';
-const WEB_MOCK_HASH = 'b'.repeat(64);
 
 class WebBookRepository implements BookRepository {
   async create(book: Book): Promise<Book> {
@@ -114,52 +111,6 @@ class WebBookRepository implements BookRepository {
   }
 }
 
-class WebMockBookImporter implements BookImporter {
-  private readonly repository: BookRepository;
-
-  constructor(repository: BookRepository) {
-    this.repository = repository;
-  }
-
-  async importEpub(): Promise<ImportBookResult> {
-    const existing = await this.repository.findByHash(WEB_MOCK_HASH);
-    if (existing) return { status: 'duplicate', book: existing };
-
-    const now = Date.now();
-    const book = bookSchema.parse({
-      id: crypto.randomUUID(),
-      title: 'Web 测试 EPUB',
-      author: 'LightReader',
-      format: 'epub',
-      filePath: `light-reader/books/web-${String(now)}/book.epub`,
-      fileHash: WEB_MOCK_HASH,
-      coverPath: null,
-      metadata: {
-        title: 'Web 测试 EPUB',
-        creators: ['LightReader'],
-        language: 'zh-CN',
-        publisher: null,
-        description: null,
-        identifier: null,
-      },
-      fileSize: 128,
-      createdAt: now,
-      updatedAt: now,
-    });
-    return { status: 'created', book: await this.repository.create(book) };
-  }
-
-  async importBooks(): Promise<ImportBooksResult> {
-    const result = await this.importEpub();
-    return {
-      status: 'completed',
-      created: result.status === 'created' ? [result.book] : [],
-      duplicates: result.status === 'duplicate' ? [result.book] : [],
-      failed: [],
-    };
-  }
-}
-
 function createTauriLibraryServices(): LibraryServices {
   const repository = new SqliteBookRepository();
   const libraryRepository = new SqliteLibraryRepository();
@@ -186,6 +137,7 @@ function createTauriLibraryServices(): LibraryServices {
     releaseCoverUrl: (url) => {
       URL.revokeObjectURL(url);
     },
+    storageDescription: '图书保存在桌面应用的受控目录中，支持 EPUB 和 PDF。',
   };
 }
 
@@ -197,17 +149,39 @@ function createWebLibraryServices(): LibraryServices {
     noteRepository,
     new WebReaderSettingsRepository(),
   );
+  const importer = new BookImportService({
+    dialog: new WebFileDialogAdapter(webSelectedBookSourceRegistry),
+    fileStorage: webBookFileStorage,
+    hasher: new WebCryptoContentHasher(),
+    metadataParser: new FflateEpubMetadataParser(),
+    repository,
+  });
   return {
     repository,
     management: new LibraryManagementService(
       libraryRepository,
       repository,
       noteRepository,
-      new WebBookFileDeletionStorage(),
+      webBookFileStorage,
     ),
-    importer: new WebMockBookImporter(repository),
-    loadCoverUrl: () => Promise.resolve(null),
-    releaseCoverUrl: () => undefined,
+    importer,
+    async loadCoverUrl(path) {
+      const data = await webBookFileStorage.readCover(path);
+      const mediaType = path.endsWith('.png')
+        ? 'image/png'
+        : path.endsWith('.webp')
+          ? 'image/webp'
+          : path.endsWith('.gif')
+            ? 'image/gif'
+            : 'image/jpeg';
+      return URL.createObjectURL(
+        new Blob([Uint8Array.from(data).buffer], { type: mediaType }),
+      );
+    },
+    releaseCoverUrl: (url) => {
+      URL.revokeObjectURL(url);
+    },
+    storageDescription: '图书保存在当前浏览器的本地存储中，不会上传到服务器。',
   };
 }
 

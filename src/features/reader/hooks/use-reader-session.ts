@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { AppError, asAppError } from '../../../lib/app-error';
+import { createUuid } from '../../../lib/id';
 import type {
   BookLocator,
   EbookReader,
@@ -242,7 +243,7 @@ export function useReaderSession(
             saveTimer = setTimeout(savePendingLocator, relocationSaveDelay);
           });
           setToc(reader.getTableOfContents());
-          readingSessionId = crypto.randomUUID();
+          readingSessionId = createUuid();
           void services.readingActivityRepository
             ?.startSession({
               id: readingSessionId,

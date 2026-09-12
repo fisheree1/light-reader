@@ -1,4 +1,5 @@
 import { AppError } from '../../../lib/app-error';
+import { createUuid } from '../../../lib/id';
 import type { Book } from '../../library/domain/book';
 import type {
   AgentProviderEvent,
@@ -48,7 +49,7 @@ export class BookQaRunner {
     retrieval: BookRetrievalService,
     draftService = new AiDraftService(),
     citationValidator = new CitationValidator(),
-    createId: IdFactory = () => crypto.randomUUID(),
+    createId: IdFactory = createUuid,
     now: () => number = Date.now,
     timeoutMs = 90_000,
   ) {

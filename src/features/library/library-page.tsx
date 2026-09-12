@@ -33,7 +33,8 @@ export function LibraryPage({ services = libraryServices }: LibraryPageProps) {
         <div>
           <h1 className="text-2xl font-semibold">书架</h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            本地图书保存在应用受控目录中，支持 EPUB 和 PDF。
+            {services.storageDescription ??
+              '本地图书保存在应用受控目录中，支持 EPUB 和 PDF。'}
           </p>
         </div>
         {library.isLoading || showLibraryControls ? (

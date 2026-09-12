@@ -1,3 +1,4 @@
+import { createUuid } from '../../../lib/id';
 import type { ReaderTextSelection } from '../../../reader-engines/types';
 import type { AiSettings } from '../domain/ai-settings';
 import {
@@ -26,10 +27,7 @@ export class AgentConsentService {
   private readonly createId: IdFactory;
   private readonly now: Clock;
 
-  constructor(
-    createId: IdFactory = () => crypto.randomUUID(),
-    now: Clock = () => Date.now(),
-  ) {
+  constructor(createId: IdFactory = createUuid, now: Clock = () => Date.now()) {
     this.createId = createId;
     this.now = now;
   }

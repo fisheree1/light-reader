@@ -1,4 +1,5 @@
 import { AppError } from '../../../lib/app-error';
+import { createUuid } from '../../../lib/id';
 import type {
   AgentProviderEvent,
   ModelProviderGateway,
@@ -38,7 +39,7 @@ export class ResearchRunner {
   constructor(
     provider: ModelProviderGateway,
     retrieval: BookRetrievalService,
-    createId: () => string = () => crypto.randomUUID(),
+    createId: () => string = createUuid,
     now: () => number = Date.now,
   ) {
     this.createId = createId;

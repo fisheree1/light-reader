@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 
 import { AppError, asAppError } from '../../../lib/app-error';
+import { createUuid } from '../../../lib/id';
 import type {
   BookLocator,
   EbookReader,
@@ -241,7 +242,7 @@ export function useReader(
         throw new AppError('BOOKMARK_WRITE_FAILED');
       }
       const bookmark = await services.bookmarkRepository.create({
-        id: crypto.randomUUID(),
+        id: createUuid(),
         bookId,
         name,
         locator,

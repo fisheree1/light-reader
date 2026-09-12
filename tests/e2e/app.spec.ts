@@ -1,5 +1,11 @@
 import { expect, test, type Frame, type Page } from '@playwright/test';
 
+import {
+  hasStoredTestEpub,
+  importTestEpub,
+  storeTestEpubForPaths,
+} from './book-fixture.js';
+
 interface BrowserDiagnostics {
   pageErrors: string[];
   routerWarnings: string[];
@@ -160,6 +166,9 @@ test('searches notes, highlights, and EPUB content entirely in Web mocks', async
   });
 
   await page.goto('/search');
+  await storeTestEpubForPaths(page, [
+    'light-reader/books/search-book/book.epub',
+  ]);
   const input = page.getByRole('searchbox', { name: '搜索本地内容' });
 
   await input.fill('中文搜索');
@@ -235,6 +244,9 @@ test('shows a persisted book from preloaded Web data', async ({ page }) => {
   });
 
   await page.goto('/library');
+  await storeTestEpubForPaths(page, [
+    'light-reader/books/preloaded-book/book.epub',
+  ]);
 
   await expect(
     page.getByRole('button', { name: '打开《预置测试图书》' }),
@@ -253,7 +265,7 @@ test('shows a persisted book from preloaded Web data', async ({ page }) => {
   await expect(page).toHaveURL(/\/library$/);
 });
 
-test('verifies the import interaction through the Web mock adapter', async ({
+test('imports and persists a real EPUB through browser storage', async ({
   page,
 }) => {
   await page.goto('/library');
@@ -261,14 +273,23 @@ test('verifies the import interaction through the Web mock adapter', async ({
     page.getByRole('heading', { name: '导入第一本书' }),
   ).toBeVisible();
 
-  await page.getByRole('button', { name: '导入电子书' }).click();
+  await importTestEpub(page);
 
   await expect(page.getByRole('status')).toContainText('新增 1 本');
   await expect(
     page.getByRole('button', { name: '打开《Web 测试 EPUB》' }),
   ).toBeVisible();
 
-  await page.getByRole('button', { name: '导入电子书' }).click();
+  await page.reload();
+  await expect(
+    page.getByRole('button', { name: '打开《Web 测试 EPUB》' }),
+  ).toBeVisible();
+  await expect.poll(() => hasStoredTestEpub(page)).toBe(true);
+  await page.getByRole('button', { name: '打开《Web 测试 EPUB》' }).click();
+  await expect(page.getByRole('button', { name: '第一章' })).toBeVisible();
+  await page.getByRole('link', { name: '返回书架' }).click();
+
+  await importTestEpub(page);
   await expect(page.getByRole('status')).toContainText('重复 1 本');
 });
 
@@ -286,7 +307,7 @@ test('persists global reading settings and a per-book override', async ({
   await expect(page.getByLabel('字号')).toHaveValue('22');
 
   await page.goto('/library');
-  await page.getByRole('button', { name: '导入电子书' }).click();
+  await importTestEpub(page);
   await page.getByRole('button', { name: '打开《Web 测试 EPUB》' }).click();
   await expect(page.getByRole('button', { name: '第一章' })).toBeVisible();
 
@@ -303,7 +324,7 @@ test('completes the release user loop through the real Foliate Web engine', asyn
   page,
 }) => {
   await page.goto('/library');
-  await page.getByRole('button', { name: '导入电子书' }).click();
+  await importTestEpub(page);
   await page.getByRole('button', { name: '打开《Web 测试 EPUB》' }).click();
   await expect(page.getByRole('button', { name: '第一章' })).toBeVisible();
 
@@ -437,7 +458,7 @@ test('creates a note through the consented local AI selection flow', async ({
   await expect(page.getByText('Ollama 和模型均可用')).toBeVisible();
 
   await page.goto('/library');
-  await page.getByRole('button', { name: '导入电子书' }).click();
+  await importTestEpub(page);
   await page.getByRole('button', { name: '打开《Web 测试 EPUB》' }).click();
   await expect(page.getByRole('button', { name: '第一章' })).toBeVisible();
 
@@ -484,7 +505,7 @@ test('asks the current book a free-form question with a navigable citation', asy
   await page.getByRole('button', { name: '保存 AI 设置' }).click();
 
   await page.goto('/library');
-  await page.getByRole('button', { name: '导入电子书' }).click();
+  await importTestEpub(page);
   await page.getByRole('button', { name: '打开《Web 测试 EPUB》' }).click();
   await expect(page.getByRole('button', { name: '第一章' })).toBeVisible();
   await findContentFrame(page, '这是 LightReader 自制的无版权测试内容。');
@@ -549,6 +570,10 @@ test('researches across an explicitly selected local book set', async ({
   });
 
   await page.goto('/research');
+  await storeTestEpubForPaths(page, [
+    'light-reader/books/research-one/book.epub',
+    'light-reader/books/research-two/book.epub',
+  ]);
   await page.getByLabel(/研究图书一/).check();
   await page.getByLabel(/研究图书二/).check();
   await page
