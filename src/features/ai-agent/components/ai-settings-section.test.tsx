@@ -15,6 +15,9 @@ describe('AiSettingsSection', () => {
     render(<AiSettingsSection facade={facade} />);
 
     const enabled = await screen.findByLabelText('启用本地 AI 助手');
+    await waitFor(() => {
+      expect(enabled).toBeEnabled();
+    });
     expect(enabled).not.toBeChecked();
     await user.click(enabled);
     await user.click(screen.getByRole('button', { name: '保存 AI 设置' }));

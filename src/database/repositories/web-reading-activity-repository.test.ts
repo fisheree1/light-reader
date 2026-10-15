@@ -1,6 +1,7 @@
 import type { BookRepository } from './book-repository';
 import { WebReadingActivityRepository } from './web-reading-activity-repository';
 import type { Book } from '../../features/library/domain/book';
+import { createTestWebDatabase } from '../../test/fixtures/web-records';
 
 const book: Book = {
   id: 'book-1',
@@ -32,12 +33,11 @@ const books: BookRepository = {
 };
 
 describe('WebReadingActivityRepository', () => {
-  beforeEach(() => {
-    localStorage.clear();
-  });
-
   it('records finished sessions and derives stats and recent history', async () => {
-    const repository = new WebReadingActivityRepository(books);
+    const repository = new WebReadingActivityRepository(
+      books,
+      createTestWebDatabase(),
+    );
     await repository.startSession({
       id: 'session-1',
       bookId: book.id,
@@ -60,5 +60,30 @@ describe('WebReadingActivityRepository', () => {
         durationSeconds: 120,
       },
     ]);
+  });
+
+  it('skips sessions of deleted books and reports unknown sessions', async () => {
+    const repository = new WebReadingActivityRepository(
+      books,
+      createTestWebDatabase(),
+    );
+    await expect(repository.getStats()).resolves.toEqual({
+      totalSeconds: 0,
+      sessionCount: 0,
+      booksRead: 0,
+      lastReadAt: null,
+    });
+    await repository.startSession({
+      id: 'orphan',
+      bookId: 'deleted-book',
+      startedAt: 1,
+      endedAt: null,
+      durationSeconds: 0,
+    });
+
+    await expect(repository.listRecent()).resolves.toEqual([]);
+    await expect(repository.finishSession('missing', 2)).rejects.toMatchObject({
+      code: 'READING_ACTIVITY_FAILED',
+    });
   });
 });

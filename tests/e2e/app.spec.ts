@@ -3,6 +3,7 @@ import { expect, test, type Frame, type Page } from '@playwright/test';
 import {
   hasStoredTestEpub,
   importTestEpub,
+  readWebRecords,
   storeTestEpubForPaths,
 } from './book-fixture.js';
 
@@ -351,16 +352,7 @@ test('completes the release user loop through the real Foliate Web engine', asyn
   await page.getByRole('button', { name: '保存设置' }).click();
   await page.getByRole('button', { name: '第二章' }).click();
   await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const value = localStorage.getItem('light-reader-reader-settings');
-        if (!value) return 0;
-        const parsed = JSON.parse(value) as {
-          readingStates?: Record<string, unknown>;
-        };
-        return Object.keys(parsed.readingStates ?? {}).length;
-      }),
-    )
+    .poll(async () => (await readWebRecords(page, 'readingStates')).length)
     .toBeGreaterThan(0);
   await page.getByRole('button', { name: '第一章' }).click();
 
@@ -503,6 +495,7 @@ test('asks the current book a free-form question with a navigable citation', asy
   await page.goto('/settings');
   await page.getByLabel('启用本地 AI 助手').check();
   await page.getByRole('button', { name: '保存 AI 设置' }).click();
+  await expect(page.getByText('AI 设置已保存')).toBeVisible();
 
   await page.goto('/library');
   await importTestEpub(page);
@@ -697,10 +690,8 @@ test('manages favorites, tags, sorting, and protected deletion locally', async (
     page.getByRole('heading', { name: '确认删除《Zulu》？' }),
   ).toBeVisible();
   await expect
-    .poll(() =>
-      page.evaluate(() =>
-        localStorage.getItem('light-reader-web-books')?.includes('book-z'),
-      ),
+    .poll(async () =>
+      JSON.stringify(await readWebRecords(page, 'books')).includes('book-z'),
     )
     .toBe(true);
   await page.getByRole('button', { name: '确认删除' }).click();
@@ -709,11 +700,9 @@ test('manages favorites, tags, sorting, and protected deletion locally', async (
     0,
   );
   await expect
-    .poll(() =>
-      page.evaluate(() =>
-        localStorage
-          .getItem('light-reader-web-notes')
-          ?.includes('离线引用快照'),
+    .poll(async () =>
+      JSON.stringify(await readWebRecords(page, 'notes')).includes(
+        '离线引用快照',
       ),
     )
     .toBe(true);

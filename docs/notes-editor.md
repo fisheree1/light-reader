@@ -27,15 +27,17 @@ of truth.
 
 The extension list is centralized in `note-extensions.ts`:
 
-- StarterKit for headings, paragraphs, lists and basic marks;
-- the official Markdown extension for Markdown parsing, serialization and input;
+- StarterKit for headings, paragraphs, lists and basic marks, including the
+  Markdown-style input rules such as `## ` and `**bold**`;
 - Placeholder for the empty editor hint;
 - `BookQuoteNode` for immutable EPUB source snapshots.
 
 StarterKit links are disabled because opening and sanitizing arbitrary URL
 protocols is outside this slice. JSON remains the persisted representation;
 Markdown/HTML export is handled by the separate export service, while Markdown
-import is not exposed.
+import is not exposed. The `@tiptap/markdown` parser is intentionally not
+bundled; a future Markdown import flow should load it with a dynamic import so
+the notes page does not pay for it up front.
 
 ## BookQuoteNode
 
@@ -74,6 +76,7 @@ When persisted Tiptap JSON is corrupt, changing only the title does not
 autosave the empty fallback over the original bytes; the user must first edit
 the recovered document.
 
-The Web test runtime uses a localStorage Repository. Tauri uses the SQLite
+The Web runtime uses an IndexedDB Repository; only the unsaved draft journal
+stays in localStorage. Tauri uses the SQLite
 Repository and applies `0006_notes.sql` through the existing SQL plugin; no new
 native capability is required.

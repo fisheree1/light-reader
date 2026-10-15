@@ -1,5 +1,3 @@
-import { z } from 'zod';
-
 import type { AnnotationRepository } from './annotation-repository';
 import type { BookRepository } from './book-repository';
 import type { NoteRepository } from './note-repository';
@@ -18,12 +16,11 @@ import {
   type NoteSearchResult,
 } from '../../features/search/domain/search';
 import { AppError } from '../../lib/app-error';
-
-const storageKey = 'light-reader-web-book-content-index';
-const storedChapterSchema = bookContentChapterSchema.extend({
-  bookId: z.string().trim().min(1).max(128),
-});
-type StoredChapter = z.infer<typeof storedChapterSchema>;
+import { getWebDatabase, type WebDatabase } from '../web/web-database';
+import {
+  webBookContentRecordSchema,
+  type WebBookContentRecord,
+} from '../web/web-records';
 
 function includesQuery(value: string, query: string): boolean {
   return value.toLocaleLowerCase().includes(query.toLocaleLowerCase());
@@ -43,15 +40,18 @@ export class WebSearchRepository implements SearchRepository {
   private readonly noteRepository: NoteRepository;
   private readonly annotationRepository: AnnotationRepository;
   private readonly bookRepository: BookRepository;
+  private readonly database: WebDatabase;
 
   constructor(
     noteRepository: NoteRepository,
     annotationRepository: AnnotationRepository,
     bookRepository: BookRepository,
+    database: WebDatabase = getWebDatabase(),
   ) {
     this.noteRepository = noteRepository;
     this.annotationRepository = annotationRepository;
     this.bookRepository = bookRepository;
+    this.database = database;
   }
 
   async searchBooks(value: string, limit = 20): Promise<BookSearchResult[]> {
@@ -145,84 +145,93 @@ export class WebSearchRepository implements SearchRepository {
     try {
       const books = await this.bookRepository.list();
       const bookTitles = new Map(books.map((book) => [book.id, book.title]));
-      return this.readChapters()
-        .filter(
-          (chapter) =>
-            includesQuery(chapter.chapterTitle, query) ||
-            includesQuery(chapter.text, query),
-        )
-        .slice(0, limit)
-        .map((chapter) =>
-          bookContentSearchResultSchema.parse({
-            kind: 'book-content',
-            bookId: chapter.bookId,
-            bookTitle: bookTitles.get(chapter.bookId) ?? '未知书籍',
-            sectionLabel: chapter.chapterTitle,
-            locator: chapter.chapterHref.startsWith('pdf-page:')
-              ? {
-                  version: 1,
-                  format: 'pdf',
-                  pageIndex: Number(chapter.chapterHref.slice(9)),
-                }
-              : {
-                  version: 1,
-                  format: 'epub',
-                  chapterHref: chapter.chapterHref,
-                },
-            excerpt: excerpt(chapter.text, query),
-          }),
-        );
+      const matches: WebBookContentRecord[] = [];
+      // Stream the index with a cursor so a large library is never loaded
+      // into memory at once, and stop as soon as enough chapters match.
+      await this.database.iterate('bookContent', (value) => {
+        if (matches.length >= limit) return false;
+        const chapter = webBookContentRecordSchema.parse(value);
+        if (
+          includesQuery(chapter.chapterTitle, query) ||
+          includesQuery(chapter.text, query)
+        ) {
+          matches.push(chapter);
+        }
+        return matches.length < limit;
+      });
+      return matches.map((chapter) =>
+        bookContentSearchResultSchema.parse({
+          kind: 'book-content',
+          bookId: chapter.bookId,
+          bookTitle: bookTitles.get(chapter.bookId) ?? '未知书籍',
+          sectionLabel: chapter.chapterTitle,
+          locator: chapter.chapterHref.startsWith('pdf-page:')
+            ? {
+                version: 1,
+                format: 'pdf',
+                pageIndex: Number(chapter.chapterHref.slice(9)),
+              }
+            : {
+                version: 1,
+                format: 'epub',
+                chapterHref: chapter.chapterHref,
+              },
+          excerpt: excerpt(chapter.text, query),
+        }),
+      );
     } catch (error) {
       throw new AppError('SEARCH_FAILED', { cause: error });
     }
   }
 
-  findIndexedBookIds(): Promise<string[]> {
-    return Promise.resolve([
-      ...new Set(this.readChapters().map((chapter) => chapter.bookId)),
-    ]);
+  async findIndexedBookIds(): Promise<string[]> {
+    try {
+      const keys = await this.database.getAllKeys('bookContent');
+      return [
+        ...new Set(
+          keys.flatMap((key) =>
+            Array.isArray(key) && typeof key[0] === 'string' ? [key[0]] : [],
+          ),
+        ),
+      ];
+    } catch (error) {
+      throw new AppError('SEARCH_FAILED', { cause: error });
+    }
   }
 
-  replaceBookContent(
+  async replaceBookContent(
     bookId: string,
     values: BookContentChapter[],
   ): Promise<void> {
     try {
       const chapters = bookContentChapterSchema.array().parse(values);
-      const retained = this.readChapters().filter(
-        (chapter) => chapter.bookId !== bookId,
-      );
-      const next = [
-        ...retained,
-        ...chapters.map((chapter) =>
-          storedChapterSchema.parse({ ...chapter, bookId }),
-        ),
-      ];
-      localStorage.setItem(storageKey, JSON.stringify(next));
-      return Promise.resolve();
+      await this.database.write([
+        { type: 'deleteByBook', store: 'bookContent', bookId },
+        ...chapters.map((chapter, ordinal) => ({
+          type: 'put' as const,
+          store: 'bookContent' as const,
+          value: webBookContentRecordSchema.parse({
+            ...chapter,
+            bookId,
+            ordinal,
+          }),
+        })),
+      ]);
     } catch (error) {
-      return Promise.reject(
-        new AppError('SEARCH_INDEX_FAILED', { cause: error }),
-      );
+      throw new AppError('SEARCH_INDEX_FAILED', { cause: error });
     }
   }
 
-  clearBookContent(): Promise<void> {
-    localStorage.removeItem(storageKey);
-    return Promise.resolve();
+  async clearBookContent(): Promise<void> {
+    try {
+      await this.database.write([{ type: 'clear', store: 'bookContent' }]);
+    } catch (error) {
+      throw new AppError('SEARCH_INDEX_FAILED', { cause: error });
+    }
   }
 
   rebuildTextIndexes(): Promise<void> {
     // Notes and annotations are already persisted as validated Web domain data.
     return Promise.resolve();
   }
-
-  private readChapters(): StoredChapter[] {
-    const value = localStorage.getItem(storageKey);
-    if (!value) return [];
-    const parsed: unknown = JSON.parse(value);
-    return storedChapterSchema.array().parse(parsed);
-  }
 }
-
-export { storageKey as WEB_BOOK_CONTENT_INDEX_KEY };
