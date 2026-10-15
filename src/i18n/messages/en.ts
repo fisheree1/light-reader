@@ -2,6 +2,106 @@ import type { Messages } from './zh-CN';
 
 /** English interface text. */
 export const en: Messages = {
+  discovery: {
+    title: 'Find light novels',
+    description:
+      'Find Chinese translations of Japanese light novels and save volumes to your library.',
+    source: 'Source',
+    query: 'Title, alias or author',
+    placeholder: 'Enter a title or author',
+    search: 'Search source',
+    openSource: 'Open source window',
+    readCurrent: 'Read source window',
+    unavailable:
+      'Online acquisition currently requires the desktop app. You can still visit the source and import an existing EPUB.',
+    sourceNotice:
+      'If automatic search is restricted, find and open the work in the source window, then return here to read it. The window navigates automatically during acquisition. Translation credits follow the source. Save only content you are entitled to keep.',
+    loading: 'Reading source…',
+    cancel: 'Cancel task',
+    fetching: 'Fetching chapters',
+    images: 'Fetching illustrations',
+    building: 'Building EPUB',
+    importing: 'Adding to library',
+    outcomes: 'Acquisition results',
+    created: 'Added to library',
+    duplicate: 'Already in library',
+    failed: 'Acquisition failed',
+    read: 'Start reading',
+    missingImages: 'Accepted missing images: {count}',
+    volumes: 'Choose volumes',
+    back: 'Back to results',
+    allowMissingImages:
+      'Allow import with missing images if image retrieval fails',
+    acquire: 'Get {count} selected volumes',
+    chapterCount: '{count} available chapters',
+    restricted:
+      '{count} additional chapters are restricted or unreadable; complete acquisition is unavailable',
+    unsupportedVolume:
+      'Art books and Japanese editions are excluded from Chinese novel acquisition',
+    results: 'Search results',
+    resultLimit:
+      'Up to 40 matching works are shown. Refine the title for more specific results.',
+    chooseVolume: 'View volumes',
+    empty: 'No works found',
+    emptyDescription:
+      'Try another translated title, traditional Chinese or shorter keywords.',
+    initial: 'Find your next light novel',
+    initialDescription:
+      'Search and select volumes to retrieve their contents and illustrations.',
+    errorUnavailable:
+      'Source acquisition is unavailable. Use the desktop app or retry later.',
+    errorAccess:
+      'The source is restricted or requires verification. Open the source window, complete normal verification and retry.',
+    errorTimeout: 'The source timed out. Check the source window and retry.',
+    errorInvalid:
+      'The source page structure has changed and cannot be parsed reliably.',
+    errorIncomplete:
+      'The volume has incomplete chapters or pagination. Acquisition was stopped.',
+    errorTooLarge:
+      'The volume exceeds the content size or count limit. Choose a smaller volume.',
+    errorImage:
+      'Some illustrations could not be retrieved. Retry or explicitly allow missing images.',
+    errorBusy: 'The source is processing another request. Retry shortly.',
+    errorSelectBook:
+      'Open a work, its catalogue or search results in the selected source window first, then read it here.',
+    errorRateLimited:
+      'The source reported too many requests, so fetching stopped. Wait a few minutes before retrying.',
+    errorCoolingDown:
+      'The source just limited requests. Please try again later.',
+    errorUnexpected:
+      'Something unexpected went wrong while fetching. Please try again.',
+    stoppedAfterBlock:
+      'The source denied or limited access, so the remaining volumes were not fetched.',
+    translators: 'Translators: {names}',
+    translatorsUnknown: 'Translators: not stated by the source',
+    methodLabel: 'Translation: {method}',
+    methodHuman: 'Human',
+    methodMachine: 'Machine',
+    methodMixed: 'Mixed human and machine',
+    methodUnknown: 'Unknown (not stated by the source)',
+    kindMain: 'Main volume',
+    kindSideStory: 'Side story',
+    kindCollection: 'Collection',
+    scriptHans: 'Simplified',
+    scriptHant: 'Traditional',
+    scriptMixed: 'Mixed scripts',
+    allSources: 'All sources',
+    sourceFailed: '{source} search failed: {message}',
+    retrySource: 'Retry {source}',
+    sameTitleNote:
+      'Same title on different sources; translators and editions may differ, so they are not merged.',
+    chooseVolumeFrom: 'View volumes · {source} ({title})',
+    errorBuildInvalid:
+      'The built EPUB failed structural checks and was not imported. Copy the acceptance report to report the problem.',
+    reportSummary:
+      'Check: {built}/{expected} chapters · {pages} pages · images {embedded}/{images}',
+    reportValid: 'Structure check passed',
+    reportInvalid: 'Structure check found {count} errors',
+    reportWarnings: '{count} warnings',
+    reportShort: 'Possibly short chapters: {titles}',
+    copyReport: 'Copy acceptance report',
+    reportCopied: 'Copied',
+  },
   errors: {
     USER_CANCELLED: '',
     UNSUPPORTED_FILE_TYPE:

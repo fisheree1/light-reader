@@ -36,10 +36,21 @@ Raise thresholds when coverage improves; do not lower them to merge a change.
 ## Bundle budgets
 
 `pnpm bundle:check` creates a production build and checks the raw and gzip sizes
-of the complete asset set, application shell, notes chunks, PDF runtime/worker,
-reader page, and application CSS. The versioned limits live in
+of the complete asset set, the initial load (the entry script plus every chunk
+`dist/index.html` preloads, i.e. what loads before the first screen), the notes
+chunks, PDF runtime/worker, reader page, and application CSS. The initial load
+replaces earlier per-chunk limits for the "application shell" and "shared data
+services": the bundler regroups shared code between those files whenever a lazy
+route changes, which made the limits fail without any real startup growth. The versioned limits live in
 `config/bundle-budgets.json` and run in CI immediately after the production
 build. Raise a limit only with a recorded reason and a reviewed build diff.
+
+Recorded raises:
+
+- 2026-10-15, total gzip 970000 → 985000: the Simplified/Traditional character
+  table for online discovery (about 9 KiB gzip after storing mutual pairs once)
+  plus the EPUB validator. Both load only with `/discover`; the initial load
+  grows by about 0.8 KiB (new Chinese interface strings).
 
 `pnpm build:verify` (also part of `bundle:check` and CI) checks what size
 budgets cannot see: no emitted chunk may import a path on the build machine

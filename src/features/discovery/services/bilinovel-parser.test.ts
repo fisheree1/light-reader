@@ -1,0 +1,322 @@
+import { novelFixture } from '../../../test/fixtures/novel-gateway';
+import {
+  escapeXml,
+  imageUrl,
+  pagePath,
+  parseCatalogue,
+  parseChapter,
+  parseSearch,
+} from './bilinovel-parser';
+
+const url = 'https://www.bilinovel.com/novel/1/101.html';
+
+describe('Bilinovel source parsing', () => {
+  it('deduplicates search results and handles exact-match redirects', () => {
+    expect(
+      parseSearch('bilinovel', {
+        url: 'https://www.bilinovel.com/search.html',
+        html: novelFixture.search,
+      }),
+    ).toHaveLength(1);
+    expect(
+      parseSearch('bilinovel', {
+        url: 'https://www.bilinovel.com/novel/1.html',
+        html: '<h1>测试小说</h1>',
+      })[0].id,
+    ).toBe('1');
+  });
+  it('accepts the current source search endpoint and rejects home and foreign snapshots', () => {
+    expect(
+      parseSearch('linovelib', {
+        url: 'https://www.linovelib.com/S6/',
+        html: novelFixture.search,
+      }),
+    ).toHaveLength(1);
+    for (const snapshotUrl of [
+      'https://www.linovelib.com/',
+      'https://other.test/novel/1.html',
+      'https://www.linovelib.com/S6/evil',
+    ]) {
+      expect(() =>
+        parseSearch('linovelib', {
+          url: snapshotUrl,
+          html: novelFixture.search,
+        }),
+      ).toThrow();
+    }
+  });
+  it('keeps restricted chapters and art books distinct from complete novel volumes', () => {
+    const result = parseCatalogue(
+      'bilinovel',
+      { url, html: novelFixture.catalogue },
+      '1',
+    );
+    expect(result.author).toBe('测试作者');
+    expect(
+      result.volumes.map((volume) => [
+        volume.id,
+        volume.chapters.length,
+        volume.unavailableChapters,
+        volume.contentKind,
+      ]),
+    ).toEqual([
+      ['10', 2, 0, 'novel'],
+      ['20', 0, 1, 'novel'],
+      ['30', 1, 0, 'other'],
+    ]);
+  });
+  it('reads desktop volume lists with a cover before the heading and a separate author field', () => {
+    const result = parseCatalogue(
+      'linovelib',
+      {
+        url: 'https://www.linovelib.com/novel/1/catalog',
+        html: novelFixture.catalogueDesktop,
+      },
+      '1',
+    );
+    expect(result.author).toBe('测试作者');
+    expect(result.volumes[0]).toMatchObject({
+      id: '10',
+      title: '测试轻小说 第一卷',
+      coverUrl: 'https://img3.readpai.com/cover/1/cover.png',
+      unavailableChapters: 0,
+    });
+    expect(result.volumes[0].chapters).toHaveLength(2);
+    expect(result.volumes[1].unavailableChapters).toBe(1);
+    expect(result.volumes[2].contentKind).toBe('other');
+  });
+  it('distinguishes desktop next-chapter links from same-chapter pagination', () => {
+    const snapshot = {
+      url: 'https://www.linovelib.com/novel/1/101.html',
+      html: '<h1>测试章节</h1><div id="TextContent"><p>原创正文</p></div><div class="mlfy_page"><a href="/novel/1/102.html">下一页</a></div>',
+    };
+    expect(
+      parseChapter('linovelib', snapshot, '/novel/1/101.html'),
+    ).toMatchObject({
+      title: '测试章节',
+      nextPath: null,
+    });
+    expect(
+      parseChapter(
+        'linovelib',
+        {
+          ...snapshot,
+          html: snapshot.html.replace('1/102.html', '1/101_2.html'),
+        },
+        '/novel/1/101.html',
+      ).nextPath,
+    ).toBe('/novel/1/101_2.html');
+    expect(() =>
+      parseChapter(
+        'linovelib',
+        {
+          ...snapshot,
+          html: snapshot.html.replace(
+            '/novel/1/102.html',
+            'javascript:blocked()',
+          ),
+        },
+        '/novel/1/101.html',
+      ),
+    ).toThrow();
+  });
+  it('sanitizes chapter content while preserving ruby and safe images', () => {
+    const result = parseChapter(
+      'bilinovel',
+      { url, html: `${novelFixture.first}<iframe src="https://evil.test"/>` },
+      '/novel/1/101.html',
+    );
+    expect(result.html).toContain('自动测试');
+    expect(result.html).not.toMatch(/script|alert|隐藏|iframe/);
+    expect(result.nextPath).toBe('/novel/1/101_2.html');
+    const art = parseChapter(
+      'bilinovel',
+      { url: url.replace('101', '102'), html: novelFixture.illustration },
+      '/novel/1/102.html',
+    );
+    expect(art.html).toContain('<ruby>测试<rt>test</rt></ruby>');
+    expect(art.images).toEqual(['https://img3.readpai.com/pic/1/art.png']);
+  });
+  it('rejects missing content, unsafe origins and unexpected chapter identities', () => {
+    expect(() =>
+      pagePath('bilinovel', 'https://www.bilinovel.com.evil.test/novel/1.html'),
+    ).toThrow();
+    expect(() =>
+      imageUrl('bilinovel', 'http://127.0.0.1/a.png', url),
+    ).toThrow();
+    expect(() =>
+      parseChapter(
+        'bilinovel',
+        { url, html: '<div id="acontent">x</div>' },
+        '/novel/2/101.html',
+      ),
+    ).toThrow();
+    expect(() =>
+      parseChapter(
+        'bilinovel',
+        { url, html: '<h1>Access denied</h1>' },
+        '/novel/1/101.html',
+      ),
+    ).toThrow();
+  });
+  it('rejects a repeated page or a next-page link pointing backwards', () => {
+    expect(() =>
+      parseChapter(
+        'bilinovel',
+        { url, html: novelFixture.first },
+        '/novel/1/101_2.html',
+      ),
+    ).toThrow();
+    expect(() =>
+      parseChapter(
+        'bilinovel',
+        {
+          url: url.replace('101.html', '101_2.html'),
+          html: '<div id="acontent"><p>测试正文</p></div><div id="footlink"><a href="/novel/1/101.html">下一页</a></div>',
+        },
+        '/novel/1/101_2.html',
+      ),
+    ).toThrow();
+  });
+  it('uses exported pagination metadata for listener-bound links and rejects missing page targets', () => {
+    const html =
+      '<div id="acontent"><p>测试正文</p></div><div id="footlink"><a class="nextlink">下一頁</a></div>';
+    expect(() =>
+      parseChapter('bilinovel', { url, html }, '/novel/1/101.html'),
+    ).toThrow();
+    expect(
+      parseChapter(
+        'bilinovel',
+        {
+          url,
+          html: `<meta name="lightreader-next" content="/novel/1/101_2.html">${html}`,
+        },
+        '/novel/1/101.html',
+      ).nextPath,
+    ).toBe('/novel/1/101_2.html');
+  });
+
+  it('drops characters XML forbids so chapters stay parseable XHTML', () => {
+    expect(escapeXml('a\u0001b\u000bc\u0000<&>\uFFFE\uD800\uDC00\uDC00')).toBe(
+      'abc&lt;&amp;&gt;\uD800\uDC00',
+    );
+    expect(escapeXml('tab\tline\nreturn\r')).toBe('tab\tline\nreturn\r');
+
+    const parsed = parseChapter(
+      'bilinovel',
+      {
+        url,
+        html: '<html><head><title>t</title></head><body><h1>第一章\u0002</h1><div id="acontent"><p>正文\u0001内容\u000b结束</p></div></body></html>',
+      },
+      '/novel/1/101.html',
+    );
+    const document = new DOMParser().parseFromString(
+      `<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><body>${parsed.html}</body></html>`,
+      'application/xhtml+xml',
+    );
+    expect(document.querySelector('parsererror')).toBeNull();
+    // An XHTML document from DOMParser is outside jest-dom's Node checks.
+    const text = document.documentElement.textContent;
+    expect(text).toBe('正文内容结束');
+  });
+
+  it('reports empty searches only from an explicit empty-result notice', () => {
+    const search = (html: string) =>
+      parseSearch('bilinovel', {
+        url: 'https://www.bilinovel.com/search.html',
+        html,
+      });
+    expect(search('<p>没有符合条件的结果</p>')).toEqual([]);
+    expect(search('<p>未找到相关小说</p>')).toEqual([]);
+    expect(search('<p>共 0 条</p>')).toEqual([]);
+    // A results-titled page without results or a notice may be a blocked or
+    // changed page: it must not look like "no results".
+    for (const html of [
+      '<html><head><title>搜索结果</title></head><body><p>请稍候</p></body></html>',
+      '<p>search</p>',
+    ])
+      expect(() => search(html)).toThrow(
+        expect.objectContaining({ code: 'SOURCE_INVALID' }),
+      );
+  });
+
+  it('detects throttling notices without flagging long chapter text', () => {
+    expect(() =>
+      parseSearch('bilinovel', {
+        url: 'https://www.bilinovel.com/search.html',
+        html: '<html><body><p>您的访问过于频繁，请稍后再试。</p></body></html>',
+      }),
+    ).toThrow(expect.objectContaining({ code: 'SOURCE_RATE_LIMITED' }));
+
+    const longText = `${'故事正文。'.repeat(120)}他抱怨服务器“请求过于频繁”。`;
+    expect(
+      parseChapter(
+        'bilinovel',
+        {
+          url,
+          html: `<html><body><h1>第一章</h1><div id="acontent"><p>${longText}</p></div></body></html>`,
+        },
+        '/novel/1/101.html',
+      ).html,
+    ).toContain('请求过于频繁');
+  });
+
+  it('reads volume kind, edition, script and declared translation details', () => {
+    const fixture = parseCatalogue(
+      'bilinovel',
+      { url, html: novelFixture.catalogue },
+      '1',
+    );
+    expect(fixture.volumes[0]).toMatchObject({
+      kind: 'main',
+      edition: null,
+      script: 'hans',
+    });
+    expect(fixture).toMatchObject({
+      translators: [],
+      translationMethod: 'unknown',
+    });
+
+    const declared = parseCatalogue(
+      'bilinovel',
+      {
+        url,
+        html: `<h1>測試輕小說</h1><h2>作者：測試作者</h2><div class="intro"><p>譯者：甲組（機翻）</p></div>
+        <ul class="volume-chapters"><li><a href="/novel/1/vol_40.html"><h3>第一卷（文庫版）</h3></a></li>
+        <li class="jsChapter"><a href="/novel/1/201.html">開場與說明</a></li></ul>
+        <ul class="volume-chapters"><li><a href="/novel/1/vol_41.html"><h3>短篇集</h3></a></li>
+        <li class="jsChapter"><a href="/novel/1/202.html">番外</a></li></ul>`,
+      },
+      '1',
+    );
+    expect(declared).toMatchObject({
+      translators: ['甲組'],
+      translationMethod: 'machine',
+    });
+    expect(
+      declared.volumes.map(({ kind, edition, script }) => ({
+        kind,
+        edition,
+        script,
+      })),
+    ).toEqual([
+      { kind: 'main', edition: '文库版', script: 'hant' },
+      { kind: 'collection', edition: null, script: 'unknown' },
+    ]);
+  });
+
+  it('reports translation declarations found on a chapter page', () => {
+    const parsed = parseChapter(
+      'bilinovel',
+      {
+        url,
+        html: '<h1 id="atitle">序章</h1><div id="acontent"><p>正文内容。</p><p>译者：乙</p><p>翻译方式：人工翻译</p></div>',
+      },
+      '/novel/1/101.html',
+    );
+    expect(parsed).toMatchObject({
+      translators: ['乙'],
+      translationMethod: 'human',
+    });
+  });
+});
