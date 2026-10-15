@@ -7,6 +7,7 @@ import type {
 import type { TextContent } from 'pdfjs-dist/types/src/display/api.js';
 
 import { AppError } from '../lib/app-error';
+import { translate } from '../i18n/i18n';
 
 type PdfJsRuntime = Pick<
   typeof import('pdfjs-dist'),
@@ -90,7 +91,7 @@ export class PdfBookTextParser {
         totalChars += text.length;
         if (totalChars > maxTotalTextChars) {
           throw new AppError('SEARCH_INDEX_FAILED', {
-            message: 'PDF 正文过大，无法建立本地索引。',
+            message: translate('content.pdfTooLarge'),
           });
         }
         pages.push({ pageIndex, text });

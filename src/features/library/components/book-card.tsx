@@ -5,6 +5,7 @@ import { IconButton } from '../../../components/ui/icon-button';
 import { cn } from '../../../lib/cn';
 import type { LibraryBook } from '../domain/library';
 import type { LibraryServices } from '../services/library-services';
+import { useI18n } from '../../../i18n/use-i18n';
 
 interface BookCardProps {
   book: LibraryBook;
@@ -23,6 +24,7 @@ export function BookCard({
   onToggleFavorite,
   services,
 }: BookCardProps) {
+  const { formatDate, t } = useI18n();
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -49,7 +51,7 @@ export function BookCard({
   return (
     <article className="group relative min-w-0">
       <button
-        aria-label={`打开《${book.title}》`}
+        aria-label={t('library.openBook', { title: book.title })}
         className="w-full rounded-lg text-left focus-visible:outline-offset-4"
         disabled={disabled}
         onClick={() => {
@@ -60,7 +62,7 @@ export function BookCard({
         <div className="bg-muted aspect-[2/3] overflow-hidden rounded-lg border shadow-sm transition group-hover:-translate-y-0.5 group-hover:shadow-md">
           {coverUrl ? (
             <img
-              alt={`${book.title}封面`}
+              alt={t('library.cover', { title: book.title })}
               className="h-full w-full object-cover"
               src={coverUrl}
             />
@@ -77,15 +79,17 @@ export function BookCard({
           {book.title}
         </h2>
         <p className="text-muted-foreground mt-1 truncate text-xs">
-          {book.author ?? '未知作者'}
+          {book.author ?? t('common.unknownAuthor')}
         </p>
         <p className="text-muted-foreground mt-2 text-xs">
           {book.lastReadAt === null
-            ? '未开始 · 0%'
-            : `最近阅读 · ${new Intl.DateTimeFormat('zh-CN', {
-                month: 'numeric',
-                day: 'numeric',
-              }).format(book.lastReadAt)}`}
+            ? t('library.notStarted')
+            : t('library.lastRead', {
+                date: formatDate(book.lastReadAt, {
+                  month: 'numeric',
+                  day: 'numeric',
+                }),
+              })}
         </p>
         {book.tags.length > 0 ? (
           <span className="mt-2 flex min-w-0 gap-1 overflow-hidden">
@@ -115,8 +119,8 @@ export function BookCard({
           }
           label={
             book.favorite
-              ? `取消收藏《${book.title}》`
-              : `收藏《${book.title}》`
+              ? t('library.unfavorite', { title: book.title })
+              : t('library.favorite', { title: book.title })
           }
           onClick={() => {
             onToggleFavorite(book);
@@ -127,7 +131,7 @@ export function BookCard({
           className="bg-surface/90 size-8 shadow-sm backdrop-blur"
           disabled={disabled}
           icon={<MoreHorizontal aria-hidden="true" size={16} />}
-          label={`管理《${book.title}》`}
+          label={t('library.manage', { title: book.title })}
           onClick={() => {
             onManage(book);
           }}

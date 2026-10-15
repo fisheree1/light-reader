@@ -10,6 +10,7 @@ import type {
   DictionaryLookupResult,
   DictionaryService,
 } from '../services/dictionary-service';
+import { useI18n } from '../../../i18n/use-i18n';
 
 type PanelState =
   | { status: 'loading' }
@@ -43,6 +44,7 @@ export function DictionaryPanel({
   onSpeak,
   text,
 }: DictionaryPanelProps) {
+  const { t } = useI18n();
   const [state, setState] = useState<PanelState>({ status: 'loading' });
 
   useEffect(() => {
@@ -70,7 +72,7 @@ export function DictionaryPanel({
 
   return (
     <aside
-      aria-label="词典"
+      aria-label={t('dictionary.panel')}
       className="bg-surface w-80 shrink-0 overflow-auto border-l p-4"
     >
       <div className="flex items-start gap-2">
@@ -80,7 +82,7 @@ export function DictionaryPanel({
         {canSpeak ? (
           <IconButton
             icon={<Volume2 aria-hidden="true" size={17} />}
-            label="朗读词条"
+            label={t('dictionary.speakEntry')}
             onClick={() => {
               onSpeak(state.status === 'done' ? state.word : text);
             }}
@@ -89,14 +91,14 @@ export function DictionaryPanel({
         ) : null}
         <IconButton
           icon={<X aria-hidden="true" size={17} />}
-          label="关闭词典"
+          label={t('dictionary.close')}
           onClick={onClose}
           variant="ghost"
         />
       </div>
 
       <div aria-live="polite" className="mt-4 text-sm">
-        {state.status === 'loading' ? <p>正在查询本地词典…</p> : null}
+        {state.status === 'loading' ? <p>{t('dictionary.looking')}</p> : null}
         {state.status === 'error' ? (
           <p className="text-destructive" role="alert">
             {state.message}
@@ -104,24 +106,24 @@ export function DictionaryPanel({
         ) : null}
         {state.status === 'invalid-selection' ? (
           <p className="text-muted-foreground">
-            请选择一个单词或短语（最多 4 个词）后再查词。
+            {t('dictionary.invalidSelection')}
           </p>
         ) : null}
         {state.status === 'no-dictionaries' ? (
           <div className="rounded-md border p-3">
-            <p className="font-medium">尚未导入词典</p>
+            <p className="font-medium">{t('dictionary.noDictionaries')}</p>
             <p className="text-muted-foreground mt-1">
-              在设置中导入 StarDict 词典后，即可离线查词。
+              {t('dictionary.noDictionariesHint')}
             </p>
             <Button asChild className="mt-3" size="sm" variant="secondary">
-              <Link to="/settings#dictionaries">前往设置导入</Link>
+              <Link to="/settings#dictionaries">
+                {t('dictionary.goToSettings')}
+              </Link>
             </Button>
           </div>
         ) : null}
         {state.status === 'done' && state.entries.length === 0 ? (
-          <p className="text-muted-foreground">
-            已导入的词典中没有找到这个词。
-          </p>
+          <p className="text-muted-foreground">{t('dictionary.notFound')}</p>
         ) : null}
       </div>
 

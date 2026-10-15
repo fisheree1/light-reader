@@ -22,6 +22,9 @@ import {
 } from '../dictionary/services/dictionary-services';
 import type { AgentFacade } from '../ai-agent/services/agent-facade';
 import { agentFacade as defaultAgentFacade } from '../ai-agent/services/ai-services';
+import { supportedLocales, type LocalePreference } from '../../i18n/i18n';
+import { useI18n } from '../../i18n/use-i18n';
+import { useAppStore } from '../../stores/app-store';
 
 type HealthStatus = 'idle' | 'checking' | 'healthy' | 'error';
 type SaveStatus = 'idle' | 'loading' | 'saving' | 'saved' | 'error';
@@ -39,6 +42,9 @@ export function SettingsPage({
   dictionary = dictionaryServices,
   settingsRepository = readerServices.settingsRepository,
 }: SettingsPageProps) {
+  const { t } = useI18n();
+  const localePreference = useAppStore((state) => state.locale);
+  const setLocale = useAppStore((state) => state.setLocale);
   const { hash } = useLocation();
   const [healthStatus, setHealthStatus] = useState<HealthStatus>('idle');
   const [readerSettings, setReaderSettings] = useState<ReaderDisplaySettings>(
@@ -97,16 +103,42 @@ export function SettingsPage({
   return (
     <div className="mx-auto max-w-4xl">
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold">设置</h1>
+        <h1 className="text-2xl font-semibold">{t('settings.title')}</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          管理阅读偏好、数据备份和本地 AI。
+          {t('settings.description')}
         </p>
       </header>
 
+      <section className="bg-surface mb-4 flex flex-wrap items-center justify-between gap-4 rounded-xl border p-5">
+        <div>
+          <h2 className="font-medium" id="interface-language-title">
+            {t('settings.language')}
+          </h2>
+          <p className="text-muted-foreground mt-1 text-sm">
+            {t('settings.languageDescription')}
+          </p>
+        </div>
+        <select
+          aria-labelledby="interface-language-title"
+          className="bg-background h-9 rounded-md border px-2 text-sm"
+          onChange={(event) => {
+            setLocale(event.currentTarget.value as LocalePreference);
+          }}
+          value={localePreference}
+        >
+          <option value="system">{t('settings.languageSystem')}</option>
+          {supportedLocales.map((locale) => (
+            <option key={locale} lang={locale} value={locale}>
+              {locale === 'en' ? 'English' : '简体中文'}
+            </option>
+          ))}
+        </select>
+      </section>
+
       <section className="bg-surface rounded-xl border p-5 sm:p-6">
-        <h2 className="font-medium">全局阅读设置</h2>
+        <h2 className="font-medium">{t('settings.globalReading')}</h2>
         <p className="text-muted-foreground mt-1 text-sm">
-          新打开的 EPUB 默认使用这些主题和排版。单本图书可在阅读页覆盖。
+          {t('settings.globalReadingDescription')}
         </p>
         <div className="mt-5 max-w-xl">
           <ReaderSettingsForm
@@ -123,12 +155,14 @@ export function SettingsPage({
               disabled={saveStatus === 'loading' || saveStatus === 'saving'}
               onClick={() => void handleSaveReaderSettings()}
             >
-              {saveStatus === 'saving' ? '保存中…' : '保存全局设置'}
+              {saveStatus === 'saving'
+                ? t('common.saving')
+                : t('settings.saveGlobal')}
             </Button>
             <span aria-live="polite" className="text-muted-foreground text-sm">
-              {saveStatus === 'loading' ? '正在加载设置…' : null}
-              {saveStatus === 'saved' ? '阅读设置已保存' : null}
-              {saveStatus === 'error' ? '设置加载或保存失败，请重试' : null}
+              {saveStatus === 'loading' ? t('settings.loading') : null}
+              {saveStatus === 'saved' ? t('settings.saved') : null}
+              {saveStatus === 'error' ? t('settings.saveFailed') : null}
             </span>
           </div>
         </div>
@@ -136,13 +170,13 @@ export function SettingsPage({
 
       <section className="bg-surface mt-4 flex items-center justify-between gap-4 rounded-lg border p-5">
         <div>
-          <h2 className="font-medium">阅读统计</h2>
+          <h2 className="font-medium">{t('settings.stats')}</h2>
           <p className="text-muted-foreground mt-1 text-sm">
-            阅读热力图、每本书的阅读时长和每日目标。
+            {t('settings.statsDescription')}
           </p>
         </div>
         <Button asChild variant="secondary">
-          <Link to="/stats">查看阅读统计</Link>
+          <Link to="/stats">{t('settings.viewStats')}</Link>
         </Button>
       </section>
 
@@ -157,22 +191,24 @@ export function SettingsPage({
 
       {import.meta.env.DEV ? (
         <section className="bg-surface mt-4 rounded-lg border p-5">
-          <h2 className="font-medium">开发诊断</h2>
+          <h2 className="font-medium">{t('settings.diagnostics')}</h2>
           <p className="text-muted-foreground mt-1 text-sm">
-            此检查仅能在 Tauri 开发窗口中运行，Web 预览不提供原生 SQL 插件。
+            {t('settings.diagnosticsDescription')}
           </p>
           <div className="mt-4 flex items-center gap-3">
             <Button
               disabled={healthStatus === 'checking'}
               onClick={() => void handleDatabaseCheck()}
             >
-              {healthStatus === 'checking' ? '检查中…' : '检查数据库'}
+              {healthStatus === 'checking'
+                ? t('settings.checking')
+                : t('settings.checkDatabase')}
             </Button>
             <span aria-live="polite" className="text-muted-foreground text-sm">
-              {healthStatus === 'healthy' ? '数据库连接正常' : null}
-              {healthStatus === 'error'
-                ? '数据库检查失败，请查看开发日志'
+              {healthStatus === 'healthy'
+                ? t('settings.databaseHealthy')
                 : null}
+              {healthStatus === 'error' ? t('settings.databaseFailed') : null}
             </span>
           </div>
         </section>

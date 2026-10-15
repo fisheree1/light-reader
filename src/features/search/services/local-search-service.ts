@@ -10,6 +10,7 @@ import {
 } from '../domain/search';
 import type { EpubContentParser } from './epub-content-parser';
 import { FoliateBookContentParser } from './foliate-content-parser';
+import { translate } from '../../../i18n/i18n';
 
 export interface SearchIndexRebuildResult {
   failedBooks: number;
@@ -117,7 +118,9 @@ export class LocalSearchService {
         book.format === 'pdf'
           ? (await this.pdfParser.parse(source)).map((page) => ({
               chapterHref: `pdf-page:${String(page.pageIndex)}`,
-              chapterTitle: `PDF 第 ${String(page.pageIndex + 1)} 页`,
+              chapterTitle: translate('content.pdfPage', {
+                page: page.pageIndex + 1,
+              }),
               text: page.text,
             }))
           : book.format === 'epub'

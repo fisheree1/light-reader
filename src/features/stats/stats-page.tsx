@@ -21,6 +21,7 @@ import {
   statsServices as defaultStatsServices,
   type StatsServices,
 } from './services/stats-services';
+import { useI18n } from '../../i18n/use-i18n';
 
 interface StatsPageProps {
   now?: number;
@@ -31,19 +32,20 @@ export function StatsPage({
   now: fixedNow,
   services = defaultStatsServices,
 }: StatsPageProps) {
+  const { t } = useI18n();
   const [now] = useState(() => fixedNow ?? Date.now());
   const { state, saveGoal, reload } = useReadingStats(services, now);
 
   return (
     <div className="mx-auto max-w-5xl px-8 py-8">
-      <h1 className="text-2xl font-semibold">阅读统计</h1>
+      <h1 className="text-2xl font-semibold">{t('stats.title')}</h1>
       <p className="text-muted-foreground mt-2 text-sm">
-        阅读时长只在本机记录，用于热力图、每本书的阅读时间和每日目标。
+        {t('stats.description')}
       </p>
 
       {state.status === 'loading' ? (
         <p aria-live="polite" className="mt-8 text-sm">
-          正在加载阅读统计…
+          {t('stats.loading')}
         </p>
       ) : null}
 
@@ -51,7 +53,7 @@ export function StatsPage({
         <div className="mt-8 rounded-md border p-4" role="alert">
           <p className="text-sm">{state.message}</p>
           <Button className="mt-3" onClick={reload} variant="secondary">
-            重试
+            {t('common.retry')}
           </Button>
         </div>
       ) : null}
@@ -62,12 +64,12 @@ export function StatsPage({
             <EmptyState
               action={
                 <Button asChild>
-                  <Link to="/library">去书架开始阅读</Link>
+                  <Link to="/library">{t('stats.startReading')}</Link>
                 </Button>
               }
-              description="打开任意一本书阅读后，这里会显示阅读时长与热力图。"
+              description={t('stats.emptyDescription')}
               icon={<BarChart3 aria-hidden="true" size={28} />}
-              title="还没有阅读记录"
+              title={t('stats.emptyTitle')}
             />
           </div>
         ) : (
@@ -85,6 +87,7 @@ interface StatsContentProps {
 }
 
 function StatsContent({ data, now, onSaveGoal }: StatsContentProps) {
+  const { formatDate, t } = useI18n();
   const totals = useMemo(
     () => dailyReadingTotals(data.sessions),
     [data.sessions],
@@ -104,19 +107,25 @@ function StatsContent({ data, now, onSaveGoal }: StatsContentProps) {
   return (
     <>
       <section
-        aria-label="阅读概览"
+        aria-label={t('stats.overview')}
         className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
       >
         <SummaryCard
-          label="累计阅读"
+          label={t('stats.totalTime')}
           value={formatReadingDuration(data.stats.totalSeconds)}
         />
-        <SummaryCard label="阅读次数" value={String(data.stats.sessionCount)} />
-        <SummaryCard label="读过的书" value={String(data.stats.booksRead)} />
+        <SummaryCard
+          label={t('stats.sessions')}
+          value={String(data.stats.sessionCount)}
+        />
+        <SummaryCard
+          label={t('stats.booksRead')}
+          value={String(data.stats.booksRead)}
+        />
         <SummaryCard
           icon={<Flame aria-hidden="true" size={16} />}
-          label={goalSeconds ? '连续达标' : '连续阅读'}
-          value={`${String(streak)} 天`}
+          label={goalSeconds ? t('stats.goalStreak') : t('stats.streak')}
+          value={t('stats.days', { count: streak })}
         />
       </section>
 
@@ -127,15 +136,15 @@ function StatsContent({ data, now, onSaveGoal }: StatsContentProps) {
       />
 
       <section className="bg-surface mt-4 rounded-lg border p-5">
-        <h2 className="font-medium">阅读热力图</h2>
+        <h2 className="font-medium">{t('stats.heatmap')}</h2>
         <p className="text-muted-foreground mt-1 text-xs">
-          最近 26 周，每格代表一天，颜色越深读得越久。
+          {t('stats.heatmapDescription')}
         </p>
         <ReadingHeatmap columns={heatmap} />
       </section>
 
       <section className="bg-surface mt-4 rounded-lg border p-5">
-        <h2 className="font-medium">每本书的阅读时长</h2>
+        <h2 className="font-medium">{t('stats.perBook')}</h2>
         {data.bookTotals.length ? (
           <ol className="mt-3 space-y-3">
             {data.bookTotals.map((book) => (
@@ -147,12 +156,14 @@ function StatsContent({ data, now, onSaveGoal }: StatsContentProps) {
                   >
                     {book.bookTitle}
                     <span className="text-muted-foreground ml-2 font-normal">
-                      {book.author ?? '未知作者'}
+                      {book.author ?? t('common.unknownAuthor')}
                     </span>
                   </Link>
                   <span className="text-muted-foreground shrink-0 text-xs">
-                    {formatReadingDuration(book.totalSeconds)} ·{' '}
-                    {String(book.sessionCount)} 次
+                    {t('stats.bookTotal', {
+                      duration: formatReadingDuration(book.totalSeconds),
+                      count: book.sessionCount,
+                    })}
                   </span>
                 </div>
                 <div aria-hidden="true" className="bg-muted mt-1 h-1.5 rounded">
@@ -170,13 +181,13 @@ function StatsContent({ data, now, onSaveGoal }: StatsContentProps) {
           </ol>
         ) : (
           <p className="text-muted-foreground mt-2 text-sm">
-            书架上的书还没有阅读时长。
+            {t('stats.noBookTime')}
           </p>
         )}
       </section>
 
       <section className="bg-surface mt-4 rounded-lg border p-5">
-        <h2 className="font-medium">最近阅读</h2>
+        <h2 className="font-medium">{t('stats.recent')}</h2>
         {data.recent.length ? (
           <ol className="mt-2 divide-y rounded-md border">
             {data.recent.map((entry, index) => (
@@ -186,15 +197,21 @@ function StatsContent({ data, now, onSaveGoal }: StatsContentProps) {
               >
                 <span className="truncate">{entry.bookTitle}</span>
                 <span className="text-muted-foreground shrink-0 text-xs">
-                  {new Date(entry.startedAt).toLocaleString('zh-CN')} ·{' '}
-                  {String(Math.max(1, Math.round(entry.durationSeconds / 60)))}{' '}
-                  分钟
+                  {t('stats.recentEntry', {
+                    date: formatDate(entry.startedAt),
+                    minutes: Math.max(
+                      1,
+                      Math.round(entry.durationSeconds / 60),
+                    ),
+                  })}
                 </span>
               </li>
             ))}
           </ol>
         ) : (
-          <p className="text-muted-foreground mt-2 text-sm">暂无阅读记录。</p>
+          <p className="text-muted-foreground mt-2 text-sm">
+            {t('stats.noHistory')}
+          </p>
         )}
       </section>
     </>
@@ -228,6 +245,7 @@ interface GoalSectionProps {
 }
 
 function GoalSection({ goalMinutes, onSave, todaySeconds }: GoalSectionProps) {
+  const { t } = useI18n();
   const [draft, setDraft] = useState(String(goalMinutes ?? 30));
   const [status, setStatus] = useState<
     { kind: 'idle' | 'saving' | 'saved' } | { kind: 'error'; message: string }
@@ -264,16 +282,19 @@ function GoalSection({ goalMinutes, onSave, todaySeconds }: GoalSectionProps) {
         id="reading-goal-title"
       >
         <Target aria-hidden="true" size={17} />
-        每日阅读目标
+        {t('stats.goalTitle')}
       </h2>
       {goalMinutes ? (
         <div className="mt-3">
           <p className="text-sm">
-            今天已读 {String(todayMinutes)} / {String(goalMinutes)} 分钟
-            {progress >= 100 ? '，已达成 🎉' : ''}
+            {t('stats.todayProgress', {
+              read: todayMinutes,
+              goal: goalMinutes,
+            })}
+            {progress >= 100 ? t('stats.goalReached') : ''}
           </p>
           <div
-            aria-label="今日目标进度"
+            aria-label={t('stats.goalProgress')}
             aria-valuemax={100}
             aria-valuemin={0}
             aria-valuenow={Math.round(progress)}
@@ -288,7 +309,7 @@ function GoalSection({ goalMinutes, onSave, todaySeconds }: GoalSectionProps) {
         </div>
       ) : (
         <p className="text-muted-foreground mt-2 text-sm">
-          尚未设置目标。设置后会显示今日进度，连续天数也会按目标计算。
+          {t('stats.noGoal')}
         </p>
       )}
       <form
@@ -299,7 +320,7 @@ function GoalSection({ goalMinutes, onSave, todaySeconds }: GoalSectionProps) {
         }}
       >
         <label className="text-sm font-medium">
-          每日分钟数
+          {t('stats.dailyMinutes')}
           <input
             className="bg-background mt-1 block w-28 rounded-md border px-3 py-2 text-sm"
             max={600}
@@ -317,7 +338,7 @@ function GoalSection({ goalMinutes, onSave, todaySeconds }: GoalSectionProps) {
           disabled={!validDraft || status.kind === 'saving'}
           type="submit"
         >
-          保存目标
+          {t('stats.saveGoal')}
         </Button>
         {goalMinutes ? (
           <Button
@@ -326,13 +347,13 @@ function GoalSection({ goalMinutes, onSave, todaySeconds }: GoalSectionProps) {
             type="button"
             variant="secondary"
           >
-            取消目标
+            {t('stats.clearGoal')}
           </Button>
         ) : null}
         <span aria-live="polite" className="text-muted-foreground text-sm">
-          {status.kind === 'saved' ? '阅读目标已保存' : null}
+          {status.kind === 'saved' ? t('stats.goalSaved') : null}
           {status.kind === 'error' ? status.message : null}
-          {!validDraft ? '请输入 5–600 之间的整数' : null}
+          {!validDraft ? t('stats.goalInvalid') : null}
         </span>
       </form>
     </section>

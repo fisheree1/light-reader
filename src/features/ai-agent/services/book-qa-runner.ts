@@ -25,6 +25,7 @@ import type { AiSettings } from '../domain/ai-settings';
 import { AiDraftService } from './ai-draft-service';
 import { ProviderTextRunner } from './provider-text-runner';
 import type { AgentRunResult } from './agent-runner';
+import { translate } from '../../../i18n/i18n';
 
 export interface BookQaRunResult extends AgentRunResult {
   trace: AgentToolTraceEntry[];
@@ -164,7 +165,7 @@ export class BookQaRunner {
     } catch (error) {
       throw new AppError('AI_OUTPUT_INVALID', {
         cause: error,
-        message: '模型回答没有提供可验证的本书引用，请重试。',
+        message: translate('ai.noCitations'),
       });
     }
     return {

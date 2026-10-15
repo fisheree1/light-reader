@@ -5,6 +5,7 @@ import {
   type FoliateBook,
 } from '../../../reader-engines/foliate-book-loader';
 import type { BookContentChapter } from '../domain/search';
+import { translate } from '../../../i18n/i18n';
 
 type BookOpener = (
   source: ArrayBuffer | Uint8Array,
@@ -72,7 +73,9 @@ export class FoliateBookContentParser {
         if (!text) continue;
         chapters.push({
           chapterHref: foliateSectionCfi(index),
-          chapterTitle: titles.get(index) ?? `第 ${String(index + 1)} 节`,
+          chapterTitle:
+            titles.get(index) ??
+            translate('content.sectionNumber', { number: index + 1 }),
           text,
         });
       }

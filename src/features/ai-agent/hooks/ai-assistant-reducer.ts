@@ -3,6 +3,7 @@ import type { AiDraft, SelectionAiAction } from '../domain/agent';
 import type { AgentToolTraceEntry } from '../domain/agent-tool';
 import type { AiSettings } from '../domain/ai-settings';
 import type { BookIndexingProgress } from '../retrieval/book-indexing';
+import { translate } from '../../../i18n/i18n';
 
 export type AiAssistantStage =
   | 'loading'
@@ -153,7 +154,7 @@ export function aiAssistantReducer(
     case 'rebuildCompleted':
       return {
         ...state,
-        indexNotice: '本书 AI 索引已重新建立。',
+        indexNotice: translate('ai.indexRebuilt'),
         stage: 'consent',
       };
     case 'cancelled':

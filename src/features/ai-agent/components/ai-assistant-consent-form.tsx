@@ -3,11 +3,13 @@ import { useMemo } from 'react';
 import { Button } from '../../../components/ui/button';
 import type { ReaderTextSelection } from '../../../reader-engines/types';
 import {
-  selectionAiActionLabels,
+  selectionAiActionLabel,
+  selectionAiActionSchema,
   type SelectionAiAction,
 } from '../domain/agent';
 import type { AiAssistantForm } from '../hooks/ai-assistant-reducer';
 import { detectSensitiveContent } from '../services/sensitive-content';
+import { useI18n } from '../../../i18n/use-i18n';
 
 interface AiAssistantConsentFormProps {
   bookTitle: string;
@@ -33,6 +35,7 @@ export function AiAssistantConsentForm({
   onSend,
   selection,
 }: AiAssistantConsentFormProps) {
+  const { t } = useI18n();
   const { action, customInstruction, mode, question, text } = form;
   const warnings = useMemo(() => detectSensitiveContent(text), [text]);
   const canSend =
@@ -44,14 +47,14 @@ export function AiAssistantConsentForm({
 
   return (
     <div className="mt-5 space-y-4">
-      <div aria-label="AI 使用范围" className="grid grid-cols-2 gap-2">
+      <div aria-label={t('aiConsent.scope')} className="grid grid-cols-2 gap-2">
         <Button
           onClick={() => {
             onChange({ mode: 'book' });
           }}
           variant={mode === 'book' ? 'default' : 'secondary'}
         >
-          本书问答
+          {t('aiConsent.bookQa')}
         </Button>
         <Button
           onClick={() => {
@@ -59,46 +62,48 @@ export function AiAssistantConsentForm({
           }}
           variant={mode === 'selection' ? 'default' : 'secondary'}
         >
-          处理选区
+          {t('aiConsent.selection')}
         </Button>
       </div>
 
       <div className="rounded-md border p-3 text-sm">
         <p>
-          <span className="font-medium">来源：</span>《{bookTitle}》
+          <span className="font-medium">{t('aiConsent.source')}</span>
+          {t('aiConsent.bookTitle', { title: bookTitle })}
         </p>
         {mode === 'selection' && selection ? (
           <p className="text-muted-foreground mt-1">
             {selection.locator.format === 'pdf'
-              ? `PDF 第 ${String(selection.locator.pageIndex + 1)} 页`
-              : 'EPUB 当前选区'}
+              ? t('aiConsent.pdfPage', {
+                  page: selection.locator.pageIndex + 1,
+                })
+              : t('aiConsent.epubSelection')}
           </p>
         ) : null}
         <p className="text-muted-foreground mt-1">
-          Provider：Ollama（本机） · 模型：
-          {model ?? '未配置'}
+          {t('aiConsent.provider')}
+          {model ?? t('aiConsent.notConfigured')}
         </p>
       </div>
 
       {mode === 'book' ? (
         <>
           <label className="block text-sm font-medium">
-            向本书提问
+            {t('aiConsent.question')}
             <textarea
-              aria-label="向本书提问"
+              aria-label={t('aiConsent.question')}
               autoFocus
               className="bg-background mt-2 min-h-32 w-full rounded-md border px-3 py-2 text-sm"
               maxLength={1_000}
               onChange={(event) => {
                 onChange({ question: event.currentTarget.value });
               }}
-              placeholder="例如：作者如何解释这个观点？请列出书中依据。"
+              placeholder={t('aiConsent.questionPlaceholder')}
               value={question}
             />
           </label>
           <p className="text-muted-foreground text-xs leading-relaxed">
-            将在本机为当前图书建立文本索引，只向本机模型发送最相关的少量片段。首次使用可能需要稍等；扫描版
-            PDF 暂不支持。
+            {t('aiConsent.indexHint')}
           </p>
           {indexNotice ? (
             <p className="text-sm" role="status">
@@ -106,13 +111,13 @@ export function AiAssistantConsentForm({
             </p>
           ) : null}
           <Button onClick={onRebuildIndex} variant="secondary">
-            重建本书 AI 索引
+            {t('aiConsent.rebuildIndex')}
           </Button>
         </>
       ) : selection ? (
         <>
           <label className="block text-sm font-medium">
-            任务
+            {t('aiConsent.task')}
             <select
               className="bg-background mt-2 w-full rounded-md border px-3 py-2"
               onChange={(event) => {
@@ -122,9 +127,9 @@ export function AiAssistantConsentForm({
               }}
               value={action}
             >
-              {Object.entries(selectionAiActionLabels).map(([value, label]) => (
+              {selectionAiActionSchema.options.map((value) => (
                 <option key={value} value={value}>
-                  {label}
+                  {selectionAiActionLabel(value)}
                 </option>
               ))}
             </select>
@@ -132,26 +137,29 @@ export function AiAssistantConsentForm({
 
           {action === 'custom' ? (
             <label className="block text-sm font-medium">
-              自定义需求
+              {t('aiConsent.customInstruction')}
               <textarea
-                aria-label="自定义需求"
+                aria-label={t('aiConsent.customInstruction')}
                 autoFocus
                 className="bg-background mt-2 min-h-28 w-full rounded-md border px-3 py-2 text-sm"
                 maxLength={1_000}
                 onChange={(event) => {
                   onChange({ customInstruction: event.currentTarget.value });
                 }}
-                placeholder="例如：分析作者的论证漏洞，并用三个要点回答。"
+                placeholder={t('aiConsent.customPlaceholder')}
                 value={customInstruction}
               />
               <span className="text-muted-foreground mt-1 block text-xs">
-                {String(customInstruction.length)} / 1000 个字符
+                {t('aiConsent.characterCount', {
+                  count: customInstruction.length,
+                  max: 1000,
+                })}
               </span>
             </label>
           ) : null}
 
           <label className="block text-sm font-medium">
-            将发送的准确文本
+            {t('aiConsent.exactText')}
             <textarea
               className="bg-background mt-2 min-h-40 w-full rounded-md border px-3 py-2 font-mono text-sm"
               maxLength={12_000}
@@ -162,7 +170,7 @@ export function AiAssistantConsentForm({
             />
           </label>
           <p className="text-muted-foreground text-xs">
-            {String(text.length)} / 12000 个字符。你可以先编辑或遮盖敏感内容。
+            {t('aiConsent.textHint', { count: text.length, max: 12000 })}
           </p>
 
           {warnings.length ? (
@@ -170,30 +178,30 @@ export function AiAssistantConsentForm({
               className="border-destructive/40 rounded-md border p-3 text-sm"
               role="alert"
             >
-              <p className="font-medium">发送前请检查敏感内容</p>
+              <p className="font-medium">{t('aiConsent.sensitiveTitle')}</p>
               <ul className="mt-1 list-disc pl-5">
                 {warnings.map((warning) => (
                   <li key={warning.kind}>{warning.label}</li>
                 ))}
               </ul>
               <p className="text-muted-foreground mt-1 text-xs">
-                本地检测可能遗漏内容；请自行确认后再发送。
+                {t('aiConsent.sensitiveHint')}
               </p>
             </div>
           ) : null}
         </>
       ) : (
         <div className="rounded-md border p-3 text-sm">
-          当前没有正文选区。请先在阅读区选择文字，或使用“本书问答”。
+          {t('aiConsent.noSelection')}
         </div>
       )}
 
       <div className="flex justify-end gap-2">
         <Button onClick={onCancel} variant="secondary">
-          取消
+          {t('common.cancel')}
         </Button>
         <Button disabled={!canSend} onClick={onSend}>
-          {mode === 'book' ? '检索本书并提问' : '发送给本地模型'}
+          {mode === 'book' ? t('aiConsent.askBook') : t('aiConsent.send')}
         </Button>
       </div>
     </div>

@@ -8,6 +8,7 @@ import {
   throwIfBookIndexingAborted,
   type BookRetrievalOptions,
 } from './book-indexing';
+import { translate } from '../../../i18n/i18n';
 
 export interface BookTextExtractor {
   extract(
@@ -56,7 +57,9 @@ export class LocalBookTextExtractor implements BookTextExtractor {
       return pages.map((page, ordinal) =>
         bookTextBlockSchema.parse({
           chapterHref: null,
-          chapterTitle: `PDF 第 ${String(page.pageIndex + 1)} 页`,
+          chapterTitle: translate('content.pdfPage', {
+            page: page.pageIndex + 1,
+          }),
           locator: {
             version: 1,
             format: 'pdf',

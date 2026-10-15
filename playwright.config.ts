@@ -11,6 +11,8 @@ export default defineConfig({
   reporter: 'html',
   use: {
     baseURL: 'http://127.0.0.1:4173',
+    // E2E assertions use the Chinese interface; English has its own test.
+    locale: 'zh-CN',
     trace: 'on-first-retry',
   },
   projects: [

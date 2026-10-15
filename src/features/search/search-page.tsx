@@ -21,6 +21,7 @@ import {
   searchServices,
   type SearchServices,
 } from './services/search-services';
+import { useI18n } from '../../i18n/use-i18n';
 
 interface SearchPageProps {
   services?: SearchServices;
@@ -74,13 +75,10 @@ function ResultButton({
   );
 }
 
-function noteMeta(result: NoteSearchResult): string {
-  return new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium' }).format(
-    result.updatedAt,
-  );
-}
-
 export function SearchPage({ services = searchServices }: SearchPageProps) {
+  const { formatDate, t } = useI18n();
+  const noteMeta = (result: NoteSearchResult) =>
+    formatDate(result.updatedAt, { dateStyle: 'medium' });
   const navigate = useNavigate();
   const search = useLocalSearch(services.localSearch);
   const total = search.results
@@ -119,9 +117,9 @@ export function SearchPage({ services = searchServices }: SearchPageProps) {
   return (
     <div>
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold">搜索</h1>
+        <h1 className="text-2xl font-semibold">{t('search.title')}</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          在本机搜索书籍、笔记、高亮，以及电子书正文。
+          {t('search.description')}
         </p>
       </header>
 
@@ -133,27 +131,29 @@ export function SearchPage({ services = searchServices }: SearchPageProps) {
         }}
       >
         <label className="relative min-w-0 flex-1">
-          <span className="sr-only">搜索本地内容</span>
+          <span className="sr-only">{t('search.inputLabel')}</span>
           <Search
             aria-hidden="true"
             className="text-muted-foreground absolute top-1/2 left-3 -translate-y-1/2"
             size={17}
           />
           <input
-            aria-label="搜索本地内容"
+            aria-label={t('search.inputLabel')}
             className="bg-surface h-10 w-full rounded-md border pr-3 pl-10 text-sm"
             maxLength={200}
             onChange={(event) => {
               search.setQuery(event.currentTarget.value);
             }}
-            placeholder="输入标题、正文或高亮文字"
+            placeholder={t('search.placeholder')}
             type="search"
             value={search.query}
           />
         </label>
         <Button disabled={search.phase === 'loading'} type="submit">
           <Search aria-hidden="true" size={16} />
-          {search.phase === 'loading' ? '搜索中…' : '搜索'}
+          {search.phase === 'loading'
+            ? t('search.searching')
+            : t('search.submit')}
         </Button>
         <Button
           disabled={search.isRebuilding || search.phase === 'loading'}
@@ -166,7 +166,9 @@ export function SearchPage({ services = searchServices }: SearchPageProps) {
             className={search.isRebuilding ? 'animate-spin' : undefined}
             size={16}
           />
-          {search.isRebuilding ? '重建中…' : '索引维护'}
+          {search.isRebuilding
+            ? t('search.rebuilding')
+            : t('search.maintenance')}
         </Button>
       </form>
 
@@ -184,17 +186,20 @@ export function SearchPage({ services = searchServices }: SearchPageProps) {
           className="bg-surface mb-5 rounded-md border px-4 py-3 text-sm"
           role="status"
         >
-          已重建索引：{search.rebuildResult.indexedBooks} 本图书
+          {t('search.rebuilt', { count: search.rebuildResult.indexedBooks })}
           {search.rebuildResult.failedBooks > 0
-            ? `，${String(search.rebuildResult.failedBooks)} 本失败`
-            : '，全部成功'}
+            ? t('search.rebuiltFailures', {
+                count: search.rebuildResult.failedBooks,
+              })
+            : t('search.rebuiltAll')}
         </p>
       ) : null}
 
       {search.results?.indexFailures ? (
         <p className="text-destructive mb-5 text-sm" role="status">
-          {search.results.indexFailures} 本图书
-          暂时无法建立正文索引，可尝试重建。
+          {t('search.indexFailures', {
+            count: search.results.indexFailures,
+          })}
         </p>
       ) : null}
 
@@ -203,32 +208,36 @@ export function SearchPage({ services = searchServices }: SearchPageProps) {
           aria-live="polite"
           className="text-muted-foreground py-16 text-center"
         >
-          正在本地搜索并准备图书索引…
+          {t('search.loading')}
         </p>
       ) : search.phase === 'idle' ? (
         <EmptyState
-          description="输入关键词后，只会查询当前设备上的 SQLite 和应用数据目录。"
+          description={t('search.idleDescription')}
           icon={<Search size={28} />}
-          title="搜索本地内容"
+          title={t('search.inputLabel')}
         />
       ) : search.phase === 'ready' && total === 0 ? (
         <EmptyState
-          description={`没有找到与“${search.results?.query ?? ''}”匹配的内容。`}
+          description={t('search.noResultsDescription', {
+            query: search.results?.query ?? '',
+          })}
           icon={<Search size={28} />}
-          title="没有搜索结果"
+          title={t('search.noResults')}
         />
       ) : search.results ? (
         <div className="space-y-8" aria-live="polite">
-          <p className="text-muted-foreground text-sm">找到 {total} 条结果</p>
+          <p className="text-muted-foreground text-sm">
+            {t('search.resultCount', { count: total })}
+          </p>
           <ResultSection
             count={search.results.books.length}
             icon={<Library aria-hidden="true" size={16} />}
-            title="书籍"
+            title={t('search.books')}
           >
             {search.results.books.map((result) => (
               <li key={result.id}>
                 <ResultButton
-                  description={result.author ?? '未知作者'}
+                  description={result.author ?? t('common.unknownAuthor')}
                   meta={result.format.toUpperCase()}
                   onClick={() => {
                     openBook(result);
@@ -241,12 +250,12 @@ export function SearchPage({ services = searchServices }: SearchPageProps) {
           <ResultSection
             count={search.results.notes.length}
             icon={<NotebookPen aria-hidden="true" size={16} />}
-            title="笔记"
+            title={t('search.notes')}
           >
             {search.results.notes.map((result) => (
               <li key={result.id}>
                 <ResultButton
-                  description={result.excerpt || '空白笔记'}
+                  description={result.excerpt || t('search.blankNote')}
                   meta={noteMeta(result)}
                   onClick={() => {
                     openNote(result);
@@ -260,13 +269,15 @@ export function SearchPage({ services = searchServices }: SearchPageProps) {
           <ResultSection
             count={search.results.annotations.length}
             icon={<Highlighter aria-hidden="true" size={16} />}
-            title="高亮"
+            title={t('search.highlights')}
           >
             {search.results.annotations.map((result) => (
               <li key={result.id}>
                 <ResultButton
                   description={result.text}
-                  meta={`${result.bookTitle} · ${result.chapterHref ?? '未知章节'}`}
+                  meta={`${result.bookTitle} · ${
+                    result.chapterHref ?? t('annotations.unknownChapter')
+                  }`}
                   onClick={() => {
                     openAnnotation(result);
                   }}
@@ -279,7 +290,7 @@ export function SearchPage({ services = searchServices }: SearchPageProps) {
           <ResultSection
             count={search.results.bookContent.length}
             icon={<BookText aria-hidden="true" size={16} />}
-            title="图书正文"
+            title={t('search.bookText')}
           >
             {search.results.bookContent.map((result) => (
               <li key={`${result.bookId}:${JSON.stringify(result.locator)}`}>

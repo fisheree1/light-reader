@@ -4,6 +4,7 @@ import { readFile } from '@tauri-apps/plugin-fs';
 import type { DictionarySourceFile } from '../../features/dictionary/services/dictionary-service';
 import { fileNameFromPath } from '../../storage/book-paths';
 import type { WebFileDialogAdapter } from './web-file-dialog-adapter';
+import { translate } from '../../i18n/i18n';
 
 const extensions = ['ifo', 'idx', 'dz', 'syn'];
 
@@ -17,8 +18,8 @@ export class TauriDictionaryFilePicker implements DictionaryFilePicker {
     const paths = await open({
       directory: false,
       multiple: true,
-      filters: [{ name: 'StarDict 词典', extensions }],
-      title: '选择 StarDict 词典文件（.ifo、.idx、.dict.dz）',
+      filters: [{ name: translate('dialogs.stardict'), extensions }],
+      title: translate('dialogs.pickDictionary'),
     });
     if (!Array.isArray(paths) || paths.length === 0) return null;
     return Promise.all(

@@ -42,6 +42,7 @@ import {
   dictionaryServices,
   type DictionaryServices,
 } from '../dictionary/services/dictionary-services';
+import { useI18n } from '../../i18n/use-i18n';
 
 interface ReaderPageProps {
   agentFacade?: AgentFacade;
@@ -64,6 +65,7 @@ export function ReaderPage({
   dictionary = dictionaryServices,
   services = readerServices,
 }: ReaderPageProps) {
+  const { t } = useI18n();
   const { bookId = '' } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -182,13 +184,13 @@ export function ReaderPage({
         <Button asChild size="sm" variant="ghost">
           <Link to="/library">
             <ArrowLeft aria-hidden="true" size={16} />
-            返回书架
+            {t('reader.backToLibrary')}
           </Link>
         </Button>
         <IconButton
           aria-pressed={isTocOpen}
           icon={<ListTree aria-hidden="true" size={17} />}
-          label={isTocOpen ? '隐藏目录' : '显示目录'}
+          label={isTocOpen ? t('reader.hideToc') : t('reader.showToc')}
           onClick={() => {
             setIsTocOpen((current) => !current);
           }}
@@ -196,11 +198,11 @@ export function ReaderPage({
         />
         <div className="min-w-0 flex-1 text-center">
           <h1 className="truncate text-sm font-semibold">
-            {book?.title ?? '正在打开电子书…'}
+            {book?.title ?? t('reader.opening')}
           </h1>
           {book ? (
             <p className="text-muted-foreground truncate text-xs">
-              {book.author ?? '未知作者'}
+              {book.author ?? t('common.unknownAuthor')}
             </p>
           ) : null}
         </div>
@@ -217,11 +219,11 @@ export function ReaderPage({
           label={
             isChapterSearchOpen
               ? book?.format === 'pdf'
-                ? '关闭全文查找'
-                : '关闭章节内查找'
+                ? t('reader.closeBookSearch')
+                : t('reader.closeChapterSearch')
               : book?.format === 'pdf'
-                ? '全文查找'
-                : '章节内查找'
+                ? t('reader.bookSearch')
+                : t('reader.chapterSearch')
           }
           onClick={() => {
             setIsChapterSearchOpen((current) => {
@@ -234,7 +236,11 @@ export function ReaderPage({
         <IconButton
           aria-pressed={isBookmarkSidebarOpen}
           icon={<Bookmark aria-hidden="true" size={17} />}
-          label={isBookmarkSidebarOpen ? '隐藏书签' : '显示书签'}
+          label={
+            isBookmarkSidebarOpen
+              ? t('reader.hideBookmarks')
+              : t('reader.showBookmarks')
+          }
           onClick={() => {
             setRightSidebar((current) =>
               current === 'bookmarks' ? null : 'bookmarks',
@@ -245,7 +251,11 @@ export function ReaderPage({
         <IconButton
           aria-pressed={isAnnotationSidebarOpen}
           icon={<Highlighter aria-hidden="true" size={17} />}
-          label={isAnnotationSidebarOpen ? '隐藏高亮与批注' : '显示高亮与批注'}
+          label={
+            isAnnotationSidebarOpen
+              ? t('reader.hideAnnotations')
+              : t('reader.showAnnotations')
+          }
           onClick={() => {
             setRightSidebar((current) =>
               current === 'annotations' ? null : 'annotations',
@@ -256,7 +266,7 @@ export function ReaderPage({
         <IconButton
           aria-pressed={isAiAssistantOpen}
           icon={<Sparkles aria-hidden="true" size={17} />}
-          label={isAiAssistantOpen ? '隐藏 AI 助手' : '显示 AI 助手'}
+          label={isAiAssistantOpen ? t('reader.hideAi') : t('reader.showAi')}
           onClick={() => {
             if (isAiAssistantOpen) closeAiAssistant();
             else openAiAssistant();
@@ -264,7 +274,7 @@ export function ReaderPage({
           variant="ghost"
         />
         <span
-          aria-label={`阅读进度 ${String(progress)}%`}
+          aria-label={t('reader.progress', { percent: progress })}
           className="text-muted-foreground w-12 text-right text-xs tabular-nums"
         >
           {progress}%
@@ -274,7 +284,9 @@ export function ReaderPage({
       <div className="flex min-h-0 flex-1">
         {isTocOpen ? (
           <aside className="bg-surface w-64 shrink-0 overflow-auto border-r p-3">
-            <h2 className="mb-3 px-2 text-sm font-semibold">目录</h2>
+            <h2 className="mb-3 px-2 text-sm font-semibold">
+              {t('reader.toc')}
+            </h2>
             <ReaderTableOfContents
               currentHref={
                 locator.format === 'epub' ? locator.chapterHref : undefined
@@ -289,7 +301,9 @@ export function ReaderPage({
 
         <main className="relative min-w-0 flex-1">
           <section
-            aria-label={`${bookFormatLabels[book?.format ?? 'epub']} 正文`}
+            aria-label={t('reader.content', {
+              format: bookFormatLabels[book?.format ?? 'epub'],
+            })}
             className="reader-render-host bg-surface h-full"
             ref={hostRef}
           />
@@ -321,7 +335,7 @@ export function ReaderPage({
 
           {isChapterSearchOpen ? (
             <ReaderChapterSearch
-              scopeLabel={book?.format === 'pdf' ? '全文' : '章节内'}
+              scope={book?.format === 'pdf' ? 'book' : 'chapter'}
               onClose={() => {
                 clearChapterSearch();
                 setIsChapterSearchOpen(false);
@@ -338,7 +352,7 @@ export function ReaderPage({
               aria-live="polite"
               className="bg-background/90 absolute inset-0 grid place-items-center text-sm"
             >
-              正在打开电子书…
+              {t('reader.opening')}
             </div>
           ) : null}
 
@@ -348,17 +362,17 @@ export function ReaderPage({
                 action={
                   <div className="flex gap-2">
                     <Button asChild variant="secondary">
-                      <Link to="/library">返回书架</Link>
+                      <Link to="/library">{t('reader.backToLibrary')}</Link>
                     </Button>
                     <Button onClick={retry}>
                       <RotateCcw aria-hidden="true" size={16} />
-                      重试
+                      {t('common.retry')}
                     </Button>
                   </div>
                 }
-                description={error ?? '无法打开这本电子书。'}
+                description={error ?? t('reader.openFailedDescription')}
                 icon={<RotateCcw size={28} />}
-                title="无法打开图书"
+                title={t('reader.openFailedTitle')}
               />
             </div>
           ) : null}
@@ -399,7 +413,7 @@ export function ReaderPage({
             <IconButton
               className="pointer-events-auto shadow"
               icon={<ChevronLeft aria-hidden="true" size={19} />}
-              label="上一页"
+              label={t('reader.previousPage')}
               onClick={() => {
                 void previousPage();
               }}
@@ -408,7 +422,7 @@ export function ReaderPage({
             <IconButton
               className="pointer-events-auto shadow"
               icon={<ChevronRight aria-hidden="true" size={19} />}
-              label="下一页"
+              label={t('reader.nextPage')}
               onClick={() => {
                 void nextPage();
               }}

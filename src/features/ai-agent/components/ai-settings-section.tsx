@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Button } from '../../../components/ui/button';
 import { defaultAiSettings, type AiSettings } from '../domain/ai-settings';
 import type { AgentFacade } from '../services/agent-facade';
+import { useI18n } from '../../../i18n/use-i18n';
 
 type LoadStatus = 'loading' | 'idle' | 'saving' | 'saved' | 'error';
 type ConnectionStatus =
@@ -13,6 +14,7 @@ interface AiSettingsSectionProps {
 }
 
 export function AiSettingsSection({ facade }: AiSettingsSectionProps) {
+  const { t } = useI18n();
   const [settings, setSettings] = useState<AiSettings>(defaultAiSettings);
   const [loadStatus, setLoadStatus] = useState<LoadStatus>('loading');
   const [connectionStatus, setConnectionStatus] =
@@ -64,11 +66,10 @@ export function AiSettingsSection({ facade }: AiSettingsSectionProps) {
       className="bg-surface mt-4 rounded-lg border p-5"
     >
       <h2 className="font-medium" id="ai-settings-title">
-        本地 AI 助手
+        {t('aiSettings.title')}
       </h2>
       <p className="text-muted-foreground mt-1 text-sm">
-        使用本机 Ollama 处理选中文本或回答本书问题。AI
-        默认关闭，结果不会自动覆盖笔记。
+        {t('aiSettings.description')}
       </p>
 
       <div className="mt-5 max-w-xl space-y-4">
@@ -87,11 +88,11 @@ export function AiSettingsSection({ facade }: AiSettingsSectionProps) {
             }}
             type="checkbox"
           />
-          启用本地 AI 助手
+          {t('aiSettings.enable')}
         </label>
 
         <label className="block text-sm font-medium">
-          Ollama 模型
+          {t('aiSettings.model')}
           <input
             className="bg-background mt-2 w-full rounded-md border px-3 py-2 text-sm"
             disabled={loadStatus === 'loading' || loadStatus === 'saving'}
@@ -115,10 +116,10 @@ export function AiSettingsSection({ facade }: AiSettingsSectionProps) {
         </label>
 
         <div className="rounded-md border p-3 text-sm">
-          <span className="font-medium">本机服务地址：</span>{' '}
+          <span className="font-medium">{t('aiSettings.endpoint')}</span>{' '}
           <code>{settings.endpoint}</code>
           <p className="text-muted-foreground mt-1 text-xs">
-            为避免向外部主机泄露正文，第一版不支持修改地址或端口。
+            {t('aiSettings.endpointHint')}
           </p>
         </div>
 
@@ -127,25 +128,31 @@ export function AiSettingsSection({ facade }: AiSettingsSectionProps) {
             disabled={loadStatus === 'loading' || loadStatus === 'saving'}
             onClick={() => void save()}
           >
-            {loadStatus === 'saving' ? '保存中…' : '保存 AI 设置'}
+            {loadStatus === 'saving'
+              ? t('common.saving')
+              : t('aiSettings.save')}
           </Button>
           <Button
             disabled={connectionStatus === 'checking'}
             onClick={() => void checkConnection()}
             variant="secondary"
           >
-            {connectionStatus === 'checking' ? '检测中…' : '检测 Ollama'}
+            {connectionStatus === 'checking'
+              ? t('aiSettings.checking')
+              : t('aiSettings.check')}
           </Button>
           <span aria-live="polite" className="text-muted-foreground text-sm">
-            {loadStatus === 'loading' ? '正在加载 AI 设置…' : null}
-            {loadStatus === 'saved' ? 'AI 设置已保存' : null}
-            {loadStatus === 'error' ? 'AI 设置加载或保存失败，请重试' : null}
-            {connectionStatus === 'available' ? 'Ollama 和模型均可用' : null}
+            {loadStatus === 'loading' ? t('aiSettings.loading') : null}
+            {loadStatus === 'saved' ? t('aiSettings.saved') : null}
+            {loadStatus === 'error' ? t('aiSettings.failed') : null}
+            {connectionStatus === 'available'
+              ? t('aiSettings.available')
+              : null}
             {connectionStatus === 'model-missing'
-              ? 'Ollama 已连接，但所选模型尚未安装'
+              ? t('aiSettings.modelMissing')
               : null}
             {connectionStatus === 'unavailable'
-              ? '无法连接 Ollama，请先启动本机服务'
+              ? t('aiSettings.unavailable')
               : null}
           </span>
         </div>

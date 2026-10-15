@@ -20,8 +20,8 @@
     {
       "name": "shared data services",
       "pattern": "^library-services-[\\w-]{8}\\.js$",
-      "maxBytes": 290000,
-      "maxGzipBytes": 92000
+      "maxBytes": 320000,
+      "maxGzipBytes": 103000
     },
     {
       "name": "research page",

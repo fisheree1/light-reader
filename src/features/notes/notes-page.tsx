@@ -20,12 +20,14 @@ import {
   NoteExportService,
   type NoteExportFormat,
 } from './services/note-export-service';
+import { useI18n } from '../../i18n/use-i18n';
 
 interface NotesPageProps {
   services?: NotesServices;
 }
 
 export function NotesPage({ services = notesServices }: NotesPageProps) {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const requestedNoteId = searchParams.get('noteId');
@@ -63,16 +65,16 @@ export function NotesPage({ services = notesServices }: NotesPageProps) {
 
   async function runExport(scope: 'all' | 'one', format: NoteExportFormat) {
     if (scope === 'one' && !activeNote) return;
-    setExportStatus('正在导出…');
+    setExportStatus(t('notes.exporting'));
     try {
       if (scope === 'one' && activeNote) {
         await exportService.exportOne(activeNote, format);
       } else {
         await exportService.exportAll(format);
       }
-      setExportStatus('导出完成');
+      setExportStatus(t('notes.exported'));
     } catch {
-      setExportStatus('导出已取消或失败');
+      setExportStatus(t('notes.exportFailed'));
     }
   }
 
@@ -97,8 +99,8 @@ export function NotesPage({ services = notesServices }: NotesPageProps) {
   }, [services.bookRepository]);
 
   const resolveBookTitle = useCallback(
-    (bookId: string) => bookTitles[bookId] ?? '未知书籍',
-    [bookTitles],
+    (bookId: string) => bookTitles[bookId] ?? t('common.unknownBook'),
+    [bookTitles, t],
   );
   const navigateToReference = useCallback(
     (reference: BookQuoteReference) => {
@@ -115,16 +117,18 @@ export function NotesPage({ services = notesServices }: NotesPageProps) {
   );
 
   if (loading) {
-    return <p aria-live="polite">正在加载笔记…</p>;
+    return <p aria-live="polite">{t('notes.loading')}</p>;
   }
 
   if (loadError) {
     return (
       <EmptyState
-        action={<Button onClick={() => void load()}>重试</Button>}
+        action={
+          <Button onClick={() => void load()}>{t('common.retry')}</Button>
+        }
         description={loadError}
         icon={<NotebookPen size={28} />}
-        title="无法加载笔记"
+        title={t('notes.loadFailed')}
       />
     );
   }
@@ -133,9 +137,9 @@ export function NotesPage({ services = notesServices }: NotesPageProps) {
     <div className="flex min-h-[calc(100vh-4rem)] flex-col">
       <header className="mb-5 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">笔记</h1>
+          <h1 className="text-2xl font-semibold">{t('notes.title')}</h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            用结构化笔记整理阅读想法和原文引用。
+            {t('notes.description')}
           </p>
         </div>
         {hasNotes ? (
@@ -150,17 +154,17 @@ export function NotesPage({ services = notesServices }: NotesPageProps) {
               ref={exportMenuRef}
             >
               <summary
-                aria-label="导出"
+                aria-label={t('notes.export')}
                 className="bg-muted text-foreground hover:bg-border inline-flex h-8 cursor-pointer list-none items-center justify-center gap-2 rounded-md px-3 text-xs font-medium transition-colors [&::-webkit-details-marker]:hidden"
                 role="button"
               >
                 <Download aria-hidden="true" size={15} />
-                导出
+                {t('notes.export')}
                 <ChevronDown aria-hidden="true" size={14} />
               </summary>
               <div className="bg-surface absolute top-full right-0 z-50 mt-1.5 min-w-52 rounded-lg border p-1 shadow-lg">
                 <p className="text-muted-foreground px-2 py-1.5 text-xs">
-                  当前笔记
+                  {t('notes.currentNote')}
                 </p>
                 {(['markdown', 'html'] as const).map((format) => (
                   <button
@@ -173,12 +177,14 @@ export function NotesPage({ services = notesServices }: NotesPageProps) {
                     }}
                     type="button"
                   >
-                    导出为 {format === 'markdown' ? 'Markdown' : 'HTML'}
+                    {t('notes.exportAs', {
+                      format: format === 'markdown' ? 'Markdown' : 'HTML',
+                    })}
                   </button>
                 ))}
                 <div className="bg-border my-1 h-px" />
                 <p className="text-muted-foreground px-2 py-1.5 text-xs">
-                  全部笔记
+                  {t('notes.allNotes')}
                 </p>
                 {(['markdown', 'html'] as const).map((format) => (
                   <button
@@ -190,14 +196,16 @@ export function NotesPage({ services = notesServices }: NotesPageProps) {
                     }}
                     type="button"
                   >
-                    批量导出为 {format === 'markdown' ? 'Markdown' : 'HTML'}
+                    {t('notes.exportAllAs', {
+                      format: format === 'markdown' ? 'Markdown' : 'HTML',
+                    })}
                   </button>
                 ))}
               </div>
             </details>
             <Button onClick={() => void createNote()}>
               <FilePlus2 aria-hidden="true" size={16} />
-              新建笔记
+              {t('notes.newNote')}
             </Button>
           </div>
         ) : null}
@@ -217,31 +225,31 @@ export function NotesPage({ services = notesServices }: NotesPageProps) {
           action={
             <Button onClick={() => void createNote()}>
               <FilePlus2 aria-hidden="true" size={16} />
-              新建笔记
+              {t('notes.newNote')}
             </Button>
           }
           className="min-h-[28rem] flex-1"
-          description="记录想法，或在阅读时把高亮和出处保存到笔记。"
+          description={t('notes.emptyDescription')}
           icon={<NotebookPen size={28} />}
-          title="创建第一条笔记"
+          title={t('notes.emptyTitle')}
         />
       ) : (
         <div className="min-h-0 flex-1 overflow-hidden rounded-xl border lg:flex">
           <aside className="bg-surface flex w-full shrink-0 flex-col border-b lg:w-72 lg:border-r lg:border-b-0">
             <label className="relative m-3 block">
-              <span className="sr-only">搜索笔记标题</span>
+              <span className="sr-only">{t('notes.searchTitles')}</span>
               <Search
                 aria-hidden="true"
                 className="text-muted-foreground absolute top-1/2 left-3 -translate-y-1/2"
                 size={15}
               />
               <input
-                aria-label="搜索笔记标题"
+                aria-label={t('notes.searchTitles')}
                 className="bg-background h-9 w-full rounded-md border pr-3 pl-9 text-sm"
                 onChange={(event) => {
                   setQuery(event.currentTarget.value);
                 }}
-                placeholder="搜索标题"
+                placeholder={t('notes.searchPlaceholder')}
                 type="search"
                 value={query}
               />
@@ -250,7 +258,7 @@ export function NotesPage({ services = notesServices }: NotesPageProps) {
             <div className="max-h-56 flex-1 overflow-auto border-t lg:max-h-none">
               {visibleNotes.length === 0 ? (
                 <p className="text-muted-foreground p-6 text-center text-sm">
-                  {query ? '没有匹配的笔记。' : '还没有笔记。'}
+                  {query ? t('notes.noMatches') : t('notes.noNotes')}
                 </p>
               ) : (
                 <ol className="space-y-1 p-2">
@@ -271,7 +279,7 @@ export function NotesPage({ services = notesServices }: NotesPageProps) {
                           {note.title}
                         </span>
                         <span className="text-muted-foreground mt-1 block truncate text-xs">
-                          {note.plainText || '空白笔记'}
+                          {note.plainText || t('notes.blankNote')}
                         </span>
                       </button>
                     </li>
@@ -286,9 +294,9 @@ export function NotesPage({ services = notesServices }: NotesPageProps) {
               <>
                 <div className="mb-3 flex items-center gap-3">
                   <label className="min-w-0 flex-1">
-                    <span className="sr-only">笔记标题</span>
+                    <span className="sr-only">{t('notes.noteTitle')}</span>
                     <input
-                      aria-label="笔记标题"
+                      aria-label={t('notes.noteTitle')}
                       className="focus-visible:ring-primary w-full truncate border-0 bg-transparent px-1 text-xl font-semibold outline-none focus-visible:ring-2"
                       maxLength={500}
                       onChange={(event) => {
@@ -304,9 +312,9 @@ export function NotesPage({ services = notesServices }: NotesPageProps) {
                       saveStatus === 'error' && 'text-destructive',
                     )}
                   >
-                    {saveStatus === 'saving' ? '保存中…' : null}
-                    {saveStatus === 'saved' ? '已保存' : null}
-                    {saveStatus === 'error' ? '保存失败，内容已保留' : null}
+                    {saveStatus === 'saving' ? t('common.saving') : null}
+                    {saveStatus === 'saved' ? t('notes.saved') : null}
+                    {saveStatus === 'error' ? t('notes.saveFailed') : null}
                   </span>
                   {saveStatus === 'error' ? (
                     <Button
@@ -314,7 +322,7 @@ export function NotesPage({ services = notesServices }: NotesPageProps) {
                       size="sm"
                       variant="secondary"
                     >
-                      重试保存
+                      {t('notes.retrySave')}
                     </Button>
                   ) : null}
                   <Button
@@ -331,7 +339,9 @@ export function NotesPage({ services = notesServices }: NotesPageProps) {
                     variant="destructive"
                   >
                     <Trash2 aria-hidden="true" size={14} />
-                    {confirmDelete ? '确认删除' : '删除笔记'}
+                    {confirmDelete
+                      ? t('notes.confirmDelete')
+                      : t('notes.deleteNote')}
                   </Button>
                 </div>
 
@@ -355,15 +365,15 @@ export function NotesPage({ services = notesServices }: NotesPageProps) {
                     resolveBookTitle={resolveBookTitle}
                   />
                 ) : (
-                  <p aria-live="polite">正在准备编辑器…</p>
+                  <p aria-live="polite">{t('notes.preparingEditor')}</p>
                 )}
               </>
             ) : (
               <EmptyState
                 className="h-full"
-                description="创建一条独立笔记，或在阅读器中把高亮引用到新笔记。"
+                description={t('notes.noSelectionDescription')}
                 icon={<NotebookPen size={28} />}
-                title="暂无笔记"
+                title={t('notes.noSelectionTitle')}
               />
             )}
           </main>

@@ -3,6 +3,7 @@ import { Placeholder } from '@tiptap/extensions';
 
 import type { BookQuoteReference } from '../domain/note';
 import { BookQuoteNode } from './book-quote-node';
+import { translate } from '../../../i18n/i18n';
 
 interface NoteExtensionsOptions {
   onNavigate: (reference: BookQuoteReference) => void;
@@ -18,7 +19,7 @@ export function createNoteExtensions(options: NoteExtensionsOptions) {
       heading: { levels: [1, 2, 3] },
     }),
     Placeholder.configure({
-      placeholder: '写下想法，或从阅读器插入一段高亮引用…',
+      placeholder: translate('notes.placeholder'),
     }),
     BookQuoteNode.configure(options),
   ];

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../../components/ui/button';
 import { IconButton } from '../../../components/ui/icon-button';
 import type { Annotation } from '../domain/annotation';
+import { useI18n } from '../../../i18n/use-i18n';
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -24,6 +25,7 @@ export function AnnotationPopover({
   onInsertIntoNote,
   onSave,
 }: AnnotationPopoverProps) {
+  const { t } = useI18n();
   const [draft, setDraft] = useState(annotation.noteText ?? '');
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -105,21 +107,21 @@ export function AnnotationPopover({
 
   return (
     <section
-      aria-label="高亮批注"
+      aria-label={t('annotations.popoverLabel')}
       aria-modal="false"
       className="bg-surface fixed top-16 right-4 z-50 w-[min(24rem,calc(100vw-2rem))] rounded-xl border p-4 shadow-xl"
       role="dialog"
     >
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          <h2 className="font-semibold">高亮批注</h2>
+          <h2 className="font-semibold">{t('annotations.popoverLabel')}</h2>
           <blockquote className="text-muted-foreground mt-2 line-clamp-4 border-l-2 pl-3 text-sm">
             {annotation.text}
           </blockquote>
         </div>
         <IconButton
           icon={<X aria-hidden="true" size={16} />}
-          label="关闭批注"
+          label={t('annotations.closePopover')}
           onClick={() => void handleClose()}
           variant="ghost"
         />
@@ -129,7 +131,7 @@ export function AnnotationPopover({
         className="mt-4 block text-sm font-medium"
         htmlFor="annotation-note"
       >
-        批注内容
+        {t('annotations.noteLabel')}
       </label>
       <textarea
         className="bg-background mt-2 min-h-28 w-full resize-y rounded-md border p-3 text-sm"
@@ -138,7 +140,7 @@ export function AnnotationPopover({
         onChange={(event) => {
           updateDraft(event.currentTarget.value);
         }}
-        placeholder="记录你的想法…"
+        placeholder={t('annotations.notePlaceholder')}
         ref={textareaRef}
         value={draft}
       />
@@ -146,7 +148,7 @@ export function AnnotationPopover({
       <div className="mt-3 flex items-center gap-2">
         <Button onClick={() => void save()} size="sm">
           <Save aria-hidden="true" size={14} />
-          保存
+          {t('annotations.save')}
         </Button>
         {onInsertIntoNote ? (
           <Button
@@ -156,7 +158,9 @@ export function AnnotationPopover({
             variant="secondary"
           >
             <NotebookPen aria-hidden="true" size={14} />
-            {isInserting ? '正在创建…' : '插入笔记'}
+            {isInserting
+              ? t('annotations.creatingNote')
+              : t('annotations.insertIntoNote')}
           </Button>
         ) : null}
         <Button
@@ -165,25 +169,27 @@ export function AnnotationPopover({
           variant="destructive"
         >
           <Trash2 aria-hidden="true" size={14} />
-          {confirmDelete ? '确认删除' : '删除'}
+          {confirmDelete
+            ? t('annotations.confirmDelete')
+            : t('annotations.delete')}
         </Button>
         <span
           aria-live="polite"
           className="text-muted-foreground ml-auto text-xs"
         >
-          {saveStatus === 'saving' ? '保存中…' : null}
-          {saveStatus === 'saved' ? '已保存' : null}
-          {saveStatus === 'error' ? '保存失败，输入已保留' : null}
+          {saveStatus === 'saving' ? t('common.saving') : null}
+          {saveStatus === 'saved' ? t('annotations.saved') : null}
+          {saveStatus === 'error' ? t('annotations.saveFailed') : null}
         </span>
       </div>
       {deleteError ? (
         <p className="text-destructive mt-2 text-xs" role="alert">
-          删除失败，请重试。
+          {t('annotations.deleteFailed')}
         </p>
       ) : null}
       {insertError ? (
         <p className="text-destructive mt-2 text-xs" role="alert">
-          无法创建引用笔记，请重试。
+          {t('annotations.insertFailed')}
         </p>
       ) : null}
     </section>

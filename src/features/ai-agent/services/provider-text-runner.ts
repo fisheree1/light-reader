@@ -4,6 +4,7 @@ import type {
   AgentProviderEvent,
   ModelProviderGateway,
 } from '../../../platform/ai/model-provider-gateway';
+import { translate } from '../../../i18n/i18n';
 
 export interface ProviderTextResult {
   content: string;
@@ -65,7 +66,7 @@ export class ProviderTextRunner {
         if (event.type === 'output-delta') {
           if (content.length + event.delta.length > request.maxOutputChars) {
             throw new AppError('AI_OUTPUT_INVALID', {
-              message: '模型输出超过允许长度，已停止生成。',
+              message: translate('ai.outputTooLong'),
             });
           }
           content += event.delta;

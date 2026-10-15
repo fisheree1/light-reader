@@ -1,4 +1,5 @@
 import type { ReadingSession } from '../../reader/domain/reading-activity';
+import { translate } from '../../../i18n/i18n';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -99,10 +100,10 @@ export function heatmapStart(now: number, weeks = 26): number {
   return startOfLocalDay(now).getTime() - (weeks * 7 + 7) * DAY;
 }
 
-/** Formats seconds as hours and minutes, e.g. `2 小时 5 分钟`. */
+/** Formats seconds as hours and minutes in the active language. */
 export function formatReadingDuration(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
-  if (hours === 0) return `${String(minutes)} 分钟`;
-  return `${String(hours)} 小时 ${String(minutes)} 分钟`;
+  if (hours === 0) return translate('stats.durationMinutes', { minutes });
+  return translate('stats.durationHours', { hours, minutes });
 }

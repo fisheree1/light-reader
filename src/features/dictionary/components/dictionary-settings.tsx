@@ -7,6 +7,7 @@ import { asAppError } from '../../../lib/app-error';
 import type { DictionaryFilePicker } from '../../../platform/dialog/dictionary-file-picker';
 import type { InstalledDictionary } from '../domain/dictionary';
 import type { DictionaryService } from '../services/dictionary-service';
+import { useI18n } from '../../../i18n/use-i18n';
 
 interface DictionarySettingsProps {
   dictionary: Pick<DictionaryService, 'importDictionary' | 'list' | 'remove'>;
@@ -30,6 +31,7 @@ export function DictionarySettings({
   dictionary,
   picker,
 }: DictionarySettingsProps) {
+  const { formatNumber, t } = useI18n();
   const [items, setItems] = useState<InstalledDictionary[] | null>(null);
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
 
@@ -70,10 +72,13 @@ export function DictionarySettings({
       return;
     }
     if (!files) return;
-    setStatus({ kind: 'busy', label: '正在导入词典…' });
+    setStatus({ kind: 'busy', label: t('dictionary.importing') });
     try {
       const installed = await dictionary.importDictionary(files);
-      setStatus({ kind: 'message', text: `已导入《${installed.name}》` });
+      setStatus({
+        kind: 'message',
+        text: t('dictionary.imported', { name: installed.name }),
+      });
       reload();
     } catch (error) {
       setStatus({
@@ -84,10 +89,16 @@ export function DictionarySettings({
   }
 
   async function remove(item: InstalledDictionary) {
-    setStatus({ kind: 'busy', label: `正在删除《${item.name}》…` });
+    setStatus({
+      kind: 'busy',
+      label: t('dictionary.removing', { name: item.name }),
+    });
     try {
       await dictionary.remove(item);
-      setStatus({ kind: 'message', text: `已删除《${item.name}》` });
+      setStatus({
+        kind: 'message',
+        text: t('dictionary.removed', { name: item.name }),
+      });
       reload();
     } catch (error) {
       setStatus({
@@ -104,15 +115,14 @@ export function DictionarySettings({
       id="dictionaries"
     >
       <h2 className="font-medium" id="dictionary-settings-title">
-        离线词典
+        {t('dictionary.title')}
       </h2>
       <p className="text-muted-foreground mt-1 text-sm">
-        导入 StarDict 词典后，可在阅读时选中文字查词。请一次选择同一词典的
-        .ifo、.idx 和 .dict.dz 文件（.syn 可选）；词典只保存在本机。
+        {t('dictionary.description')}
       </p>
 
       {items === null ? (
-        <p className="mt-4 text-sm">正在加载词典…</p>
+        <p className="mt-4 text-sm">{t('dictionary.loading')}</p>
       ) : items.length ? (
         <ul className="mt-4 divide-y rounded-md border">
           {items.map((item) => (
@@ -121,14 +131,16 @@ export function DictionarySettings({
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-medium">{item.name}</span>
                 <span className="text-muted-foreground text-xs">
-                  {item.wordCount.toLocaleString('zh-CN')} 个词条 ·{' '}
-                  {formatSize(item.sizeBytes)}
+                  {t('dictionary.entries', {
+                    count: formatNumber(item.wordCount),
+                    size: formatSize(item.sizeBytes),
+                  })}
                 </span>
               </span>
               <IconButton
                 disabled={status.kind === 'busy'}
                 icon={<Trash2 aria-hidden="true" size={16} />}
-                label={`删除词典《${item.name}》`}
+                label={t('dictionary.delete', { name: item.name })}
                 onClick={() => void remove(item)}
                 variant="ghost"
               />
@@ -136,7 +148,9 @@ export function DictionarySettings({
           ))}
         </ul>
       ) : (
-        <p className="text-muted-foreground mt-4 text-sm">尚未导入词典。</p>
+        <p className="text-muted-foreground mt-4 text-sm">
+          {t('dictionary.empty')}
+        </p>
       )}
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -144,7 +158,7 @@ export function DictionarySettings({
           disabled={status.kind === 'busy'}
           onClick={() => void importFiles()}
         >
-          导入 StarDict 词典
+          {t('dictionary.import')}
         </Button>
         <span
           aria-live="polite"

@@ -1,4 +1,5 @@
 import type { AgentCapabilityGrant, AgentToolResult } from '../domain/agent';
+import { translate } from '../../../i18n/i18n';
 
 export class AgentScopePolicy {
   authorizeSelection(
@@ -11,7 +12,7 @@ export class AgentScopePolicy {
       return {
         ok: false,
         code: 'APPROVAL_REQUIRED',
-        message: '必须先确认发送内容。',
+        message: translate('ai.confirmFirst'),
         retryable: false,
       };
     }
@@ -19,7 +20,7 @@ export class AgentScopePolicy {
       return {
         ok: false,
         code: 'OUT_OF_SCOPE',
-        message: '本次授权已经失效或不包含这本书。',
+        message: translate('ai.grantExpired'),
         retryable: false,
       };
     }
@@ -31,7 +32,7 @@ export class AgentScopePolicy {
       return {
         ok: false,
         code: 'BUDGET_EXCEEDED',
-        message: '发送文本超过本次运行的字符预算。',
+        message: translate('ai.budgetExceeded'),
         retryable: false,
       };
     }

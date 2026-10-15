@@ -6,6 +6,7 @@ import {
   noteSchema,
   type Note,
 } from '../domain/note';
+import { translate } from '../../../i18n/i18n';
 
 const draftPrefix = 'light-reader-note-draft:';
 const noteDraftSchema = z
@@ -51,7 +52,7 @@ export class LocalNoteDraftStorage implements NoteDraftStorage {
       }
       return noteSchema.parse({
         ...note,
-        title: draft.title.trim() || '未命名笔记',
+        title: draft.title.trim() || translate('notes.untitled'),
         document: draft.document,
         plainText: extractPlainText(draft.document),
         documentRecovered: false,

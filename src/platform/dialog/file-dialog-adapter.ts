@@ -3,6 +3,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { supportedBookFormats } from '../../features/library/domain/book';
 
 import { fileNameFromPath } from '../../storage/book-paths';
+import { translate } from '../../i18n/i18n';
 
 export interface SelectedBookFile {
   fileName: string;
@@ -20,8 +21,13 @@ export class TauriFileDialogAdapter implements FileDialogAdapter {
     const paths = await open({
       directory: false,
       multiple: true,
-      filters: [{ name: '电子书', extensions: [...supportedBookFormats] }],
-      title: '批量导入电子书',
+      filters: [
+        {
+          name: translate('dialogs.ebooks'),
+          extensions: [...supportedBookFormats],
+        },
+      ],
+      title: translate('dialogs.importBooks'),
     });
     if (!Array.isArray(paths) || paths.length === 0) return null;
     return paths.map((path) => ({
@@ -34,8 +40,13 @@ export class TauriFileDialogAdapter implements FileDialogAdapter {
     const path = await open({
       directory: false,
       multiple: false,
-      filters: [{ name: '电子书', extensions: [...supportedBookFormats] }],
-      title: '导入电子书',
+      filters: [
+        {
+          name: translate('dialogs.ebooks'),
+          extensions: [...supportedBookFormats],
+        },
+      ],
+      title: translate('dialogs.importBook'),
     });
 
     return typeof path === 'string'
@@ -47,8 +58,8 @@ export class TauriFileDialogAdapter implements FileDialogAdapter {
     const path = await open({
       directory: false,
       multiple: false,
-      filters: [{ name: 'EPUB 电子书', extensions: ['epub'] }],
-      title: '导入 EPUB',
+      filters: [{ name: translate('dialogs.epubBooks'), extensions: ['epub'] }],
+      title: translate('dialogs.importEpub'),
     });
 
     return typeof path === 'string'

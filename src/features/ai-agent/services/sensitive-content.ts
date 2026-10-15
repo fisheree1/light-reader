@@ -1,3 +1,4 @@
+import { translate, type MessageKey } from '../../../i18n/i18n';
 export interface SensitiveContentWarning {
   kind: 'credential' | 'email' | 'financial' | 'phone' | 'private-key';
   label: string;
@@ -5,32 +6,32 @@ export interface SensitiveContentWarning {
 
 const detectors: {
   kind: SensitiveContentWarning['kind'];
-  label: string;
+  label: MessageKey;
   pattern: RegExp;
 }[] = [
   {
     kind: 'private-key',
-    label: '疑似私钥',
+    label: 'ai.sensitivePrivateKey',
     pattern: /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/u,
   },
   {
     kind: 'credential',
-    label: '疑似访问令牌或 API Key',
+    label: 'ai.sensitiveCredential',
     pattern: /(?:sk-|ghp_|github_pat_|api[_ -]?key\s*[:=])\S{12,}/iu,
   },
   {
     kind: 'email',
-    label: '疑似邮箱地址',
+    label: 'ai.sensitiveEmail',
     pattern: /\b[^\s@]+@[^\s@]+\.[^\s@]+\b/u,
   },
   {
     kind: 'phone',
-    label: '疑似电话号码',
+    label: 'ai.sensitivePhone',
     pattern: /(?:\+?\d[\d -]{8,}\d)/u,
   },
   {
     kind: 'financial',
-    label: '疑似银行卡或财务编号',
+    label: 'ai.sensitiveFinancial',
     pattern: /\b(?:\d[ -]?){13,19}\b/u,
   },
 ];
@@ -40,5 +41,5 @@ export function detectSensitiveContent(
 ): SensitiveContentWarning[] {
   return detectors
     .filter((detector) => detector.pattern.test(value))
-    .map(({ kind, label }) => ({ kind, label }));
+    .map(({ kind, label }) => ({ kind, label: translate(label) }));
 }

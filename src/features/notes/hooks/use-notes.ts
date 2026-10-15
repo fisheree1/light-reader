@@ -5,6 +5,7 @@ import type { Note, NoteDocument } from '../domain/note';
 import { NoteService } from '../services/note-service';
 import { LocalNoteDraftStorage } from '../services/note-draft-storage';
 import type { NotesServices } from '../services/notes-services';
+import { translate } from '../../../i18n/i18n';
 
 export type NoteSaveStatus = 'error' | 'idle' | 'saved' | 'saving';
 
@@ -47,7 +48,7 @@ export function useNotes(
       savedFingerprintRef.current = note ? fingerprint(note) : '';
       setActiveNote(recovered ?? note);
       setSaveStatus(recovered ? 'error' : 'idle');
-      setMutationError(recovered ? '已恢复上次异常退出前的未保存内容。' : null);
+      setMutationError(recovered ? translate('notes.recoveredDraft') : null);
     },
     [draftStorage],
   );
@@ -87,14 +88,14 @@ export function useNotes(
       const candidateFingerprint = fingerprint(candidate);
       if (candidate.documentRecovered) {
         setSaveStatus('error');
-        setMutationError('原笔记内容损坏；请先编辑正文，再保存恢复后的内容。');
+        setMutationError(translate('notes.damagedEditFirst'));
         return false;
       }
       setSaveStatus('saving');
       setMutationError(null);
       try {
         const saved = await service.save(candidate.id, {
-          title: candidate.title.trim() || '未命名笔记',
+          title: candidate.title.trim() || translate('notes.untitled'),
           document: candidate.document,
         });
         setNotes((current) =>
@@ -137,7 +138,7 @@ export function useNotes(
       if (draft && fingerprint(draft) !== savedFingerprintRef.current) {
         void service
           .save(draft.id, {
-            title: draft.title.trim() || '未命名笔记',
+            title: draft.title.trim() || translate('notes.untitled'),
             document: draft.document,
           })
           .catch(() => undefined);

@@ -1,5 +1,6 @@
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
+import { translate } from '../../i18n/i18n';
 
 export interface ExportFile {
   data: Uint8Array;
@@ -16,8 +17,13 @@ export class TauriFileExportPlatform implements FileExportPlatform {
   async save(file: ExportFile): Promise<'cancelled' | 'saved'> {
     const path = await save({
       defaultPath: file.defaultFileName,
-      filters: [{ name: '导出文件', extensions: [file.extension] }],
-      title: '导出',
+      filters: [
+        {
+          name: translate('dialogs.exportFiles'),
+          extensions: [file.extension],
+        },
+      ],
+      title: translate('dialogs.export'),
     });
     if (!path) return 'cancelled';
     await writeFile(path, file.data);

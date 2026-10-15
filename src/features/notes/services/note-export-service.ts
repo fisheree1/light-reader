@@ -7,6 +7,7 @@ import {
   type Note,
   type NoteContentNode,
 } from '../domain/note';
+import { getActiveLocale, translate } from '../../../i18n/i18n';
 
 export type NoteExportFormat = 'html' | 'markdown';
 
@@ -31,10 +32,14 @@ function locatorLabel(locator: {
   progression?: number;
 }): string {
   return [
-    locator.chapterHref ? `章节 ${locator.chapterHref}` : null,
+    locator.chapterHref
+      ? translate('notes.exportChapter', { chapter: locator.chapterHref })
+      : null,
     locator.progression === undefined
       ? null
-      : `进度 ${String(Math.round(locator.progression * 100))}%`,
+      : translate('notes.exportProgress', {
+          percent: Math.round(locator.progression * 100),
+        }),
     locator.cfi ? `CFI ${locator.cfi}` : null,
   ]
     .filter(Boolean)
@@ -59,7 +64,7 @@ function renderMarkdownNode(
     if (!parsed.success) return '';
     const reference = parsed.data;
     const source = [
-      bookTitles.get(reference.bookId) ?? '未知书籍',
+      bookTitles.get(reference.bookId) ?? translate('common.unknownBook'),
       reference.chapter,
       locatorLabel(reference.locator),
     ]
@@ -108,7 +113,7 @@ function renderHtmlNode(
     if (!parsed.success) return '';
     const reference = parsed.data;
     const source = [
-      bookTitles.get(reference.bookId) ?? '未知书籍',
+      bookTitles.get(reference.bookId) ?? translate('common.unknownBook'),
       reference.chapter,
       locatorLabel(reference.locator),
     ]
@@ -171,7 +176,7 @@ export class NoteExportService {
 
   async exportAll(format: NoteExportFormat): Promise<void> {
     const notes = await this.noteRepository.list();
-    await this.exportNotes(notes, 'LightReader-笔记', format);
+    await this.exportNotes(notes, translate('notes.exportAllFileName'), format);
   }
 
   private async exportNotes(
@@ -187,7 +192,7 @@ export class NoteExportService {
           ? notes
               .map((note) => renderNoteMarkdown(note, titles))
               .join('\n\n---\n\n')
-          : `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>LightReader 笔记</title></head><body>${notes
+          : `<!doctype html><html lang="${getActiveLocale()}"><head><meta charset="utf-8"><title>${translate('notes.exportHtmlTitle')}</title></head><body>${notes
               .map(
                 (note) =>
                   `<article><h1>${escapeHtml(note.title)}</h1>${renderHtmlNode(note.document.content, titles)}</article>`,

@@ -1,5 +1,6 @@
 import { cn } from '../../../lib/cn';
 import type { ReaderTocItem } from '../../../reader-engines/types';
+import { useI18n } from '../../../i18n/use-i18n';
 
 interface ReaderTableOfContentsProps {
   currentHref?: string;
@@ -50,13 +51,14 @@ function TocItems({ currentHref, depth = 0, items, onSelect }: TocItemsProps) {
 }
 
 export function ReaderTableOfContents(props: ReaderTableOfContentsProps) {
+  const { t } = useI18n();
   return props.items.length > 0 ? (
-    <nav aria-label="图书目录">
+    <nav aria-label={t('readerToc.label')}>
       <TocItems {...props} />
     </nav>
   ) : (
     <p className="text-muted-foreground px-2 py-4 text-sm">
-      这本 EPUB 没有可用目录。
+      {t('readerToc.empty')}
     </p>
   );
 }

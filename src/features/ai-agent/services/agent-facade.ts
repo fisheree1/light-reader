@@ -21,6 +21,7 @@ import {
   type BookQaRunResult,
 } from './book-qa-runner';
 import { ResearchRunner, type ResearchEvent } from './research-runner';
+import { translate } from '../../../i18n/i18n';
 
 export class AgentFacade {
   private readonly consentService: AgentConsentService;
@@ -113,7 +114,7 @@ export class AgentFacade {
     if (!settings.enabled) throw new AppError('AI_DISABLED');
     if (settings.model !== prepared.run.model) {
       throw new AppError('AI_MODEL_NOT_FOUND', {
-        message: 'AI 设置已经变化，请重新打开助手。',
+        message: translate('ai.settingsChanged'),
       });
     }
     const status = await this.provider.getStatus(settings);

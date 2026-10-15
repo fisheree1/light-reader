@@ -10,6 +10,7 @@ import {
   type Note,
   type NoteSaveInput,
 } from '../domain/note';
+import { translate } from '../../../i18n/i18n';
 
 type IdFactory = () => string;
 type Clock = () => number;
@@ -44,7 +45,7 @@ export class NoteService {
     return this.repository.create(
       noteSchema.parse({
         id: this.createId(),
-        title: '未命名笔记',
+        title: translate('notes.untitled'),
         document,
         plainText: '',
         documentRecovered: false,
@@ -79,7 +80,7 @@ export class NoteService {
     return this.repository.create(
       noteSchema.parse({
         id: this.createId(),
-        title: `关于《${bookTitle}》的笔记`.slice(0, 500),
+        title: translate('notes.aboutBook', { title: bookTitle }).slice(0, 500),
         document,
         plainText: extractPlainText(document),
         documentRecovered: false,

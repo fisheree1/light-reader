@@ -21,6 +21,7 @@ import {
   type BackupMode,
 } from '../../features/backup/domain/backup';
 import { fileNameFromPath } from '../../storage/book-paths';
+import { translate } from '../../i18n/i18n';
 
 export interface SelectedBackupFile {
   fileName: string;
@@ -103,9 +104,12 @@ export class TauriBackupPlatform implements BackupPlatform {
     const path = await save({
       defaultPath: defaultFileName,
       filters: [
-        { name: 'LightReader 备份', extensions: ['lightreader-backup'] },
+        {
+          name: translate('backup.fileFilter'),
+          extensions: ['lightreader-backup'],
+        },
       ],
-      title: '导出 LightReader 备份',
+      title: translate('backup.exportDialog'),
     });
     return path ? { fileName: fileNameFromPath(path), path } : null;
   }
@@ -115,9 +119,12 @@ export class TauriBackupPlatform implements BackupPlatform {
       directory: false,
       multiple: false,
       filters: [
-        { name: 'LightReader 备份', extensions: ['lightreader-backup'] },
+        {
+          name: translate('backup.fileFilter'),
+          extensions: ['lightreader-backup'],
+        },
       ],
-      title: '导入 LightReader 备份',
+      title: translate('backup.importDialog'),
     });
     return typeof path === 'string'
       ? { fileName: fileNameFromPath(path), path }
