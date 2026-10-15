@@ -13,6 +13,21 @@ export const routes: RouteObject[] = [
       { index: true, element: <Navigate replace to="/library" /> },
       { path: 'library', element: <LibraryPage /> },
       {
+        path: 'discover',
+        lazy: async () => {
+          const [{ DiscoveryPage }, { discoveryServices }] = await Promise.all([
+            import('../../features/discovery/discovery-page'),
+            import('../../features/discovery/services/discovery-services'),
+          ]);
+          const services = await discoveryServices;
+          return {
+            Component: function DiscoveryRoute() {
+              return <DiscoveryPage services={services} />;
+            },
+          };
+        },
+      },
+      {
         path: 'notes',
         lazy: async () => {
           const { NotesPage } = await import('../../features/notes/notes-page');

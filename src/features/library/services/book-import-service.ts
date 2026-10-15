@@ -18,6 +18,7 @@ import {
   type BookFormat,
 } from '../domain/book';
 import { fallbackTitleFromFileName } from '../../../storage/book-paths';
+import { bookOriginSchema, type BookOrigin } from '../domain/book-origin';
 import type { EpubMetadataParser } from './epub-metadata-parser';
 import { assertEpubFileSize, MAX_EPUB_FILE_SIZE } from './epub-limits';
 import {
@@ -45,6 +46,11 @@ export type ImportBooksResult =
     };
 
 export interface BookImporter {
+  importBytes?(
+    fileName: string,
+    bytes: Uint8Array,
+    origin?: BookOrigin,
+  ): Promise<Exclude<ImportBookResult, { status: 'cancelled' }>>;
   importBook?(): Promise<ImportBookResult>;
   importBooks?(): Promise<ImportBooksResult>;
   importEpub(): Promise<ImportBookResult>;
@@ -163,6 +169,17 @@ export class BookImportService implements BookImporter {
       }
       throw new AppError('FILE_READ_FAILED', { cause: error });
     }
+    return this.importBytes(selected.fileName, source);
+  }
+
+  async importBytes(
+    fileName: string,
+    source: Uint8Array,
+    origin?: BookOrigin,
+  ): Promise<Exclude<ImportBookResult, { status: 'cancelled' }>> {
+    const format = detectBookFormat(fileName);
+    assertEpubFileSize(source.byteLength, this.maxFileSize);
+    const validatedOrigin = origin ? bookOriginSchema.parse(origin) : undefined;
     if (
       format === 'pdf' &&
       new TextDecoder('latin1').decode(source.subarray(0, 5)) !== '%PDF-'
@@ -176,19 +193,12 @@ export class BookImportService implements BookImporter {
 
     const parsed =
       format === 'epub'
-        ? await this.dependencies.metadataParser.parse(
-            source,
-            selected.fileName,
-          )
+        ? await this.dependencies.metadataParser.parse(source, fileName)
         : isFoliateMetadataFormat(format)
-          ? await this.foliateMetadataParser.parse(
-              source,
-              selected.fileName,
-              format,
-            )
+          ? await this.foliateMetadataParser.parse(source, fileName, format)
           : {
               metadata: bookMetadataSchema.parse({
-                title: fallbackTitleFromFileName(selected.fileName),
+                title: fallbackTitleFromFileName(fileName),
                 creators: [],
                 language: null,
                 publisher: null,
@@ -232,7 +242,9 @@ export class BookImportService implements BookImporter {
         filePath: committed.bookPath,
         fileHash,
         coverPath: committed.coverPath,
-        metadata: parsed.metadata,
+        metadata: validatedOrigin
+          ? { ...parsed.metadata, origin: validatedOrigin }
+          : parsed.metadata,
         fileSize: source.byteLength,
         createdAt: timestamp,
         updatedAt: timestamp,

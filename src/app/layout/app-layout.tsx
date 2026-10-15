@@ -1,6 +1,7 @@
 import {
   BarChart3,
   BookOpen,
+  Globe,
   Moon,
   NotebookPen,
   PanelLeftClose,
@@ -20,6 +21,7 @@ import { useAppStore } from '../../stores/app-store';
 
 const navigationItems = [
   { icon: BookOpen, labelKey: 'app.navLibrary', to: '/library' },
+  { icon: Globe, labelKey: 'discovery.title', to: '/discover' },
   { icon: NotebookPen, labelKey: 'app.navNotes', to: '/notes' },
   { icon: Search, labelKey: 'app.navSearch', to: '/search' },
   { icon: Sparkles, labelKey: 'app.navResearch', to: '/research' },

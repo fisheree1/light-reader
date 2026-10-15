@@ -5,6 +5,7 @@ use tauri_plugin_sql::{Migration, MigrationKind};
 
 mod ai;
 mod backup;
+mod catalog;
 mod library;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -100,6 +101,7 @@ pub fn run() {
 
     builder
         .manage(ai::OllamaState::new())
+        .manage(catalog::CatalogState::new())
         .invoke_handler(tauri::generate_handler![
             ai::ai_ollama_status,
             ai::ai_ollama_chat,
@@ -111,7 +113,11 @@ pub fn run() {
             backup::inspect_full_backup_snapshot,
             backup::restore_full_backup_snapshot,
             backup::available_backup_space,
-            library::delete_library_book
+            library::delete_library_book,
+            catalog::catalog_read_page,
+            catalog::catalog_cancel,
+            catalog::catalog_open_source,
+            catalog::catalog_read_image
         ])
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())

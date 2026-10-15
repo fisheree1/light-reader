@@ -19,6 +19,11 @@
 | 发布     | [`release.md`](release.md)                       | 跨平台安装包、版本一致性和真实桌面验收            |
 | Web 部署 | [`web-deployment.md`](web-deployment.md)         | Docker、HTTPS、浏览器存储与服务器运维边界         |
 
+## 在线书源
+
+- [`online-book-discovery-implementation-plan.md`](online-book-discovery-implementation-plan.md)：已实现的搜索、选卷、EPUB 生成和共享导入，以及真实书源的验收状态与限制。
+- [`online-book-discovery-design.md`](online-book-discovery-design.md)：初始完整设计与 GitHub 参考；扩展提案不代表全部已实现。
+
 ## AI
 
 - [`ai-agent-development.md`](ai-agent-development.md)：产品范围、架构、工具协议、检索、安全、评估和路线图。

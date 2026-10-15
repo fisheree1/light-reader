@@ -37,6 +37,7 @@ export default defineConfig({
       command: 'pnpm dev --host 127.0.0.1 --port 4173',
       env: {
         VITE_AI_FAKE_PROVIDER: 'true',
+        VITE_DISCOVERY_FAKE_SOURCE: 'true',
       },
       url: 'http://127.0.0.1:4173',
       reuseExistingServer: !process.env.CI,

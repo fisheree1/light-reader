@@ -38,14 +38,24 @@ export function LibraryPage({ services = libraryServices }: LibraryPageProps) {
             {t(services.storageDescription ?? 'library.storageDefault')}
           </p>
         </div>
-        {library.isLoading || showLibraryControls ? (
-          <ImportBookButton
-            isImporting={library.isImporting}
-            onImport={() => {
-              void library.importBook();
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => {
+              void navigate('/discover');
             }}
-          />
-        ) : null}
+          >
+            {t('discovery.title')}
+          </Button>
+          {library.isLoading || showLibraryControls ? (
+            <ImportBookButton
+              isImporting={library.isImporting}
+              onImport={() => {
+                void library.importBook();
+              }}
+            />
+          ) : null}
+        </div>
       </header>
 
       {showLibraryControls ? (

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { bookOriginSchema } from './book-origin';
 
 const optionalMetadataText = z.string().trim().min(1).nullable();
 
@@ -9,6 +10,7 @@ export const epubMetadataSchema = z.object({
   publisher: optionalMetadataText,
   description: optionalMetadataText,
   identifier: optionalMetadataText,
+  origin: bookOriginSchema.optional(),
 });
 
 export type EpubMetadata = z.infer<typeof epubMetadataSchema>;
