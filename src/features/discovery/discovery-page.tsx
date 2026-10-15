@@ -10,7 +10,10 @@ import type {
   NovelSource,
   NovelSummary,
 } from './domain/catalog';
-import { discoveryErrorMessage } from './domain/discovery-error';
+import {
+  discoveryErrorMessage,
+  isSourceRefusal,
+} from './domain/discovery-error';
 import type { BookDiscoveryService } from './services/book-discovery-service';
 
 interface Outcome {
@@ -139,6 +142,11 @@ export function DiscoveryPage({
                 message: discoveryErrorMessage(value),
               },
             ]);
+          // The source refused or throttled us: do not start the next volume.
+          if (isSourceRefusal(value)) {
+            if (mounted.current) setError(t('discovery.stoppedAfterBlock'));
+            return;
+          }
         }
       }
     });

@@ -4,7 +4,11 @@ import { WebCryptoContentHasher } from '../../../platform/crypto/content-hasher'
 import { createTestBook } from '../../../test/fixtures/web-records';
 import { FflateEpubMetadataParser } from '../../library/services/epub-metadata-parser';
 import type { BookImporter } from '../../library/services/book-import-service';
-import { BookDiscoveryService } from './book-discovery-service';
+import { DiscoveryError } from '../domain/discovery-error';
+import {
+  BookDiscoveryService,
+  RATE_LIMIT_COOLDOWN_MS,
+} from './book-discovery-service';
 
 function setup() {
   const gateway = new FixtureNovelGateway();
@@ -143,5 +147,116 @@ describe('novel acquisition', () => {
       service.acquire(input, new AbortController().signal),
     ).rejects.toMatchObject({ code: 'SOURCE_INCOMPLETE' });
     expect(importBytes).not.toHaveBeenCalled();
+  });
+
+  it('reuses fetched pages and images on retry and clears them after import', async () => {
+    const { gateway, importBytes, service } = setup();
+    const signal = new AbortController().signal;
+    const catalogue = await service.catalogue('bilinovel', '1', signal);
+    const input = {
+      source: 'bilinovel' as const,
+      catalogue,
+      volume: catalogue.volumes[0],
+      allowMissingImages: false,
+      onProgress: vi.fn(),
+    };
+    const readPage = gateway.readPage.bind(gateway);
+    const pages = vi.spyOn(gateway, 'readPage');
+    const images = vi.spyOn(gateway, 'readImage');
+    // The last chapter page fails once, after earlier pages were fetched.
+    pages.mockImplementation((source, request, requestSignal) =>
+      request.kind === 'page' &&
+      request.path === '/novel/1/102.html' &&
+      pages.mock.calls.filter(
+        ([, call]) => call.kind === 'page' && call.path === '/novel/1/102.html',
+      ).length === 1
+        ? Promise.reject(new DiscoveryError('SOURCE_TIMEOUT'))
+        : readPage(source, request, requestSignal),
+    );
+    await expect(service.acquire(input, signal)).rejects.toMatchObject({
+      code: 'SOURCE_TIMEOUT',
+    });
+    expect(pages).toHaveBeenCalledTimes(3);
+    expect(images).toHaveBeenCalledTimes(1);
+
+    await service.acquire(input, signal);
+    // Only the failed page and the illustration it holds are fetched again.
+    expect(pages).toHaveBeenCalledTimes(4);
+    expect(images).toHaveBeenCalledTimes(2);
+    expect(importBytes).toHaveBeenCalledTimes(1);
+
+    await service.acquire(input, signal);
+    expect(pages).toHaveBeenCalledTimes(7);
+    expect(images).toHaveBeenCalledTimes(4);
+    expect(importBytes.mock.calls[1][1]).toEqual(importBytes.mock.calls[0][1]);
+  });
+
+  it('stops on a refused image even when missing images are allowed', async () => {
+    const { gateway, importBytes, service } = setup();
+    const signal = new AbortController().signal;
+    const catalogue = await service.catalogue('bilinovel', '1', signal);
+    const images = vi
+      .spyOn(gateway, 'readImage')
+      .mockRejectedValue(new DiscoveryError('SOURCE_ACCESS_DENIED'));
+    await expect(
+      service.acquire(
+        {
+          source: 'bilinovel',
+          catalogue,
+          volume: catalogue.volumes[0],
+          allowMissingImages: true,
+          onProgress: vi.fn(),
+        },
+        signal,
+      ),
+    ).rejects.toMatchObject({ code: 'SOURCE_ACCESS_DENIED' });
+    expect(images).toHaveBeenCalledTimes(1);
+    expect(importBytes).not.toHaveBeenCalled();
+  });
+
+  it('pauses every request after rate limiting and never retries by itself', async () => {
+    let now = 1_000;
+    const gateway = new FixtureNovelGateway();
+    const service = new BookDiscoveryService(
+      gateway,
+      { importEpub: vi.fn(), importBytes: vi.fn() },
+      new WebCryptoContentHasher(),
+      { now: () => now },
+    );
+    const signal = new AbortController().signal;
+    const pages = vi
+      .spyOn(gateway, 'readPage')
+      .mockRejectedValueOnce(new DiscoveryError('SOURCE_RATE_LIMITED'));
+
+    await expect(
+      service.search('bilinovel', '测试', signal),
+    ).rejects.toMatchObject({ code: 'SOURCE_RATE_LIMITED' });
+    expect(pages).toHaveBeenCalledTimes(1);
+
+    now += RATE_LIMIT_COOLDOWN_MS - 1;
+    await expect(
+      service.catalogue('bilinovel', '1', signal),
+    ).rejects.toMatchObject({ code: 'SOURCE_COOLING_DOWN' });
+    expect(pages).toHaveBeenCalledTimes(1);
+
+    now += 1;
+    await expect(
+      service.search('bilinovel', '测试', signal),
+    ).resolves.toHaveLength(1);
+    expect(pages).toHaveBeenCalledTimes(2);
+  });
+
+  it('treats a throttling notice page as rate limiting', async () => {
+    const { gateway, service } = setup();
+    vi.spyOn(gateway, 'readPage').mockResolvedValueOnce({
+      url: 'https://www.bilinovel.com/search.html',
+      html: '<html><head><title>429 Too Many Requests</title></head><body>请稍后再试</body></html>',
+    });
+    await expect(
+      service.search('bilinovel', '测试', new AbortController().signal),
+    ).rejects.toMatchObject({ code: 'SOURCE_RATE_LIMITED' });
+    await expect(
+      service.search('bilinovel', '测试', new AbortController().signal),
+    ).rejects.toMatchObject({ code: 'SOURCE_COOLING_DOWN' });
   });
 });

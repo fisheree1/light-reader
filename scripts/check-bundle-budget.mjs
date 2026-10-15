@@ -2,6 +2,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { gzipSync } from 'node:zlib';
 
 const assetsDirectory = new URL('../dist/assets/', import.meta.url);
+const indexHtml = new URL('../dist/index.html', import.meta.url);
 const budgetFile = new URL('../config/bundle-budgets.json', import.meta.url);
 
 function formatBytes(value) {
@@ -56,6 +57,42 @@ assertWithinBudget(
   budget.total.maxGzipBytes,
   failures,
 );
+
+// What the browser loads before the first screen: the entry script plus the
+// chunks index.html preloads. Measuring this set instead of named chunks keeps
+// the budget stable when the bundler regroups shared code between files.
+const html = await readFile(indexHtml, 'utf8');
+const initialNames = new Set(
+  [
+    ...html.matchAll(
+      /<script[^>]+type="module"[^>]+src="\/assets\/([^"]+\.js)"|<link[^>]+rel="modulepreload"[^>]+href="\/assets\/([^"]+\.js)"/g,
+    ),
+  ].map((match) => match[1] ?? match[2]),
+);
+const initial = assets.filter((asset) => initialNames.has(asset.name));
+if (initial.length === 0 || initial.length !== initialNames.size) {
+  failures.push('initial load could not be read from dist/index.html');
+} else {
+  const initialTotal = initial.reduce(
+    (sum, asset) => ({
+      bytes: sum.bytes + asset.bytes,
+      gzipBytes: sum.gzipBytes + asset.gzipBytes,
+    }),
+    { bytes: 0, gzipBytes: 0 },
+  );
+  assertWithinBudget(
+    'initial load',
+    initialTotal.bytes,
+    budget.initialLoad.maxBytes,
+    failures,
+  );
+  assertWithinBudget(
+    'initial load (gzip)',
+    initialTotal.gzipBytes,
+    budget.initialLoad.maxGzipBytes,
+    failures,
+  );
+}
 
 for (const rule of budget.assets) {
   const pattern = new RegExp(rule.pattern);

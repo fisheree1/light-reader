@@ -14,13 +14,20 @@ import {
 } from '../../features/discovery/domain/discovery-error';
 import { sourceUrl } from '../../features/discovery/services/bilinovel-parser';
 
+/** Minimum gap after any source request before the next page load. */
+export const PAGE_REQUEST_GAP_MS = 2000;
+/** Minimum gap after any source request before the next image download. */
+export const IMAGE_REQUEST_GAP_MS = 1000;
+
 export class TauriNovelGateway implements NovelGateway {
   readonly available = true;
-  private lastPageFinished = 0;
+  // Pages and images come from the same source, so they share one clock:
+  // requests are strictly sequential and spaced, whatever their kind.
+  private lastRequestFinished = 0;
 
-  private async pace(signal: AbortSignal): Promise<void> {
+  private async pace(gap: number, signal: AbortSignal): Promise<void> {
     throwIfCancelled(signal);
-    const delay = Math.max(0, 2000 - (Date.now() - this.lastPageFinished));
+    const delay = Math.max(0, gap - (Date.now() - this.lastRequestFinished));
     if (!delay) return;
     await new Promise<void>((resolve, reject) => {
       const cancel = () => {
@@ -95,13 +102,13 @@ export class TauriNovelGateway implements NovelGateway {
     request: PageRequest,
     signal: AbortSignal,
   ) {
-    await this.pace(signal);
+    await this.pace(PAGE_REQUEST_GAP_MS, signal);
     try {
       return pageSnapshotSchema.parse(
         await this.request('catalog_read_page', { source, request }, signal),
       );
     } finally {
-      this.lastPageFinished = Date.now();
+      this.lastRequestFinished = Date.now();
     }
   }
 
@@ -110,11 +117,17 @@ export class TauriNovelGateway implements NovelGateway {
     url: string,
     signal: AbortSignal,
   ): Promise<Uint8Array> {
-    const result = await this.request(
-      'catalog_read_image',
-      { source, url },
-      signal,
-    );
+    await this.pace(IMAGE_REQUEST_GAP_MS, signal);
+    let result: unknown;
+    try {
+      result = await this.request(
+        'catalog_read_image',
+        { source, url },
+        signal,
+      );
+    } finally {
+      this.lastRequestFinished = Date.now();
+    }
     if (result instanceof ArrayBuffer) return new Uint8Array(result);
     if (result instanceof Uint8Array) return result;
     if (

@@ -64,6 +64,14 @@ export const en: Messages = {
     errorBusy: 'The source is processing another request. Retry shortly.',
     errorSelectBook:
       'Open a work, its catalogue or search results in the selected source window first, then read it here.',
+    errorRateLimited:
+      'The source reported too many requests, so fetching stopped. Wait a few minutes before retrying.',
+    errorCoolingDown:
+      'The source just limited requests. Please try again later.',
+    errorUnexpected:
+      'Something unexpected went wrong while fetching. Please try again.',
+    stoppedAfterBlock:
+      'The source denied or limited access, so the remaining volumes were not fetched.',
   },
   errors: {
     USER_CANCELLED: '',

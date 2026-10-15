@@ -7,7 +7,12 @@ import type {
   NovelSource,
   NovelVolume,
 } from '../domain/catalog';
-import { DiscoveryError, throwIfCancelled } from '../domain/discovery-error';
+import type { ParsedChapter } from '../domain/catalog';
+import {
+  DiscoveryError,
+  isSourceRefusal,
+  throwIfCancelled,
+} from '../domain/discovery-error';
 import {
   isSearchPath,
   pagePath,
@@ -23,49 +28,107 @@ import {
   type EpubImage,
 } from './epub-builder-service';
 
+/** How long to stop contacting a source after it reports rate limiting. */
+export const RATE_LIMIT_COOLDOWN_MS = 2 * 60 * 1000;
+/** Volumes whose fetched pages are kept for a retry in this session. */
+const CACHED_VOLUMES = 2;
+
+/**
+ * Pages and image bytes already fetched for one volume. A retry after a
+ * failure or cancellation reuses them instead of loading them again.
+ */
+interface VolumeFetchCache {
+  images: Map<string, Uint8Array>;
+  pages: Map<string, ParsedChapter>;
+}
+
 export class BookDiscoveryService {
   readonly gateway: NovelGateway;
   private readonly importer: BookImporter;
   private readonly hasher: ContentHasher;
+  private readonly now: () => number;
+  private readonly fetchCache = new Map<string, VolumeFetchCache>();
+  private coolingDownUntil = 0;
   constructor(
     gateway: NovelGateway,
     importer: BookImporter,
     hasher: ContentHasher,
+    options: { now?: () => number } = {},
   ) {
     this.gateway = gateway;
     this.importer = importer;
     this.hasher = hasher;
+    this.now = options.now ?? Date.now;
+  }
+
+  /**
+   * Runs one source request plus its parsing. Nothing here retries: after a
+   * rate-limit response every request is refused locally for a while, and a
+   * refusal always propagates so the caller stops its task.
+   */
+  private async fromSource<T>(action: () => Promise<T>): Promise<T> {
+    if (this.now() < this.coolingDownUntil)
+      throw new DiscoveryError('SOURCE_COOLING_DOWN');
+    try {
+      return await action();
+    } catch (error) {
+      if (
+        error instanceof DiscoveryError &&
+        error.code === 'SOURCE_RATE_LIMITED'
+      )
+        this.coolingDownUntil = this.now() + RATE_LIMIT_COOLDOWN_MS;
+      throw error;
+    }
+  }
+
+  private volumeCache(key: string): VolumeFetchCache {
+    let cache = this.fetchCache.get(key);
+    if (cache) {
+      // Refresh recency for the bounded LRU below.
+      this.fetchCache.delete(key);
+    } else {
+      cache = { images: new Map(), pages: new Map() };
+    }
+    this.fetchCache.set(key, cache);
+    while (this.fetchCache.size > CACHED_VOLUMES) {
+      const oldest = this.fetchCache.keys().next().value;
+      if (oldest === undefined) break;
+      this.fetchCache.delete(oldest);
+    }
+    return cache;
   }
 
   async search(source: NovelSource, query: string, signal: AbortSignal) {
     const normalized = query.trim();
     if (!normalized || normalized.length > 100)
       throw new DiscoveryError('SOURCE_INVALID');
-    const snapshot = await this.gateway.readPage(
-      source,
-      { kind: 'search', query: normalized },
-      signal,
-    );
-    throwIfCancelled(signal);
-    return parseSearch(source, snapshot);
+    return this.fromSource(async () => {
+      const snapshot = await this.gateway.readPage(
+        source,
+        { kind: 'search', query: normalized },
+        signal,
+      );
+      throwIfCancelled(signal);
+      return parseSearch(source, snapshot);
+    });
   }
 
   async catalogue(source: NovelSource, id: string, signal: AbortSignal) {
     if (!/^\d{1,10}$/.test(id)) throw new DiscoveryError('SOURCE_INVALID');
-    const snapshot = await this.gateway.readPage(
-      source,
-      { kind: 'page', path: `/novel/${id}/catalog` },
-      signal,
-    );
-    throwIfCancelled(signal);
-    return parseCatalogue(source, snapshot, id);
+    return this.fromSource(async () => {
+      const snapshot = await this.gateway.readPage(
+        source,
+        { kind: 'page', path: `/novel/${id}/catalog` },
+        signal,
+      );
+      throwIfCancelled(signal);
+      return parseCatalogue(source, snapshot, id);
+    });
   }
 
   async current(source: NovelSource, signal: AbortSignal) {
-    const snapshot = await this.gateway.readPage(
-      source,
-      { kind: 'current' },
-      signal,
+    const snapshot = await this.fromSource(() =>
+      this.gateway.readPage(source, { kind: 'current' }, signal),
     );
     throwIfCancelled(signal);
     const path = new URL(snapshot.url).pathname;
@@ -75,6 +138,25 @@ export class BookDiscoveryService {
     )
       throw new DiscoveryError('SOURCE_SELECT_BOOK');
     return parseSearch(source, snapshot);
+  }
+
+  private async fetchChapterPage(
+    source: NovelSource,
+    path: string,
+    cache: VolumeFetchCache,
+    signal: AbortSignal,
+  ): Promise<ParsedChapter> {
+    const parsed = await this.fromSource(async () => {
+      const snapshot = await this.gateway.readPage(
+        source,
+        { kind: 'page', path },
+        signal,
+      );
+      throwIfCancelled(signal);
+      return parseChapter(source, snapshot, path);
+    });
+    cache.pages.set(path, parsed);
+    return parsed;
   }
 
   async acquire(
@@ -107,16 +189,24 @@ export class BookDiscoveryService {
       if (bytesTotal > 64 * 1024 * 1024)
         throw new DiscoveryError('SOURCE_TOO_LARGE');
     };
+    const cacheKey = `${source}:${catalogue.id}:${volume.id}`;
+    const cache = this.volumeCache(cacheKey);
     const loadImage = async (url: string): Promise<string | null> => {
       throwIfCancelled(signal);
       if (imageCache.has(url)) return imageCache.get(url) ?? null;
       if (imageCache.size >= 250) throw new DiscoveryError('SOURCE_TOO_LARGE');
       imageCache.set(url, null);
       try {
-        const bytes = await this.gateway.readImage(source, url, signal);
-        throwIfCancelled(signal);
-        if (bytes.byteLength > 10 * 1024 * 1024)
-          throw new DiscoveryError('SOURCE_TOO_LARGE');
+        let bytes = cache.images.get(url);
+        if (!bytes) {
+          bytes = await this.fromSource(() =>
+            this.gateway.readImage(source, url, signal),
+          );
+          throwIfCancelled(signal);
+          if (bytes.byteLength > 10 * 1024 * 1024)
+            throw new DiscoveryError('SOURCE_TOO_LARGE');
+          cache.images.set(url, bytes);
+        }
         budget(bytes.byteLength);
         const format = detectImage(bytes);
         const path = `images/${String(images.length)}.${format.extension}`;
@@ -125,9 +215,11 @@ export class BookDiscoveryService {
         return path;
       } catch (error) {
         throwIfCancelled(signal);
+        // A refusal or size violation stops the volume even when missing
+        // illustrations were allowed: continuing would keep hitting the source.
         if (
-          error instanceof DiscoveryError &&
-          error.code === 'SOURCE_TOO_LARGE'
+          isSourceRefusal(error) ||
+          (error instanceof DiscoveryError && error.code === 'SOURCE_TOO_LARGE')
         )
           throw error;
         if (!input.allowMissingImages)
@@ -155,13 +247,9 @@ export class BookDiscoveryService {
         if (visited.has(path) || visited.size >= 20)
           throw new DiscoveryError('SOURCE_INCOMPLETE');
         visited.add(path);
-        const snapshot = await this.gateway.readPage(
-          source,
-          { kind: 'page', path },
-          signal,
-        );
-        throwIfCancelled(signal);
-        const parsed = parseChapter(source, snapshot, path);
+        const parsed: ParsedChapter =
+          cache.pages.get(path) ??
+          (await this.fetchChapterPage(source, path, cache, signal));
         // Catalogue labels can contain the source's substituted characters.
         // Its rendered chapter page supplies the actual readable heading.
         if (visited.size === 1 && parsed.title) resolvedTitle = parsed.title;
@@ -232,6 +320,8 @@ export class BookDiscoveryService {
       bytes,
       origin,
     );
+    // The volume is in the library now; its fetched pages are no longer needed.
+    this.fetchCache.delete(cacheKey);
     return { ...result, missingImages };
   }
 }

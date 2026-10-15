@@ -52,6 +52,11 @@ export const zhCN = {
     errorBusy: '书源正在处理另一项请求，请稍后重试。',
     errorSelectBook:
       '请先在所选书源窗口打开作品详情、卷册目录或搜索结果，再点击读取。',
+    errorRateLimited:
+      '书源提示请求过于频繁，已停止获取。请稍候几分钟再手动重试。',
+    errorCoolingDown: '书源刚刚限制了请求，请稍后再试。',
+    errorUnexpected: '获取过程中出现意外错误，请重试。',
+    stoppedAfterBlock: '书源拒绝或限制了访问，剩余卷册已停止获取。',
   },
   errors: {
     USER_CANCELLED: '',

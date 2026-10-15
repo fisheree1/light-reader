@@ -1,5 +1,6 @@
 import { novelFixture } from '../../../test/fixtures/novel-gateway';
 import {
+  escapeXml,
   imageUrl,
   pagePath,
   parseCatalogue,
@@ -193,5 +194,70 @@ describe('Bilinovel source parsing', () => {
         '/novel/1/101.html',
       ).nextPath,
     ).toBe('/novel/1/101_2.html');
+  });
+
+  it('drops characters XML forbids so chapters stay parseable XHTML', () => {
+    expect(escapeXml('a\u0001b\u000bc\u0000<&>\uFFFE\uD800\uDC00\uDC00')).toBe(
+      'abc&lt;&amp;&gt;\uD800\uDC00',
+    );
+    expect(escapeXml('tab\tline\nreturn\r')).toBe('tab\tline\nreturn\r');
+
+    const parsed = parseChapter(
+      'bilinovel',
+      {
+        url,
+        html: '<html><head><title>t</title></head><body><h1>第一章\u0002</h1><div id="acontent"><p>正文\u0001内容\u000b结束</p></div></body></html>',
+      },
+      '/novel/1/101.html',
+    );
+    const document = new DOMParser().parseFromString(
+      `<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><body>${parsed.html}</body></html>`,
+      'application/xhtml+xml',
+    );
+    expect(document.querySelector('parsererror')).toBeNull();
+    // An XHTML document from DOMParser is outside jest-dom's Node checks.
+    const text = document.documentElement.textContent;
+    expect(text).toBe('正文内容结束');
+  });
+
+  it('reports empty searches only from an explicit empty-result notice', () => {
+    const search = (html: string) =>
+      parseSearch('bilinovel', {
+        url: 'https://www.bilinovel.com/search.html',
+        html,
+      });
+    expect(search('<p>没有符合条件的结果</p>')).toEqual([]);
+    expect(search('<p>未找到相关小说</p>')).toEqual([]);
+    expect(search('<p>共 0 条</p>')).toEqual([]);
+    // A results-titled page without results or a notice may be a blocked or
+    // changed page: it must not look like "no results".
+    for (const html of [
+      '<html><head><title>搜索结果</title></head><body><p>请稍候</p></body></html>',
+      '<p>search</p>',
+    ])
+      expect(() => search(html)).toThrow(
+        expect.objectContaining({ code: 'SOURCE_INVALID' }),
+      );
+  });
+
+  it('detects throttling notices without flagging long chapter text', () => {
+    expect(() =>
+      parseSearch('bilinovel', {
+        url: 'https://www.bilinovel.com/search.html',
+        html: '<html><body><p>您的访问过于频繁，请稍后再试。</p></body></html>',
+      }),
+    ).toThrow(expect.objectContaining({ code: 'SOURCE_RATE_LIMITED' }));
+
+    const longText = `${'故事正文。'.repeat(120)}他抱怨服务器“请求过于频繁”。`;
+    expect(
+      parseChapter(
+        'bilinovel',
+        {
+          url,
+          html: `<html><body><h1>第一章</h1><div id="acontent"><p>${longText}</p></div></body></html>`,
+        },
+        '/novel/1/101.html',
+      ).html,
+    ).toContain('请求过于频繁');
   });
 });

@@ -2,26 +2,18 @@
   "version": 1,
   "total": {
     "maxBytes": 3150000,
-    "maxGzipBytes": 950000
+    "maxGzipBytes": 970000
+  },
+  "initialLoad": {
+    "maxBytes": 570000,
+    "maxGzipBytes": 182000
   },
   "assets": [
-    {
-      "name": "application shell",
-      "pattern": "^index-[^.]+\\.js$",
-      "maxBytes": 280000,
-      "maxGzipBytes": 90000
-    },
     {
       "name": "notes page",
       "pattern": "^notes-page-[^.]+\\.js$",
       "maxBytes": 425000,
       "maxGzipBytes": 135000
-    },
-    {
-      "name": "shared data services",
-      "pattern": "^library-services-[\\w-]{8}\\.js$",
-      "maxBytes": 320000,
-      "maxGzipBytes": 103000
     },
     {
       "name": "research page",

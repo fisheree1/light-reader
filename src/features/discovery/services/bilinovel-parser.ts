@@ -58,6 +58,17 @@ export function imageUrl(
   return url.href;
 }
 
+/**
+ * Phrases the source uses for an empty result list. Deliberately narrow: a
+ * page that is merely titled "搜索结果" or mentions "search" may be a blocked
+ * or broken page, which must surface as an error rather than "no results".
+ */
+const emptySearchNotice =
+  /没有(?:符合条件的|找到|相关)?(?:结果|小说|书籍|作品)|未找到|暂无(?:相关)?(?:结果|内容|小说)|无相关(?:结果|内容|小说)|共\s*0\s*(?:条|本|部)/;
+
+const rateLimitNotice =
+  /\b429\b|too many requests|rate limit|请求过于频繁|访问过于频繁|访问太频繁|操作过于频繁/i;
+
 function parseDocument(snapshot: PageSnapshot): Document {
   if (snapshot.html.length > 2 * 1024 * 1024)
     throw new DiscoveryError('SOURCE_TOO_LARGE');
@@ -67,6 +78,15 @@ function parseDocument(snapshot: PageSnapshot): Document {
     /just a moment|attention required|access denied/i.test(document.title)
   ) {
     throw new DiscoveryError('SOURCE_ACCESS_DENIED');
+  }
+  // Only short pages or the title count, so chapter text that merely
+  // mentions these phrases is never mistaken for a throttling notice.
+  const bodyText = document.body.textContent.trim();
+  if (
+    rateLimitNotice.test(document.title) ||
+    (bodyText.length < 500 && rateLimitNotice.test(bodyText))
+  ) {
+    throw new DiscoveryError('SOURCE_RATE_LIMITED');
   }
   return document;
 }
@@ -129,9 +149,7 @@ export function parseSearch(
   }
   if (
     results.size === 0 &&
-    !/没有|未找到|暂无|无相关|0\s*(?:条|本)|搜索结果|search/i.test(
-      document.body.textContent,
-    )
+    !emptySearchNotice.test(document.body.textContent)
   ) {
     throw new DiscoveryError('SOURCE_INVALID');
   }
@@ -228,8 +246,29 @@ export function parseCatalogue(
   };
 }
 
+/**
+ * Whether a code point may appear in an XML 1.0 document. C0 controls other
+ * than tab, LF and CR, U+FFFE, U+FFFF and unpaired surrogates are forbidden;
+ * a single one makes a whole XHTML chapter unparseable.
+ */
+function isXmlCharacter(codePoint: number): boolean {
+  if (codePoint < 0x20)
+    return codePoint === 0x9 || codePoint === 0xa || codePoint === 0xd;
+  if (codePoint >= 0xd800 && codePoint <= 0xdfff) return false;
+  return codePoint !== 0xfffe && codePoint !== 0xffff;
+}
+
+function stripXmlInvalidCharacters(value: string): string {
+  let result = '';
+  // for…of iterates code points, so valid surrogate pairs stay together.
+  for (const character of value) {
+    if (isXmlCharacter(character.codePointAt(0) ?? 0)) result += character;
+  }
+  return result;
+}
+
 export function escapeXml(value: string): string {
-  return value.replace(
+  return stripXmlInvalidCharacters(value).replace(
     /[&<>"']/g,
     (character) =>
       ({

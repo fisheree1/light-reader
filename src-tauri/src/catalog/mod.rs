@@ -561,6 +561,14 @@ async fn pinned_image_client(url: &Url) -> Result<Client, &'static str> {
         .map_err(|_| "SOURCE_IMAGE_FAILED")
 }
 
+fn refusal_code(status: reqwest::StatusCode) -> Option<&'static str> {
+    match status {
+        reqwest::StatusCode::FORBIDDEN => Some("SOURCE_ACCESS_DENIED"),
+        reqwest::StatusCode::TOO_MANY_REQUESTS => Some("SOURCE_RATE_LIMITED"),
+        _ => None,
+    }
+}
+
 async fn download_image(source: Source, mut url: Url) -> Result<Vec<u8>, &'static str> {
     for _ in 0..=3 {
         let response = pinned_image_client(&url)
@@ -581,6 +589,11 @@ async fn download_image(source: Source, mut url: Url) -> Result<Vec<u8>, &'stati
                 return Err("SOURCE_IMAGE_FAILED");
             }
             continue;
+        }
+        if let Some(code) = refusal_code(response.status()) {
+            // The source refused or throttled us: report it so the caller
+            // stops the whole task. Never retry these automatically.
+            return Err(code);
         }
         if !response.status().is_success() {
             return Err("SOURCE_IMAGE_FAILED");
@@ -710,6 +723,25 @@ mod tests {
             receiver.recv().unwrap().err().as_deref(),
             Some("SOURCE_CANCELLED")
         );
+    }
+    #[test]
+    fn reports_refusals_instead_of_generic_failures() {
+        use reqwest::StatusCode;
+        assert_eq!(
+            refusal_code(StatusCode::FORBIDDEN),
+            Some("SOURCE_ACCESS_DENIED")
+        );
+        assert_eq!(
+            refusal_code(StatusCode::TOO_MANY_REQUESTS),
+            Some("SOURCE_RATE_LIMITED")
+        );
+        for status in [
+            StatusCode::OK,
+            StatusCode::NOT_FOUND,
+            StatusCode::BAD_GATEWAY,
+        ] {
+            assert_eq!(refusal_code(status), None);
+        }
     }
     #[test]
     fn rejects_non_public_image_addresses() {
