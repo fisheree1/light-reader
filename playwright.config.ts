@@ -18,16 +18,36 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
+      testIgnore: /production\.spec\.ts$/,
       use: { ...devices['Desktop Chrome'] },
     },
-  ],
-  webServer: {
-    command: 'pnpm dev --host 127.0.0.1 --port 4173',
-    env: {
-      VITE_AI_FAKE_PROVIDER: 'true',
+    {
+      // Runs against `vite build` output, which the dev server cannot cover
+      // (Rollup options such as dynamic-import handling only apply there).
+      name: 'production',
+      testMatch: /production\.spec\.ts$/,
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: 'http://127.0.0.1:4174',
+      },
     },
-    url: 'http://127.0.0.1:4173',
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-  },
+  ],
+  webServer: [
+    {
+      command: 'pnpm dev --host 127.0.0.1 --port 4173',
+      env: {
+        VITE_AI_FAKE_PROVIDER: 'true',
+      },
+      url: 'http://127.0.0.1:4173',
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+    {
+      command:
+        'pnpm build && pnpm exec vite preview --host 127.0.0.1 --port 4174 --strictPort',
+      url: 'http://127.0.0.1:4174',
+      reuseExistingServer: !process.env.CI,
+      timeout: 300_000,
+    },
+  ],
 });
