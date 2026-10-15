@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 
 import type { ReaderSettingsRepository } from '../../database/repositories/reader-settings-repository';
 import { defaultReaderSettings } from '../reader/domain/reader-settings';
@@ -23,7 +24,11 @@ describe('SettingsPage', () => {
     const user = userEvent.setup();
     const repository = createRepository();
     const saveGlobal = vi.spyOn(repository, 'saveGlobal');
-    render(<SettingsPage settingsRepository={repository} />);
+    render(
+      <MemoryRouter>
+        <SettingsPage settingsRepository={repository} />
+      </MemoryRouter>,
+    );
 
     const theme = await screen.findByLabelText('阅读主题');
     await user.selectOptions(theme, 'sepia');
@@ -45,7 +50,11 @@ describe('SettingsPage', () => {
   it('shows a recoverable error when settings cannot load', async () => {
     const repository = createRepository();
     vi.spyOn(repository, 'getGlobal').mockRejectedValue(new Error('offline'));
-    render(<SettingsPage settingsRepository={repository} />);
+    render(
+      <MemoryRouter>
+        <SettingsPage settingsRepository={repository} />
+      </MemoryRouter>,
+    );
 
     expect(
       await screen.findByText('设置加载或保存失败，请重试'),

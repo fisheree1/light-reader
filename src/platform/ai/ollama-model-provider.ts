@@ -9,6 +9,7 @@ import {
   type ModelProviderGateway,
   type ModelProviderStatus,
 } from './model-provider-gateway';
+import { translate, type MessageKey } from '../../i18n/i18n';
 
 interface NativeOllamaStatus {
   available: boolean;
@@ -62,11 +63,11 @@ class ProviderEventQueue {
   }
 }
 
-const nativeErrorMessages: Record<string, string> = {
-  AI_MODEL_NOT_FOUND: '所选 Ollama 模型未安装。',
-  AI_PROVIDER_UNAVAILABLE: '无法连接本机 Ollama 服务。',
-  AI_REQUEST_FAILED: '本地模型请求失败。',
-  AI_REQUEST_TIMEOUT: '本地模型请求超时。',
+const nativeErrorMessages: Record<string, MessageKey> = {
+  AI_MODEL_NOT_FOUND: 'ai.modelNotInstalled',
+  AI_PROVIDER_UNAVAILABLE: 'ai.ollamaUnavailable',
+  AI_REQUEST_FAILED: 'ai.requestFailed',
+  AI_REQUEST_TIMEOUT: 'ai.requestTimeout',
 };
 
 function mapNativeError(error: unknown): AgentProviderEvent {
@@ -85,7 +86,9 @@ function mapNativeError(error: unknown): AgentProviderEvent {
   return {
     type: 'failed',
     code,
-    message: nativeErrorMessages[code] ?? nativeErrorMessages.AI_REQUEST_FAILED,
+    message: translate(
+      nativeErrorMessages[code] ?? nativeErrorMessages.AI_REQUEST_FAILED,
+    ),
   };
 }
 

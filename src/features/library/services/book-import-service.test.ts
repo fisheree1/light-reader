@@ -10,7 +10,7 @@ import type {
   CommittedBookFiles,
   StagedBookFiles,
 } from '../../../storage/book-file-storage';
-import type { Book } from '../domain/book';
+import type { Book, BookFormat } from '../domain/book';
 import { BookImportService } from './book-import-service';
 import type { EpubMetadataParser, ParsedEpub } from './epub-metadata-parser';
 import { MAX_EPUB_FILE_SIZE } from './epub-limits';
@@ -118,18 +118,15 @@ class FakeStorage implements BookFileStorage {
     _bookId: string,
     _bookData: Uint8Array,
     _cover: null,
-    format: 'epub' | 'pdf' = 'epub',
+    format: BookFormat = 'epub',
   ): Promise<StagedBookFiles> {
     this.stageCount += 1;
     if (this.stageFailure) return Promise.reject(this.stageFailure);
-    this.staged =
-      format === 'pdf'
-        ? {
-            ...STAGED,
-            stagingBookPath: 'light-reader/tmp/book-1/book.pdf',
-            finalBookPath: 'light-reader/books/book-1/book.pdf',
-          }
-        : STAGED;
+    this.staged = {
+      ...STAGED,
+      stagingBookPath: `light-reader/tmp/book-1/book.${format}`,
+      finalBookPath: `light-reader/books/book-1/book.${format}`,
+    };
     return Promise.resolve(this.staged);
   }
 
@@ -208,17 +205,26 @@ function createSubject() {
   const dialog = new FakeDialog();
   const fileStorage = new FakeStorage();
   const metadataParser = new FakeParser();
+  const foliateMetadataParser = { parse: vi.fn(() => metadataParser.parse()) };
   const repository = new FakeRepository();
   const subject = new BookImportService({
     dialog,
     fileStorage,
+    foliateMetadataParser,
     hasher: new FakeHasher(),
     idGenerator: () => 'book-1',
     metadataParser,
     now: () => 100,
     repository,
   });
-  return { dialog, fileStorage, metadataParser, repository, subject };
+  return {
+    dialog,
+    fileStorage,
+    foliateMetadataParser,
+    metadataParser,
+    repository,
+    subject,
+  };
 }
 
 describe('BookImportService', () => {
@@ -263,6 +269,48 @@ describe('BookImportService', () => {
       },
     });
     expect(parse).not.toHaveBeenCalled();
+  });
+
+  it.each(['mobi', 'azw3', 'fb2', 'cbz'] as const)(
+    'imports %s books through the Foliate metadata parser',
+    async (format) => {
+      const { dialog, foliateMetadataParser, metadataParser, subject } =
+        createSubject();
+      dialog.selection = {
+        fileName: `Novel.${format.toUpperCase()}`,
+        path: `/selected/Novel.${format}`,
+      };
+      const parse = vi.spyOn(metadataParser, 'parse');
+
+      await expect(subject.importBook()).resolves.toMatchObject({
+        status: 'created',
+        book: {
+          format,
+          title: '新图书',
+          filePath: `light-reader/books/book-1/book.${format}`,
+        },
+      });
+      expect(foliateMetadataParser.parse).toHaveBeenCalledWith(
+        expect.any(Uint8Array),
+        `Novel.${format.toUpperCase()}`,
+        format,
+      );
+      expect(parse).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('rejects unsupported extensions and oversized Foliate books', async () => {
+    const { dialog, fileStorage, subject } = createSubject();
+    dialog.selection = { fileName: 'notes.docx', path: '/selected/notes.docx' };
+    await expect(subject.importBook()).rejects.toMatchObject({
+      code: 'UNSUPPORTED_FILE_TYPE',
+    });
+
+    dialog.selection = { fileName: 'big.mobi', path: '/selected/big.mobi' };
+    fileStorage.sourceSize = MAX_EPUB_FILE_SIZE + 1;
+    await expect(subject.importBook()).rejects.toMatchObject({
+      code: 'BOOK_TOO_LARGE',
+    });
   });
 
   it('rejects a PDF extension with a missing PDF signature', async () => {

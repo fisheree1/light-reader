@@ -60,7 +60,9 @@ export const readerServices: ReaderServices = {
     : new WebReaderSettingsRepository(),
   source: isTauri() ? new TauriReaderBookSource() : new WebReaderBookSource(),
   createReader: (format) =>
-    format === 'pdf' ? new PdfEbookReader() : new FoliateEbookReader(),
+    format === 'pdf'
+      ? new PdfEbookReader()
+      : new FoliateEbookReader(undefined, undefined, format),
   exportPlatform: isTauri()
     ? new TauriFileExportPlatform()
     : new WebFileExportPlatform(),

@@ -1,4 +1,5 @@
 import type { ReaderDisplaySettings } from '../domain/reader-settings';
+import { useI18n } from '../../../i18n/use-i18n';
 
 interface ReaderSettingsFormProps {
   disabled?: boolean;
@@ -65,14 +66,15 @@ export function ReaderSettingsForm({
   onChange,
   value,
 }: ReaderSettingsFormProps) {
+  const { t } = useI18n();
   return (
     <fieldset className="space-y-5" disabled={disabled}>
-      <legend className="sr-only">阅读排版</legend>
+      <legend className="sr-only">{t('readerSettings.typography')}</legend>
       <label
         className="block text-sm font-medium"
         htmlFor={`${idPrefix}-theme`}
       >
-        阅读主题
+        {t('readerSettings.theme')}
         <select
           className="bg-background mt-2 block h-9 w-full rounded-md border px-3 text-sm"
           id={`${idPrefix}-theme`}
@@ -84,16 +86,16 @@ export function ReaderSettingsForm({
           }}
           value={value.theme}
         >
-          <option value="light">明亮</option>
-          <option value="sepia">羊皮纸</option>
-          <option value="dark">深色</option>
+          <option value="light">{t('readerSettings.themeLight')}</option>
+          <option value="sepia">{t('readerSettings.themeSepia')}</option>
+          <option value="dark">{t('readerSettings.themeDark')}</option>
         </select>
       </label>
       <label
         className="block text-sm font-medium"
         htmlFor={`${idPrefix}-font-family`}
       >
-        字体
+        {t('readerSettings.font')}
         <select
           className="bg-background mt-2 block h-9 w-full rounded-md border px-3 text-sm"
           id={`${idPrefix}-font-family`}
@@ -109,15 +111,15 @@ export function ReaderSettingsForm({
           }}
           value={value.fontFamily}
         >
-          <option value="publisher">出版社原始字体</option>
-          <option value="serif">衬线字体</option>
-          <option value="sans-serif">无衬线字体</option>
+          <option value="publisher">{t('readerSettings.fontPublisher')}</option>
+          <option value="serif">{t('readerSettings.fontSerif')}</option>
+          <option value="sans-serif">{t('readerSettings.fontSans')}</option>
         </select>
       </label>
       <RangeField
         disabled={disabled}
         id={`${idPrefix}-font-weight`}
-        label="字重"
+        label={t('readerSettings.fontWeight')}
         max={700}
         min={300}
         onChange={(fontWeight) => {
@@ -130,7 +132,7 @@ export function ReaderSettingsForm({
       <RangeField
         disabled={disabled}
         id={`${idPrefix}-font-size`}
-        label="字号"
+        label={t('readerSettings.fontSize')}
         max={36}
         min={12}
         onChange={(fontSize) => {
@@ -143,7 +145,7 @@ export function ReaderSettingsForm({
       <RangeField
         disabled={disabled}
         id={`${idPrefix}-line-height`}
-        label="行高"
+        label={t('readerSettings.lineHeight')}
         max={2.4}
         min={1.2}
         onChange={(lineHeight) => {
@@ -156,7 +158,7 @@ export function ReaderSettingsForm({
       <RangeField
         disabled={disabled}
         id={`${idPrefix}-content-width`}
-        label="正文宽度"
+        label={t('readerSettings.contentWidth')}
         max={1200}
         min={420}
         onChange={(contentWidth) => {
@@ -169,7 +171,7 @@ export function ReaderSettingsForm({
       <RangeField
         disabled={disabled}
         id={`${idPrefix}-margin`}
-        label="页边距"
+        label={t('readerSettings.margin')}
         max={96}
         min={0}
         onChange={(margin) => {

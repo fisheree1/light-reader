@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { bookLocatorSchema } from '../../../reader-engines/types';
+import { translate, type MessageKey } from '../../../i18n/i18n';
 
 export const selectionAiActionSchema = z.enum([
   'summarize',
@@ -13,14 +14,19 @@ export const selectionAiActionSchema = z.enum([
 
 export type SelectionAiAction = z.infer<typeof selectionAiActionSchema>;
 
-export const selectionAiActionLabels: Record<SelectionAiAction, string> = {
-  summarize: '总结',
-  explain: '解释',
-  translate: '翻译为中文',
-  outline: '生成提纲',
-  questions: '生成阅读问题',
-  custom: '自定义需求',
+const selectionAiActionLabelKeys: Record<SelectionAiAction, MessageKey> = {
+  summarize: 'ai.actionSummarize',
+  explain: 'ai.actionExplain',
+  translate: 'ai.actionTranslate',
+  outline: 'ai.actionOutline',
+  questions: 'ai.actionQuestions',
+  custom: 'ai.actionCustom',
 };
+
+/** Display name of a selection action in the active language. */
+export function selectionAiActionLabel(action: SelectionAiAction): string {
+  return translate(selectionAiActionLabelKeys[action]);
+}
 
 export const customAiInstructionSchema = z.string().trim().min(1).max(1_000);
 

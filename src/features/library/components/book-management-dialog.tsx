@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { Button } from '../../../components/ui/button';
 import { IconButton } from '../../../components/ui/icon-button';
 import type { BookDeletionMode, LibraryBook } from '../domain/library';
+import { useI18n } from '../../../i18n/use-i18n';
 
 interface BookManagementDialogProps {
   book: LibraryBook;
@@ -30,6 +31,7 @@ export function BookManagementDialog({
   onSaveTags,
   open,
 }: BookManagementDialogProps) {
+  const { t } = useI18n();
   const [tags, setTags] = useState(book.tags.join(', '));
   const [deleteMode, setDeleteMode] = useState<BookDeletionMode | null>(null);
 
@@ -46,17 +48,17 @@ export function BookManagementDialog({
           <div className="flex items-start gap-3">
             <div className="min-w-0 flex-1">
               <Dialog.Title className="truncate text-lg font-semibold">
-                管理《{book.title}》
+                {t('bookManagement.title', { title: book.title })}
               </Dialog.Title>
               <Dialog.Description className="text-muted-foreground mt-1 text-sm">
-                编辑标签，或安全地从本机删除这本书。
+                {t('bookManagement.description')}
               </Dialog.Description>
             </div>
             <Dialog.Close asChild>
               <IconButton
                 disabled={busy}
                 icon={<X aria-hidden="true" size={17} />}
-                label="关闭书籍管理"
+                label={t('bookManagement.close')}
                 variant="ghost"
               />
             </Dialog.Close>
@@ -64,14 +66,16 @@ export function BookManagementDialog({
 
           {deleteMode ? (
             <section className="border-destructive/30 bg-destructive/10 mt-6 rounded-lg border p-4">
-              <h2 className="font-semibold">确认删除《{book.title}》？</h2>
+              <h2 className="font-semibold">
+                {t('bookManagement.confirmTitle', { title: book.title })}
+              </h2>
               <p className="text-muted-foreground mt-2 text-sm leading-6">
                 {deleteMode === 'delete-all'
-                  ? '将删除 EPUB、封面、阅读位置、高亮、批注、标签，并从独立笔记中移除这本书的引用块。笔记中的其他正文不会删除。'
-                  : '将删除 EPUB、封面及阅读数据，但独立笔记里的原文引用快照会保留。引用之后无法再跳回已删除的书籍。'}
+                  ? t('bookManagement.deleteAllDetail')
+                  : t('bookManagement.keepReferencesDetail')}
               </p>
               <p className="text-destructive mt-3 text-sm font-medium">
-                此操作完成后无法撤销。
+                {t('bookManagement.irreversible')}
               </p>
               <div className="mt-5 flex justify-end gap-2">
                 <Button
@@ -81,7 +85,7 @@ export function BookManagementDialog({
                   }}
                   variant="secondary"
                 >
-                  返回
+                  {t('common.back')}
                 </Button>
                 <Button
                   disabled={busy}
@@ -89,7 +93,9 @@ export function BookManagementDialog({
                   variant="destructive"
                 >
                   <Trash2 aria-hidden="true" size={15} />
-                  {busy ? '正在删除…' : '确认删除'}
+                  {busy
+                    ? t('bookManagement.deleting')
+                    : t('bookManagement.confirmDelete')}
                 </Button>
               </div>
             </section>
@@ -99,7 +105,7 @@ export function BookManagementDialog({
                 <label className="text-sm font-medium" htmlFor="book-tags">
                   <span className="inline-flex items-center gap-2">
                     <Tags aria-hidden="true" size={15} />
-                    标签
+                    {t('bookManagement.tags')}
                   </span>
                 </label>
                 <input
@@ -109,11 +115,11 @@ export function BookManagementDialog({
                   onChange={(event) => {
                     setTags(event.currentTarget.value);
                   }}
-                  placeholder="小说, 待读, 技术"
+                  placeholder={t('bookManagement.tagsPlaceholder')}
                   value={tags}
                 />
                 <p className="text-muted-foreground mt-2 text-xs">
-                  使用逗号分隔，最多 20 个标签，每个标签不超过 40 个字符。
+                  {t('bookManagement.tagsHint')}
                 </p>
                 <div className="mt-3 flex justify-end">
                   <Button
@@ -121,13 +127,15 @@ export function BookManagementDialog({
                     onClick={() => void onSaveTags(parseTags(tags))}
                     size="sm"
                   >
-                    {busy ? '保存中…' : '保存标签'}
+                    {busy ? t('common.saving') : t('bookManagement.saveTags')}
                   </Button>
                 </div>
               </section>
 
               <section className="mt-7 border-t pt-5">
-                <h2 className="text-sm font-semibold">删除书籍</h2>
+                <h2 className="text-sm font-semibold">
+                  {t('bookManagement.deleteHeading')}
+                </h2>
                 <div className="mt-3 grid gap-3">
                   <button
                     className="hover:bg-muted rounded-lg border p-4 text-left"
@@ -138,10 +146,10 @@ export function BookManagementDialog({
                     type="button"
                   >
                     <span className="block text-sm font-medium">
-                      删除书籍和所有数据
+                      {t('bookManagement.deleteAll')}
                     </span>
                     <span className="text-muted-foreground mt-1 block text-xs leading-5">
-                      同时移除阅读数据以及笔记中的该书引用块。
+                      {t('bookManagement.deleteAllHint')}
                     </span>
                   </button>
                   <button
@@ -153,10 +161,10 @@ export function BookManagementDialog({
                     type="button"
                   >
                     <span className="block text-sm font-medium">
-                      删除文件但保留笔记引用
+                      {t('bookManagement.keepReferences')}
                     </span>
                     <span className="text-muted-foreground mt-1 block text-xs leading-5">
-                      保留笔记中的原文、章节和定位快照，不再支持返回原书。
+                      {t('bookManagement.keepReferencesHint')}
                     </span>
                   </button>
                 </div>

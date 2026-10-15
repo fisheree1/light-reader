@@ -18,7 +18,7 @@ use migration::{
     cleanup_stale_backup_snapshots, create_migration_snapshot, migration_snapshot_directory,
 };
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 11;
+pub const CURRENT_SCHEMA_VERSION: i64 = 12;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]

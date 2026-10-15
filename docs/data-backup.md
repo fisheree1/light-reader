@@ -143,3 +143,11 @@ existing `$APPDATA/light-reader/**` scope. External reads and writes are limited
 to paths the user explicitly selects through the open/save dialogs. Native
 commands accept only an application-generated alphanumeric/hyphen snapshot ID
 and never an arbitrary filesystem path.
+
+## Not included in backups
+
+Imported StarDict dictionaries are stored under
+`light-reader/dictionaries/` but are not part of database or full backups.
+Their registry lives in `app_meta`, so after restoring on another device the
+dictionaries are listed but must be re-imported; see
+[`reading-tools.md`](reading-tools.md).

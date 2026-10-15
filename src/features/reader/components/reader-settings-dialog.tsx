@@ -9,6 +9,7 @@ import type {
   ReaderSettingsOverride,
 } from '../domain/reader-settings';
 import { ReaderSettingsForm } from './reader-settings-form';
+import { useI18n } from '../../../i18n/use-i18n';
 
 interface ReaderSettingsDialogProps {
   bookOverride: ReaderSettingsOverride | null;
@@ -25,6 +26,7 @@ export function ReaderSettingsDialog({
   onClear,
   onSave,
 }: ReaderSettingsDialogProps) {
+  const { t } = useI18n();
   const [draft, setDraft] = useState(effectiveSettings);
   const [hasOverride, setHasOverride] = useState(bookOverride !== null);
   const [isOpen, setIsOpen] = useState(false);
@@ -48,7 +50,7 @@ export function ReaderSettingsDialog({
       else await onClear();
       setIsOpen(false);
     } catch {
-      setSaveError('保存失败，请重试。');
+      setSaveError(t('readerSettings.saveFailed'));
     } finally {
       setIsSaving(false);
     }
@@ -60,7 +62,7 @@ export function ReaderSettingsDialog({
         <IconButton
           disabled={disabled}
           icon={<Settings2 aria-hidden="true" size={17} />}
-          label="阅读设置"
+          label={t('readerSettings.title')}
           variant="ghost"
         />
       </Dialog.Trigger>
@@ -70,16 +72,16 @@ export function ReaderSettingsDialog({
           <div className="flex items-start gap-3">
             <div className="min-w-0 flex-1">
               <Dialog.Title className="text-lg font-semibold">
-                阅读设置
+                {t('readerSettings.title')}
               </Dialog.Title>
               <Dialog.Description className="text-muted-foreground mt-1 text-sm">
-                可为本书覆盖全局主题与排版；关闭覆盖后继续使用全局设置。
+                {t('readerSettings.dialogDescription')}
               </Dialog.Description>
             </div>
             <Dialog.Close asChild>
               <IconButton
                 icon={<X aria-hidden="true" size={17} />}
-                label="关闭阅读设置"
+                label={t('readerSettings.close')}
                 variant="ghost"
               />
             </Dialog.Close>
@@ -94,7 +96,7 @@ export function ReaderSettingsDialog({
               }}
               type="checkbox"
             />
-            为本书使用单独设置
+            {t('readerSettings.useBookSettings')}
           </label>
 
           <div className="mt-5">
@@ -114,11 +116,11 @@ export function ReaderSettingsDialog({
           <div className="mt-6 flex justify-end gap-2">
             <Dialog.Close asChild>
               <Button disabled={isSaving} variant="secondary">
-                取消
+                {t('common.cancel')}
               </Button>
             </Dialog.Close>
             <Button disabled={isSaving} onClick={() => void handleSave()}>
-              {isSaving ? '保存中…' : '保存设置'}
+              {isSaving ? t('common.saving') : t('readerSettings.save')}
             </Button>
           </div>
         </Dialog.Content>

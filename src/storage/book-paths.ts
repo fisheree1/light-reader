@@ -1,5 +1,8 @@
+import type { BookFormat } from '../features/library/domain/book';
+import { translate } from '../i18n/i18n';
+
 export type CoverExtension = 'gif' | 'jpeg' | 'png' | 'webp';
-export type ManagedBookExtension = 'epub' | 'pdf';
+export type ManagedBookExtension = BookFormat;
 
 export interface BookStoragePaths {
   finalBookPath: string;
@@ -96,7 +99,7 @@ export function fileNameFromPath(path: string): string {
 export function fallbackTitleFromFileName(fileName: string): string {
   const title = fileName
     .trim()
-    .replace(/\.(?:epub|pdf)$/i, '')
+    .replace(/\.(?:epub|pdf|mobi|azw3|fb2|cbz)$/i, '')
     .trim();
-  return title || '未命名图书';
+  return title || translate('content.untitledBook');
 }

@@ -22,6 +22,7 @@ import {
   type LibraryManagement,
   LibraryManagementService,
 } from './library-management-service';
+import type { MessageKey } from '../../../i18n/i18n';
 
 export interface LibraryServices {
   importer: BookImporter;
@@ -29,7 +30,7 @@ export interface LibraryServices {
   management: LibraryManagement;
   releaseCoverUrl(url: string): void;
   repository: BookRepository;
-  storageDescription?: string;
+  storageDescription?: MessageKey;
 }
 
 function createTauriLibraryServices(): LibraryServices {
@@ -58,7 +59,7 @@ function createTauriLibraryServices(): LibraryServices {
     releaseCoverUrl: (url) => {
       URL.revokeObjectURL(url);
     },
-    storageDescription: '图书保存在桌面应用的受控目录中，支持 EPUB 和 PDF。',
+    storageDescription: 'library.storageDesktop',
   };
 }
 
@@ -102,8 +103,7 @@ function createWebLibraryServices(): LibraryServices {
     releaseCoverUrl: (url) => {
       URL.revokeObjectURL(url);
     },
-    storageDescription:
-      '图书和笔记保存在当前浏览器的 IndexedDB 中，不会上传到服务器。',
+    storageDescription: 'library.storageWeb',
   };
 }
 

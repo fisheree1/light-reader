@@ -6,6 +6,8 @@ import {
   readWebRecords,
   storeTestEpubForPaths,
 } from './book-fixture.js';
+import { createFb2Fixture } from '../../src/test/fixtures/foliate-fixtures.js';
+import { createStarDictFixture } from '../../src/test/fixtures/stardict-fixture.js';
 
 interface BrowserDiagnostics {
   pageErrors: string[];
@@ -292,6 +294,106 @@ test('imports and persists a real EPUB through browser storage', async ({
 
   await importTestEpub(page);
   await expect(page.getByRole('status')).toContainText('重复 1 本');
+});
+
+test('imports, reads, and searches an FB2 book', async ({ page }) => {
+  await page.goto('/library');
+  const chooserPromise = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: '导入电子书' }).click();
+  const chooser = await chooserPromise;
+  await chooser.setFiles({
+    name: 'fixture.fb2',
+    mimeType: 'application/x-fictionbook+xml',
+    buffer: Buffer.from(createFb2Fixture()),
+  });
+
+  await expect(page.getByRole('status')).toContainText('新增 1 本');
+  await page.getByRole('button', { name: '打开《FB2 测试书》' }).click();
+  await expect(page.getByRole('region', { name: 'FB2 正文' })).toBeVisible();
+  await findContentFrame(page, '第一章的正文内容。');
+
+  await page.goto('/search');
+  await page
+    .getByRole('searchbox', { name: '搜索本地内容' })
+    .fill('包含关键词');
+  await page.getByRole('button', { name: '搜索', exact: true }).click();
+  await expect(page.getByText(/第二章包含关键词/).first()).toBeVisible();
+  await page.getByRole('button', { name: /第二章包含关键词/ }).click();
+  await expect(page).toHaveURL(/\/reader\//);
+  await findContentFrame(page, '第二章包含关键词。');
+});
+
+test('records reading time and shows it on the stats page', async ({
+  page,
+}) => {
+  await page.goto('/library');
+  await importTestEpub(page);
+  await page.getByRole('button', { name: '打开《Web 测试 EPUB》' }).click();
+  await expect(page.getByRole('button', { name: '第一章' })).toBeVisible();
+  // Sessions are stored with whole-second durations.
+  await page.waitForTimeout(1_500);
+  await page.getByRole('link', { name: '返回书架' }).click();
+
+  await page.getByRole('link', { name: '统计' }).click();
+  await expect(page.getByRole('heading', { name: '阅读统计' })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Web 测试 EPUB/ })).toBeVisible();
+  await expect(page.getByRole('img', { name: /有 1 天阅读/ })).toBeVisible();
+
+  await page.getByLabel('每日分钟数').fill('20');
+  await page.getByRole('button', { name: '保存目标' }).click();
+  await expect(page.getByText('阅读目标已保存')).toBeVisible();
+  await page.reload();
+  await expect(page.getByText(/今天已读 0 \/ 20 分钟/)).toBeVisible();
+});
+
+test('imports a StarDict dictionary and looks up a selection', async ({
+  page,
+}) => {
+  const dictionary = createStarDictFixture(
+    [
+      ['lightreader', 'n. 本地优先的阅读应用'],
+      ['这是 LightReader 自制的无版权测试内容', '测试用释义：整句词条'],
+    ],
+    { name: 'E2E 词典' },
+  );
+  await page.goto('/settings');
+  const chooserPromise = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: '导入 StarDict 词典' }).click();
+  const chooser = await chooserPromise;
+  await chooser.setFiles([
+    {
+      name: 'e2e.ifo',
+      mimeType: 'text/plain',
+      buffer: Buffer.from(dictionary.ifo),
+    },
+    {
+      name: 'e2e.idx',
+      mimeType: 'application/octet-stream',
+      buffer: Buffer.from(dictionary.idx),
+    },
+    {
+      name: 'e2e.dict.dz',
+      mimeType: 'application/octet-stream',
+      buffer: Buffer.from(dictionary.dict),
+    },
+  ]);
+  await expect(page.getByText('已导入《E2E 词典》')).toBeVisible();
+
+  await page.goto('/library');
+  await importTestEpub(page);
+  await page.getByRole('button', { name: '打开《Web 测试 EPUB》' }).click();
+  const contentFrame = await findContentFrame(
+    page,
+    '这是 LightReader 自制的无版权测试内容。',
+  );
+  await contentFrame
+    .getByText('这是 LightReader 自制的无版权测试内容。')
+    .selectText();
+  await page.getByRole('button', { name: '查词', exact: true }).click();
+
+  const panel = page.getByRole('complementary', { name: '词典' });
+  await expect(panel.getByRole('region', { name: 'E2E 词典' })).toBeVisible();
+  await expect(panel.getByText('测试用释义：整句词条')).toBeVisible();
 });
 
 test('persists global reading settings and a per-book override', async ({

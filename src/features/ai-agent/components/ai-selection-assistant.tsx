@@ -19,6 +19,7 @@ import {
   AiRebuildingStatus,
   AiRunningStatus,
 } from './ai-assistant-status';
+import { useI18n } from '../../../i18n/use-i18n';
 
 interface AiSelectionAssistantProps {
   book?: Book;
@@ -41,6 +42,7 @@ export function AiSelectionAssistant({
   onNavigate,
   selection,
 }: AiSelectionAssistantProps) {
+  const { t } = useI18n();
   const assistant = useAiAssistant({
     book,
     bookId,
@@ -73,20 +75,19 @@ export function AiSelectionAssistant({
 
   return (
     <aside
-      aria-label="本地 AI 阅读助手"
+      aria-label={t('aiAssistant.title')}
       className="bg-surface w-80 shrink-0 overflow-auto border-l p-4"
     >
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-semibold">本地 AI 阅读助手</h2>
+          <h2 className="text-sm font-semibold">{t('aiAssistant.title')}</h2>
           <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
-            内容只发送到本机
-            Ollama。模型不能访问文件、数据库或未展示的书籍内容。
+            {t('aiAssistant.privacy')}
           </p>
         </div>
         <IconButton
           icon={<X aria-hidden="true" size={17} />}
-          label="关闭 AI 阅读助手"
+          label={t('aiAssistant.close')}
           onClick={close}
           variant="ghost"
         />
@@ -94,27 +95,27 @@ export function AiSelectionAssistant({
 
       {stage === 'loading' ? (
         <p aria-live="polite" className="mt-6 text-sm">
-          正在加载 AI 设置…
+          {t('aiAssistant.loading')}
         </p>
       ) : null}
 
       {stage === 'disabled' ? (
         <div className="mt-6 rounded-md border p-4">
-          <p className="font-medium">AI 助手尚未启用</p>
+          <p className="font-medium">{t('aiAssistant.disabled')}</p>
           <p className="text-muted-foreground mt-1 text-sm">
-            请前往设置启用本地 AI，并确认 Ollama 与模型可用。
+            {t('aiAssistant.disabledHint')}
           </p>
         </div>
       ) : null}
 
       {stage === 'empty' ? (
         <div className="mt-6 rounded-md border p-4">
-          <p className="font-medium">当前没有正文选区</p>
+          <p className="font-medium">{t('aiAssistant.noSelection')}</p>
           <p className="text-muted-foreground mt-1 text-sm">
-            你可以返回“本书问答”，或在 EPUB/PDF 中选中一段文字。
+            {t('aiAssistant.noSelectionHint')}
           </p>
           <Button className="mt-4" onClick={assistant.chooseBookQuestion}>
-            返回本书问答
+            {t('aiAssistant.backToQa')}
           </Button>
         </div>
       ) : null}

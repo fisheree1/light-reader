@@ -8,7 +8,7 @@ interface FakeFoliateView extends HTMLElement {
     toc: unknown;
   };
   close: () => void;
-  goTo: (target: string | { fraction: number }) => Promise<unknown>;
+  goTo: (target: number | string | { fraction: number }) => Promise<unknown>;
   getCFI: (index: number, range: Range) => string;
   addAnnotation: (annotation: {
     color: string;
@@ -170,6 +170,8 @@ describe('FoliateEbookReader', () => {
     await reader.previousPage();
     await reader.nextPage();
     expect(view.goTo).toHaveBeenCalledWith('one.xhtml');
+    await reader.goTo({ version: 1, format: 'epub', cfi: 'epubcfi(/6/4)' });
+    expect(view.goTo).toHaveBeenLastCalledWith(1);
     expect(view.prev).toHaveBeenCalledOnce();
     expect(view.next).toHaveBeenCalledOnce();
   });
@@ -518,5 +520,17 @@ describe('FoliateEbookReader', () => {
     expect(secondView.book.destroy).toHaveBeenCalledOnce();
     expect(secondView.close).toHaveBeenCalledOnce();
     expect(host).toBeEmptyDOMElement();
+  });
+});
+
+describe('section-level CFIs', () => {
+  it('maps generated section CFIs to section indexes', async () => {
+    const { foliateSectionCfi, foliateSectionIndex } =
+      await import('./foliate-book-loader');
+    expect(foliateSectionIndex(foliateSectionCfi(0))).toBe(0);
+    expect(foliateSectionIndex(foliateSectionCfi(7))).toBe(7);
+    expect(foliateSectionIndex('epubcfi(/6/3)')).toBeNull();
+    expect(foliateSectionIndex('epubcfi(/6/4!/4/2)')).toBeNull();
+    expect(foliateSectionIndex('chapter.xhtml')).toBeNull();
   });
 });

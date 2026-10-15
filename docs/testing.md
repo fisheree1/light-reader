@@ -5,7 +5,8 @@
 The GitHub Actions workflow runs three independent jobs:
 
 - frontend formatting, ESLint, production build, Vitest, and coverage;
-- Chromium Playwright tests, including automated accessibility checks;
+- Chromium Playwright tests, including automated accessibility checks and a
+  `production` project that runs against `vite build` output;
 - Cargo fmt, Clippy, Rust tests, and native smoke tests; and
 - macOS, Linux, and Windows native tests plus a debug Tauri application build.
 
@@ -39,6 +40,13 @@ of the complete asset set, application shell, notes chunks, PDF runtime/worker,
 reader page, and application CSS. The versioned limits live in
 `config/bundle-budgets.json` and run in CI immediately after the production
 build. Raise a limit only with a recorded reason and a reviewed build diff.
+
+`pnpm build:verify` (also part of `bundle:check` and CI) checks what size
+budgets cannot see: no emitted chunk may import a path on the build machine
+(such as `node_modules/`), and the lazy Foliate loaders for MOBI/AZW3
+(`mobi`, `fflate`), FB2 (`fb2`) and CBZ (`comic-book`) must be present. The
+Playwright `production` project then imports and opens FB2 and CBZ books in
+the built app, because the dev server does not apply Rollup's bundling rules.
 
 ## Native acceptance
 

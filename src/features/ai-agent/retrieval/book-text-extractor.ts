@@ -1,5 +1,6 @@
 import type { BookFormat } from '../../library/domain/book';
 import { FflateEpubContentParser } from '../../search/services/epub-content-parser';
+import { FoliateBookContentParser } from '../../search/services/foliate-content-parser';
 import { PdfBookTextParser } from '../../../reader-engines/pdf-book-text-parser';
 import { bookTextBlockSchema, type BookTextBlock } from './book-retrieval';
 import {
@@ -7,6 +8,7 @@ import {
   throwIfBookIndexingAborted,
   type BookRetrievalOptions,
 } from './book-indexing';
+import { translate } from '../../../i18n/i18n';
 
 export interface BookTextExtractor {
   extract(
@@ -19,13 +21,19 @@ export interface BookTextExtractor {
 export class LocalBookTextExtractor implements BookTextExtractor {
   private readonly epubParser: FflateEpubContentParser;
   private readonly pdfParser: PdfBookTextParser;
+  private readonly foliateParser: Pick<FoliateBookContentParser, 'parse'>;
 
   constructor(
     epubParser = new FflateEpubContentParser(),
     pdfParser = new PdfBookTextParser(),
+    foliateParser: Pick<
+      FoliateBookContentParser,
+      'parse'
+    > = new FoliateBookContentParser(),
   ) {
     this.epubParser = epubParser;
     this.pdfParser = pdfParser;
+    this.foliateParser = foliateParser;
   }
 
   async extract(
@@ -49,7 +57,9 @@ export class LocalBookTextExtractor implements BookTextExtractor {
       return pages.map((page, ordinal) =>
         bookTextBlockSchema.parse({
           chapterHref: null,
-          chapterTitle: `PDF 第 ${String(page.pageIndex + 1)} 页`,
+          chapterTitle: translate('content.pdfPage', {
+            page: page.pageIndex + 1,
+          }),
           locator: {
             version: 1,
             format: 'pdf',
@@ -60,6 +70,30 @@ export class LocalBookTextExtractor implements BookTextExtractor {
           text: page.text,
         }),
       );
+    }
+
+    if (format !== 'epub') {
+      const sections = await this.foliateParser.parse(
+        source,
+        format,
+        options.signal,
+      );
+      return sections.map((section, ordinal) => {
+        emitBookIndexingProgress(
+          options,
+          'extracting-text',
+          ordinal + 1,
+          sections.length,
+        );
+        return bookTextBlockSchema.parse({
+          chapterHref: null,
+          chapterTitle: section.chapterTitle,
+          // Section CFIs navigate MOBI/AZW3/FB2 books without an EPUB spine.
+          locator: { version: 1, format: 'epub', cfi: section.chapterHref },
+          ordinal,
+          text: section.text,
+        });
+      });
     }
 
     const chapters = await this.epubParser.parse(new Uint8Array(source));

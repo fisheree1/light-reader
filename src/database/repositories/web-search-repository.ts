@@ -21,6 +21,7 @@ import {
   webBookContentRecordSchema,
   type WebBookContentRecord,
 } from '../web/web-records';
+import { translate } from '../../i18n/i18n';
 
 function includesQuery(value: string, query: string): boolean {
   return value.toLocaleLowerCase().includes(query.toLocaleLowerCase());
@@ -125,7 +126,9 @@ export class WebSearchRepository implements SearchRepository {
             kind: 'annotation',
             id: annotation.id,
             bookId: annotation.bookId,
-            bookTitle: bookTitles.get(annotation.bookId) ?? '未知书籍',
+            bookTitle:
+              bookTitles.get(annotation.bookId) ??
+              translate('common.unknownBook'),
             text: annotation.text,
             chapterHref: annotation.chapterHref,
             locator: annotation.locator,
@@ -163,7 +166,8 @@ export class WebSearchRepository implements SearchRepository {
         bookContentSearchResultSchema.parse({
           kind: 'book-content',
           bookId: chapter.bookId,
-          bookTitle: bookTitles.get(chapter.bookId) ?? '未知书籍',
+          bookTitle:
+            bookTitles.get(chapter.bookId) ?? translate('common.unknownBook'),
           sectionLabel: chapter.chapterTitle,
           locator: chapter.chapterHref.startsWith('pdf-page:')
             ? {

@@ -12,6 +12,7 @@ import {
   createAiAssistantState,
   type AiAssistantForm,
 } from './ai-assistant-reducer';
+import { translate } from '../../../i18n/i18n';
 
 interface UseAiAssistantOptions {
   book?: Book;
@@ -117,7 +118,7 @@ export function useAiAssistant({
     if (state.mode === 'book' && !book) {
       dispatch({
         type: 'failed',
-        error: '当前图书信息不可用，请重新打开阅读页。',
+        error: translate('ai.bookUnavailable'),
       });
       return;
     }

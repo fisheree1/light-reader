@@ -19,7 +19,7 @@ interface FoliateBook {
 export interface FoliateViewElement extends HTMLElement {
   book?: FoliateBook;
   close(): void;
-  goTo(target: string | { fraction: number }): Promise<unknown>;
+  goTo(target: number | string | { fraction: number }): Promise<unknown>;
   init(options: { showTextStart: boolean }): Promise<void>;
   next(): Promise<void>;
   open(source: Blob): Promise<void>;

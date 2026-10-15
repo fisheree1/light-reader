@@ -22,6 +22,7 @@ import { AgentToolRegistry } from '../tools/agent-tool-registry';
 import { AiDraftService } from './ai-draft-service';
 import type { AgentRunResult } from './agent-runner';
 import { ProviderTextRunner } from './provider-text-runner';
+import { translate } from '../../../i18n/i18n';
 
 export type ResearchEvent =
   | AgentProviderEvent
@@ -58,7 +59,7 @@ export class ResearchRunner {
   ): Promise<AgentRunResult> {
     if (books.length < 2 || books.length > 8) {
       throw new AppError('AI_REQUEST_FAILED', {
-        message: '请选择 2 至 8 本图书作为研究范围。',
+        message: translate('ai.researchScope'),
       });
     }
     const question = bookQuestionSchema.parse(value);

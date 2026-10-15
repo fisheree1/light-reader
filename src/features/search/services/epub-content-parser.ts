@@ -11,6 +11,7 @@ import {
   MAX_EPUB_CHAPTER_SIZE,
   MAX_EPUB_SELECTED_CHAPTER_BYTES,
 } from '../../library/services/epub-limits';
+import { translate } from '../../../i18n/i18n';
 
 export interface EpubContentParser {
   parse(data: Uint8Array): Promise<BookContentChapter[]>;
@@ -48,7 +49,10 @@ function fallbackChapterTitle(href: string, index: number): string {
     // Keep the safe archive href when an EPUB contains invalid escaping.
   }
   const withoutExtension = decoded.replace(/\.[^.]+$/, '').trim();
-  return withoutExtension || `第 ${String(index + 1)} 章`;
+  return (
+    withoutExtension ||
+    translate('content.chapterNumber', { number: index + 1 })
+  );
 }
 
 function extractChapter(
@@ -121,7 +125,7 @@ export class FflateEpubContentParser implements EpubContentParser {
         totalTextLength += chapter.text.length;
         if (totalTextLength > maxTotalTextLength) {
           throw new AppError('SEARCH_INDEX_FAILED', {
-            message: 'EPUB 正文过大，无法建立本地搜索索引。',
+            message: translate('content.epubTooLarge'),
           });
         }
         chapters.push(chapter);

@@ -2,6 +2,7 @@ import type { PDFPageProxy, TextLayer } from 'pdfjs-dist';
 import type { TextContent } from 'pdfjs-dist/types/src/display/api.js';
 
 import type { ReaderHighlight, ReaderTextSelection } from './types';
+import { translate } from '../i18n/i18n';
 
 export type PdfJsRuntime = Pick<
   typeof import('pdfjs-dist'),
@@ -142,7 +143,7 @@ export async function createPdfPageShells(
   const aspectRatio = firstViewport.width / firstViewport.height;
   const scroller = host.ownerDocument.createElement('div');
   scroller.className = 'pdf-reader';
-  scroller.setAttribute('aria-label', 'PDF 文档');
+  scroller.setAttribute('aria-label', translate('content.pdfDocument'));
   scroller.tabIndex = 0;
   const pageShells = Array.from(
     { length: document.numPages },
@@ -150,7 +151,10 @@ export async function createPdfPageShells(
       const shell = host.ownerDocument.createElement('section');
       shell.className = 'pdf-page';
       shell.dataset.pdfPageIndex = String(pageIndex);
-      shell.setAttribute('aria-label', `第 ${String(pageIndex + 1)} 页`);
+      shell.setAttribute(
+        'aria-label',
+        translate('content.page', { page: pageIndex + 1 }),
+      );
       shell.style.aspectRatio = String(aspectRatio);
       shell.style.maxWidth = `${String(contentWidth)}px`;
       scroller.append(shell);
@@ -279,7 +283,7 @@ function drawTextRange(
     element.style.height = `${String(rect.height)}px`;
     element.style.background = color;
     if (highlightId) {
-      element.setAttribute('aria-label', '打开高亮批注');
+      element.setAttribute('aria-label', translate('content.openHighlight'));
       element.addEventListener('click', () => {
         onActivate(highlightId);
       });

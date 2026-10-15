@@ -1,7 +1,6 @@
 import { Navigate, type RouteObject } from 'react-router-dom';
 
 import { LibraryPage } from '../../features/library/library-page';
-import { SettingsPage } from '../../features/settings/settings-page';
 import { AppLayout } from '../layout/app-layout';
 import { RouteLoadingFallback } from './route-loading-fallback';
 
@@ -36,7 +35,21 @@ export const routes: RouteObject[] = [
           return { Component: ResearchPage };
         },
       },
-      { path: 'settings', element: <SettingsPage /> },
+      {
+        path: 'stats',
+        lazy: async () => {
+          const { StatsPage } = await import('../../features/stats/stats-page');
+          return { Component: StatsPage };
+        },
+      },
+      {
+        path: 'settings',
+        lazy: async () => {
+          const { SettingsPage } =
+            await import('../../features/settings/settings-page');
+          return { Component: SettingsPage };
+        },
+      },
       { path: '*', element: <Navigate replace to="/library" /> },
     ],
   },

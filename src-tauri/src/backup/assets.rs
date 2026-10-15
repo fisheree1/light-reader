@@ -113,6 +113,9 @@ pub(super) async fn reconcile_deletion_journals_at(
     close_connection(connection, result).await
 }
 
+/// Book formats the importer may store under `light-reader/books/{id}/`.
+const MANAGED_BOOK_FORMATS: [&str; 6] = ["epub", "pdf", "mobi", "azw3", "fb2", "cbz"];
+
 pub(super) async fn validate_managed_book_files_at(
     app_data: &Path,
     database: &Path,
@@ -128,7 +131,7 @@ pub(super) async fn validate_managed_book_files_at(
             if !safe_generated_id(&id) {
                 return Err("backup contains an unsafe book id".to_string());
             }
-            if format != "epub" && format != "pdf" {
+            if !MANAGED_BOOK_FORMATS.contains(&format.as_str()) {
                 return Err("backup contains an unsupported book format".to_string());
             }
             let expected_book_path = format!("light-reader/books/{id}/book.{format}");

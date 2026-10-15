@@ -2,11 +2,12 @@ import { createUuid } from '../../../lib/id';
 import {
   aiDraftSchema,
   hashAgentText,
-  selectionAiActionLabels,
+  selectionAiActionLabel,
   type AgentCitation,
   type AiDraft,
   type AgentRun,
 } from '../domain/agent';
+import { translate } from '../../../i18n/i18n';
 
 type Clock = () => number;
 type IdFactory = () => string;
@@ -34,10 +35,12 @@ export class AiDraftService {
       action: run.action,
       title:
         run.task === 'research'
-          ? '跨书研究：AI 阅读草稿'
+          ? translate('ai.draftResearch')
           : run.task === 'book-qa'
-            ? '本书问答：AI 阅读草稿'
-            : `${selectionAiActionLabels[run.action]}：AI 阅读草稿`,
+            ? translate('ai.draftBookQa')
+            : translate('ai.draftAction', {
+                action: selectionAiActionLabel(run.action),
+              }),
       content,
       citations,
       sourceSnapshotHash: hashAgentText(sourceText),

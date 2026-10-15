@@ -10,6 +10,7 @@ import {
   type NoteDocument,
 } from '../domain/note';
 import { createNoteExtensions } from '../editor/note-extensions';
+import { useI18n } from '../../../i18n/use-i18n';
 
 interface NoteEditorProps {
   note: Note;
@@ -26,6 +27,7 @@ export function NoteEditor({
   onNavigate,
   resolveBookTitle,
 }: NoteEditorProps) {
+  const { t } = useI18n();
   const extensions = useMemo(
     () => createNoteExtensions({ onNavigate, resolveBookTitle }),
     [onNavigate, resolveBookTitle],
@@ -36,7 +38,7 @@ export function NoteEditor({
       content: note.document.content,
       editorProps: {
         attributes: {
-          'aria-label': '笔记正文',
+          'aria-label': t('notes.body'),
           class:
             'tiptap min-h-[24rem] px-6 py-5 leading-7 outline-none focus-visible:ring-2 focus-visible:ring-primary',
           role: 'textbox',
@@ -77,7 +79,7 @@ export function NoteEditor({
   return (
     <div className="bg-background min-h-0 flex-1 overflow-auto rounded-lg border">
       <div
-        aria-label="笔记格式工具栏"
+        aria-label={t('notes.formatToolbar')}
         className="bg-surface sticky top-0 z-10 flex items-center gap-1 border-b p-2"
         role="toolbar"
       >
@@ -85,7 +87,7 @@ export function NoteEditor({
           aria-pressed={toolbar.bold}
           disabled={!toolbar.canBold}
           icon={<Bold aria-hidden="true" size={16} />}
-          label="粗体"
+          label={t('notes.bold')}
           onClick={() => {
             editor.chain().focus().toggleBold().run();
           }}
@@ -95,7 +97,7 @@ export function NoteEditor({
           aria-pressed={toolbar.italic}
           disabled={!toolbar.canItalic}
           icon={<Italic aria-hidden="true" size={16} />}
-          label="斜体"
+          label={t('notes.italic')}
           onClick={() => {
             editor.chain().focus().toggleItalic().run();
           }}
@@ -105,7 +107,7 @@ export function NoteEditor({
           aria-pressed={toolbar.heading}
           disabled={!toolbar.canHeading}
           icon={<Heading2 aria-hidden="true" size={16} />}
-          label="二级标题"
+          label={t('notes.heading')}
           onClick={() => {
             editor.chain().focus().toggleHeading({ level: 2 }).run();
           }}
@@ -115,14 +117,14 @@ export function NoteEditor({
           aria-pressed={toolbar.bulletList}
           disabled={!toolbar.canBulletList}
           icon={<List aria-hidden="true" size={16} />}
-          label="无序列表"
+          label={t('notes.bulletList')}
           onClick={() => {
             editor.chain().focus().toggleBulletList().run();
           }}
           variant="ghost"
         />
         <span className="text-muted-foreground ml-auto px-2 text-xs">
-          支持 Markdown 快捷输入
+          {t('notes.markdownHint')}
         </span>
       </div>
 
@@ -131,7 +133,7 @@ export function NoteEditor({
           className="border-destructive/30 bg-muted text-destructive m-3 rounded-md border px-3 py-2 text-sm"
           role="alert"
         >
-          原笔记内容无法读取，已安全打开空白文档；保存前请确认内容。
+          {t('notes.recoveredBlank')}
         </p>
       ) : null}
 

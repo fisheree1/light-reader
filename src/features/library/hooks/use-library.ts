@@ -7,6 +7,7 @@ import {
   type LibraryBook,
 } from '../domain/library';
 import type { LibraryServices } from '../services/library-services';
+import { translate } from '../../../i18n/i18n';
 
 export interface LibraryNotice {
   kind: 'error' | 'info' | 'success';
@@ -73,7 +74,11 @@ export function useLibrary(services: LibraryServices) {
         const result = await services.importer.importBooks();
         if (result.status === 'cancelled') return;
         if (result.created.length > 0) await loadBooks();
-        const summary = `批量导入完成：新增 ${String(result.created.length)} 本，重复 ${String(result.duplicates.length)} 本，失败 ${String(result.failed.length)} 本。`;
+        const summary = translate('library.batchSummary', {
+          created: result.created.length,
+          duplicates: result.duplicates.length,
+          failed: result.failed.length,
+        });
         const firstFailure = result.failed.at(0);
         setNotice({
           kind:
@@ -85,7 +90,10 @@ export function useLibrary(services: LibraryServices) {
                 ? 'info'
                 : 'error',
           message: firstFailure
-            ? `${summary} ${firstFailure.fileName}：${firstFailure.message}`
+            ? `${summary} ${translate('library.failureDetail', {
+                fileName: firstFailure.fileName,
+                message: firstFailure.message,
+              })}`
             : summary,
         });
         return;
@@ -97,10 +105,10 @@ export function useLibrary(services: LibraryServices) {
         await loadBooks();
         setNotice({
           kind: 'success',
-          message: `《${result.book.title}》已导入书架。`,
+          message: translate('library.imported', { title: result.book.title }),
         });
       } else if (result.status === 'duplicate') {
-        setNotice({ kind: 'info', message: '这本书已经在书架中了。' });
+        setNotice({ kind: 'info', message: translate('library.duplicate') });
       }
     } catch (error) {
       setNotice({
@@ -145,7 +153,7 @@ export function useLibrary(services: LibraryServices) {
       try {
         const updated = await services.management.replaceTags(bookId, tags);
         updateBook(updated);
-        setNotice({ kind: 'success', message: '标签已保存。' });
+        setNotice({ kind: 'success', message: translate('library.tagsSaved') });
         return true;
       } catch (error) {
         setNotice({
@@ -170,10 +178,12 @@ export function useLibrary(services: LibraryServices) {
         setNotice({
           kind: result.cleanupPending ? 'info' : 'success',
           message: result.cleanupPending
-            ? '书籍已移出书架，残留隔离文件将在后续清理。'
+            ? translate('library.cleanupPending')
             : mode === 'delete-all'
-              ? `书籍及相关数据已删除，共移除 ${String(result.removedReferences)} 个笔记引用。`
-              : '书籍文件和阅读数据已删除，笔记引用快照已保留。',
+              ? translate('library.deletedAll', {
+                  count: result.removedReferences,
+                })
+              : translate('library.deletedKeepReferences'),
         });
         return true;
       } catch (error) {

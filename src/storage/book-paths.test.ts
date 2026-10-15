@@ -36,6 +36,8 @@ describe('book path helpers', () => {
       ),
     ).not.toThrow();
     expect(fallbackTitleFromFileName('Reference.pdf')).toBe('Reference');
+    expect(fallbackTitleFromFileName('Comic.CBZ')).toBe('Comic');
+    expect(fallbackTitleFromFileName('Novel.azw3')).toBe('Novel');
   });
 
   it('normalizes source display names without using them as target paths', () => {

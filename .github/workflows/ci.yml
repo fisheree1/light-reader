@@ -30,6 +30,7 @@ jobs:
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm build
+      - run: pnpm build:verify
       - run: pnpm bundle:budget
       - run: pnpm test:coverage
       - if: always()

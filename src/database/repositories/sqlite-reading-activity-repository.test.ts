@@ -101,4 +101,67 @@ describe('SqliteReadingActivityRepository', () => {
       { bookTitle: '统计测试书', durationSeconds: 60 },
     ]);
   });
+
+  it('queries bounded sessions and per-book totals and maps rows', async () => {
+    const selections: { query: string; values: unknown[] }[] = [];
+    const database: SqlDatabase = {
+      execute: () => Promise.resolve({}),
+      select: <T>(query: string, values: unknown[] = []) => {
+        selections.push({ query, values });
+        if (query.includes('GROUP BY')) {
+          return Promise.resolve([
+            {
+              book_id: 'book-1',
+              book_title: '统计测试书',
+              author: null,
+              total_seconds: 600,
+              session_count: 2,
+              last_read_at: 9,
+            },
+          ] as T);
+        }
+        return Promise.resolve([
+          {
+            id: 's1',
+            book_id: 'book-1',
+            started_at: 5,
+            ended_at: 10,
+            duration_seconds: 5,
+          },
+        ] as T);
+      },
+    };
+    const repository = new SqliteReadingActivityRepository(() =>
+      Promise.resolve(database),
+    );
+
+    await expect(repository.listSessionsSince(4.7)).resolves.toMatchObject([
+      { id: 's1', bookId: 'book-1', durationSeconds: 5 },
+    ]);
+    expect(selections[0]?.values).toEqual([4]);
+    await expect(repository.listBookTotals(500)).resolves.toEqual([
+      {
+        bookId: 'book-1',
+        bookTitle: '统计测试书',
+        author: null,
+        totalSeconds: 600,
+        sessionCount: 2,
+        lastReadAt: 9,
+      },
+    ]);
+    expect(selections[1]?.values).toEqual([100]);
+  });
+
+  it('maps stats query failures to READING_ACTIVITY_FAILED', async () => {
+    const repository = new SqliteReadingActivityRepository(() =>
+      Promise.reject(new Error('locked')),
+    );
+
+    await expect(repository.listSessionsSince(0)).rejects.toMatchObject({
+      code: 'READING_ACTIVITY_FAILED',
+    });
+    await expect(repository.listBookTotals()).rejects.toMatchObject({
+      code: 'READING_ACTIVITY_FAILED',
+    });
+  });
 });

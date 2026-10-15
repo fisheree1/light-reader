@@ -4,6 +4,7 @@ import { useMemo, useState, type SyntheticEvent } from 'react';
 import { Button } from '../../../components/ui/button';
 import { IconButton } from '../../../components/ui/icon-button';
 import type { Bookmark as SavedBookmark } from '../domain/bookmark';
+import { useI18n } from '../../../i18n/use-i18n';
 
 interface ReaderBookmarkSidebarProps {
   bookmarks: SavedBookmark[];
@@ -20,6 +21,7 @@ export function ReaderBookmarkSidebar({
   onRename,
   onSelect,
 }: ReaderBookmarkSidebarProps) {
+  const { t } = useI18n();
   const [name, setName] = useState('');
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('');
@@ -34,14 +36,16 @@ export function ReaderBookmarkSidebar({
 
   async function handleCreate(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
-    const nextName = name.trim() || `书签 ${String(bookmarks.length + 1)}`;
-    setStatus('正在保存…');
+    const nextName =
+      name.trim() ||
+      t('bookmarks.defaultName', { number: bookmarks.length + 1 });
+    setStatus(t('bookmarks.saving'));
     try {
       await onCreate(nextName);
       setName('');
-      setStatus('书签已保存');
+      setStatus(t('bookmarks.saved'));
     } catch {
-      setStatus('书签保存失败');
+      setStatus(t('bookmarks.saveFailed'));
     }
   }
 
@@ -49,14 +53,14 @@ export function ReaderBookmarkSidebar({
     <aside className="bg-surface w-72 shrink-0 overflow-auto border-l p-3">
       <h2 className="flex items-center gap-2 text-sm font-semibold">
         <Bookmark aria-hidden="true" size={16} />
-        书签
+        {t('bookmarks.title')}
       </h2>
       <form
         className="mt-3 space-y-2"
         onSubmit={(event) => void handleCreate(event)}
       >
         <label className="sr-only" htmlFor="reader-bookmark-name">
-          书签名称
+          {t('bookmarks.name')}
         </label>
         <input
           className="bg-background h-9 w-full rounded-md border px-3 text-sm"
@@ -65,18 +69,18 @@ export function ReaderBookmarkSidebar({
           onChange={(event) => {
             setName(event.currentTarget.value);
           }}
-          placeholder="书签名称（可选）"
+          placeholder={t('bookmarks.namePlaceholder')}
           value={name}
         />
         <Button className="w-full" size="sm" type="submit">
-          保存当前位置
+          {t('bookmarks.saveCurrent')}
         </Button>
       </form>
       <p aria-live="polite" className="text-muted-foreground mt-2 text-xs">
         {status}
       </p>
       <label className="sr-only" htmlFor="reader-bookmark-search">
-        搜索书签
+        {t('bookmarks.search')}
       </label>
       <input
         className="bg-background mt-3 h-9 w-full rounded-md border px-3 text-sm"
@@ -84,7 +88,7 @@ export function ReaderBookmarkSidebar({
         onChange={(event) => {
           setQuery(event.currentTarget.value);
         }}
-        placeholder="搜索书签"
+        placeholder={t('bookmarks.search')}
         type="search"
         value={query}
       />
@@ -102,7 +106,7 @@ export function ReaderBookmarkSidebar({
             </button>
             <div className="mt-2 flex items-center gap-2">
               <label className="sr-only" htmlFor={`bookmark-${bookmark.id}`}>
-                重命名 {bookmark.name}
+                {t('bookmarks.rename', { name: bookmark.name })}
               </label>
               <input
                 className="bg-background h-8 min-w-0 flex-1 rounded border px-2 text-xs"
@@ -118,7 +122,7 @@ export function ReaderBookmarkSidebar({
               />
               <IconButton
                 icon={<Trash2 aria-hidden="true" size={14} />}
-                label={`删除书签 ${bookmark.name}`}
+                label={t('bookmarks.delete', { name: bookmark.name })}
                 onClick={() => void onDelete(bookmark.id)}
                 variant="ghost"
               />
@@ -128,7 +132,7 @@ export function ReaderBookmarkSidebar({
       </ul>
       {visible.length === 0 ? (
         <p className="text-muted-foreground py-8 text-center text-sm">
-          {query ? '没有匹配的书签' : '尚未保存书签'}
+          {query ? t('bookmarks.noMatches') : t('bookmarks.empty')}
         </p>
       ) : null}
     </aside>

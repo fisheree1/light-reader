@@ -6,6 +6,7 @@ import { asAppError } from '../../../lib/app-error';
 import type { PreparedBackup } from '../domain/backup';
 import type { BackupMode } from '../domain/backup';
 import type { BackupManager } from '../services/backup-service';
+import { useI18n } from '../../../i18n/use-i18n';
 
 type BackupStatus =
   | 'error'
@@ -23,6 +24,7 @@ interface BackupSettingsProps {
 }
 
 export function BackupSettings({ manager }: BackupSettingsProps) {
+  const { formatDate, t } = useI18n();
   const [prepared, setPrepared] = useState<PreparedBackup | null>(null);
   const preparedRef = useRef<PreparedBackup | null>(null);
   const [status, setStatus] = useState<BackupStatus>('idle');
@@ -53,7 +55,7 @@ export function BackupSettings({ manager }: BackupSettingsProps) {
         return;
       }
       setStatus('exported');
-      setMessage(`备份已保存为 ${result.fileName}`);
+      setMessage(t('backup.savedAs', { fileName: result.fileName }));
     } catch (error) {
       setStatus('error');
       setMessage(asAppError(error, 'BACKUP_EXPORT_FAILED').userMessage);
@@ -86,11 +88,11 @@ export function BackupSettings({ manager }: BackupSettingsProps) {
       updatePrepared(null);
       setStatus(result.status);
       if (result.status === 'restored') {
-        setMessage('备份恢复完成。重新进入书架或笔记页即可查看恢复的数据。');
+        setMessage(t('backup.restored'));
       } else if (result.status === 'restored-reopen-required') {
-        setMessage('数据已经恢复，但数据库连接无法重开；请重新启动应用。');
+        setMessage(t('backup.restoredReopen'));
       } else {
-        setMessage('数据已经恢复，但摘要复核异常；请重启应用并检查数据。');
+        setMessage(t('backup.restoredVerify'));
       }
     } catch (error) {
       setStatus('error');
@@ -111,15 +113,14 @@ export function BackupSettings({ manager }: BackupSettingsProps) {
 
   return (
     <section className="bg-surface mt-4 rounded-lg border p-5">
-      <h2 className="font-medium">数据导出与备份</h2>
+      <h2 className="font-medium">{t('backup.title')}</h2>
       <p className="text-muted-foreground mt-1 text-sm leading-6">
-        数据库备份体积较小；完整备份额外包含 EPUB、PDF
-        和封面，可用于跨设备迁移。两种备份都只保存在你选择的位置。
+        {t('backup.description')}
       </p>
 
       {!manager.available ? (
         <p className="text-muted-foreground mt-4 text-sm">
-          数据库备份仅在 Tauri 桌面应用中可用。
+          {t('backup.desktopOnly')}
         </p>
       ) : prepared ? (
         <div className="border-primary/30 bg-muted mt-5 rounded-lg border p-4">
@@ -130,30 +131,34 @@ export function BackupSettings({ manager }: BackupSettingsProps) {
               size={20}
             />
             <div>
-              <h3 className="text-sm font-semibold">备份已通过恢复前验证</h3>
+              <h3 className="text-sm font-semibold">{t('backup.verified')}</h3>
               <p className="text-muted-foreground mt-1 text-sm">
-                创建于 {new Date(prepared.createdAt).toLocaleString('zh-CN')} ·{' '}
-                {prepared.counts.books} 本书 · {prepared.counts.readingStates}{' '}
-                条阅读进度 · {prepared.counts.annotations} 条高亮/批注 ·{' '}
-                {prepared.counts.notes} 条笔记
+                {t('backup.summary', {
+                  date: formatDate(Date.parse(prepared.createdAt)),
+                  books: prepared.counts.books,
+                  states: prepared.counts.readingStates,
+                  annotations: prepared.counts.annotations,
+                  notes: prepared.counts.notes,
+                })}
               </p>
               {prepared.mode === 'full' ? (
                 <p className="text-muted-foreground mt-1 text-sm">
-                  完整备份 · {prepared.assetCount ?? 0} 个文件 ·{' '}
-                  {((prepared.assetBytes ?? 0) / 1024 / 1024).toFixed(1)} MB ·{' '}
-                  {prepared.conflicts ?? 0} 个现有文件冲突
+                  {t('backup.fullSummary', {
+                    files: prepared.assetCount ?? 0,
+                    size: ((prepared.assetBytes ?? 0) / 1024 / 1024).toFixed(1),
+                    conflicts: prepared.conflicts ?? 0,
+                  })}
                 </p>
               ) : (
                 <p className="text-muted-foreground mt-1 text-sm">
-                  仅数据库备份，不包含 EPUB 与封面。
+                  {t('backup.databaseOnly')}
                 </p>
               )}
               <p className="text-destructive mt-3 text-sm">
-                确认恢复会替换当前本地数据库
-                {prepared.mode === 'full'
-                  ? '，并以备份中的 EPUB 和封面替换同路径文件'
-                  : ''}
-                。恢复失败时会回滚到当前数据。
+                {t('backup.replaceWarning', {
+                  assets:
+                    prepared.mode === 'full' ? t('backup.replaceAssets') : '',
+                })}
               </p>
             </div>
           </div>
@@ -163,7 +168,7 @@ export function BackupSettings({ manager }: BackupSettingsProps) {
               onClick={() => void handleDiscard()}
               variant="secondary"
             >
-              取消
+              {t('common.cancel')}
             </Button>
             <Button
               disabled={busy}
@@ -171,14 +176,16 @@ export function BackupSettings({ manager }: BackupSettingsProps) {
               variant="destructive"
             >
               <ArchiveRestore aria-hidden="true" size={16} />
-              {status === 'restoring' ? '正在恢复…' : '确认恢复'}
+              {status === 'restoring'
+                ? t('backup.restoring')
+                : t('backup.confirmRestore')}
             </Button>
           </div>
         </div>
       ) : (
         <div className="mt-4 flex flex-wrap gap-3">
           <label className="sr-only" htmlFor="backup-export-mode">
-            备份模式
+            {t('backup.mode')}
           </label>
           <select
             className="bg-background h-10 rounded-md border px-3 text-sm"
@@ -188,12 +195,14 @@ export function BackupSettings({ manager }: BackupSettingsProps) {
             }}
             value={exportMode}
           >
-            <option value="database">仅数据库</option>
-            <option value="full">完整备份（含 EPUB 与封面）</option>
+            <option value="database">{t('backup.modeDatabase')}</option>
+            <option value="full">{t('backup.modeFull')}</option>
           </select>
           <Button disabled={busy} onClick={() => void handleExport()}>
             <Download aria-hidden="true" size={16} />
-            {status === 'exporting' ? '正在导出…' : '导出备份'}
+            {status === 'exporting'
+              ? t('backup.exporting')
+              : t('backup.export')}
           </Button>
           <Button
             disabled={busy}
@@ -201,7 +210,9 @@ export function BackupSettings({ manager }: BackupSettingsProps) {
             variant="secondary"
           >
             <Upload aria-hidden="true" size={16} />
-            {status === 'preparing' ? '正在验证…' : '导入备份'}
+            {status === 'preparing'
+              ? t('backup.verifying')
+              : t('backup.import')}
           </Button>
         </div>
       )}

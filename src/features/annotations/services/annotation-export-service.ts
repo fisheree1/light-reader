@@ -2,6 +2,7 @@ import type { FileExportPlatform } from '../../../platform/export/file-export-pl
 import type { Book } from '../../library/domain/book';
 import type { Annotation } from '../domain/annotation';
 import { AppError } from '../../../lib/app-error';
+import { translate } from '../../../i18n/i18n';
 
 export const ANNOTATION_EXPORT_FORMAT_VERSION = 1;
 export type AnnotationExportFormat = 'json' | 'markdown';
@@ -46,32 +47,50 @@ function renderMarkdown(
   exportedAt: Date,
 ): string {
   const lines = [
-    `# ${book.title}：高亮与批注`,
+    `# ${translate('annotations.exportHeading', { title: book.title })}`,
     '',
-    `- 导出格式：lightreader-annotations v${String(ANNOTATION_EXPORT_FORMAT_VERSION)}`,
-    `- 导出时间：${exportedAt.toISOString()}`,
-    `- 作者：${book.author ?? '未知'}`,
+    `- ${translate('annotations.exportFormatLine', {
+      format: `lightreader-annotations v${String(ANNOTATION_EXPORT_FORMAT_VERSION)}`,
+    })}`,
+    `- ${translate('annotations.exportTime', { time: exportedAt.toISOString() })}`,
+    `- ${translate('annotations.exportAuthor', {
+      author: book.author ?? translate('annotations.unknown'),
+    })}`,
     '',
   ];
   const renderLocation = (annotation: Annotation): string => {
     const locator = annotation.locator;
     if (locator.format === 'epub') {
-      return locator.cfi ?? locator.chapterHref ?? '未知';
+      return (
+        locator.cfi ?? locator.chapterHref ?? translate('annotations.unknown')
+      );
     }
     const range = locator.textRange
-      ? `，字符 ${String(locator.textRange.start)}-${String(locator.textRange.end)}`
+      ? translate('annotations.charRange', {
+          start: locator.textRange.start,
+          end: locator.textRange.end,
+        })
       : '';
-    return `第 ${String(locator.pageIndex + 1)} 页${range}`;
+    return translate('annotations.page', {
+      page: locator.pageIndex + 1,
+      range,
+    });
   };
   for (const [index, annotation] of annotations.entries()) {
     lines.push(
-      `## ${String(index + 1)}. ${annotation.chapterHref ?? '未知章节'}`,
+      `## ${String(index + 1)}. ${
+        annotation.chapterHref ?? translate('annotations.unknownChapter')
+      }`,
       '',
       `> ${annotation.text.replaceAll('\n', '\n> ')}`,
       '',
-      annotation.noteText ? `批注：${annotation.noteText}` : '批注：无',
+      annotation.noteText
+        ? translate('annotations.exportNote', { note: annotation.noteText })
+        : translate('annotations.exportNoNote'),
       '',
-      `位置：${renderLocation(annotation)}`,
+      translate('annotations.exportLocation', {
+        location: renderLocation(annotation),
+      }),
       '',
     );
   }
@@ -103,7 +122,9 @@ export class AnnotationExportService {
       const extension = format === 'json' ? 'json' : 'md';
       const result = await this.platform.save({
         data: encoder.encode(content),
-        defaultFileName: `${safeFileName(book.title)}-批注.${extension}`,
+        defaultFileName: `${translate('annotations.exportFileName', {
+          title: safeFileName(book.title),
+        })}.${extension}`,
         extension,
         mediaType: format === 'json' ? 'application/json' : 'text/markdown',
       });

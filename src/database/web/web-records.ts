@@ -26,6 +26,8 @@ export type WebBookContentRecord = z.infer<typeof webBookContentRecordSchema>;
 export const webSettingKeys = {
   readerGlobal: 'reader-global',
   ai: 'ai',
+  readingGoal: 'reading-goal',
+  dictionaries: 'dictionaries',
 } as const;
 
 /** localStorage keys written by releases before the IndexedDB migration. */

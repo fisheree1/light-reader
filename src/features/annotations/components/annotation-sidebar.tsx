@@ -5,6 +5,7 @@ import type { Annotation, AnnotationColor } from '../domain/annotation';
 import { useState } from 'react';
 import { Button } from '../../../components/ui/button';
 import type { AnnotationExportFormat } from '../services/annotation-export-service';
+import { useI18n } from '../../../i18n/use-i18n';
 
 const colorClasses: Record<AnnotationColor, string> = {
   yellow: 'bg-yellow-400',
@@ -35,24 +36,27 @@ export function AnnotationSidebar({
   onExport,
   unresolvedIds,
 }: AnnotationSidebarProps) {
+  const { t } = useI18n();
   const [exportFormat, setExportFormat] =
     useState<AnnotationExportFormat>('markdown');
   const [exportStatus, setExportStatus] = useState('');
   return (
     <aside
-      aria-label="高亮与批注"
+      aria-label={t('annotations.sidebarTitle')}
       className="bg-surface w-72 shrink-0 overflow-auto border-l p-3"
     >
       <div className="mb-3 flex items-center gap-2 px-2">
         <Highlighter aria-hidden="true" size={16} />
-        <h2 className="text-sm font-semibold">高亮与批注</h2>
+        <h2 className="text-sm font-semibold">
+          {t('annotations.sidebarTitle')}
+        </h2>
         <span className="text-muted-foreground ml-auto text-xs tabular-nums">
           {annotations.length}
         </span>
       </div>
       <div className="mb-3 flex gap-2 px-2">
         <label className="sr-only" htmlFor="annotation-export-format">
-          批注导出格式
+          {t('annotations.exportFormat')}
         </label>
         <select
           className="bg-background h-8 min-w-0 flex-1 rounded border px-2 text-xs"
@@ -70,20 +74,20 @@ export function AnnotationSidebar({
         <Button
           disabled={annotations.length === 0}
           onClick={() => {
-            setExportStatus('正在导出…');
+            setExportStatus(t('annotations.exporting'));
             void onExport(exportFormat).then(
               () => {
-                setExportStatus('导出完成');
+                setExportStatus(t('annotations.exported'));
               },
               () => {
-                setExportStatus('导出已取消或失败');
+                setExportStatus(t('annotations.exportFailed'));
               },
             );
           }}
           size="sm"
           variant="secondary"
         >
-          导出
+          {t('annotations.export')}
         </Button>
       </div>
       <p aria-live="polite" className="text-muted-foreground mb-2 px-2 text-xs">
@@ -92,7 +96,7 @@ export function AnnotationSidebar({
 
       {annotations.length === 0 ? (
         <p className="text-muted-foreground px-2 py-8 text-center text-sm">
-          选择正文文字即可添加第一条高亮。
+          {t('annotations.empty')}
         </p>
       ) : (
         <ol className="space-y-2">
@@ -115,14 +119,17 @@ export function AnnotationSidebar({
                 >
                   <div className="flex items-center gap-2">
                     <span
-                      aria-label={`${annotation.color} 高亮`}
+                      aria-label={t('annotations.colorHighlight', {
+                        color: annotation.color,
+                      })}
                       className={cn(
                         'size-2.5 rounded-full',
                         colorClasses[annotation.color],
                       )}
                     />
                     <span className="text-muted-foreground truncate text-xs">
-                      {annotation.chapterHref ?? '未知章节'}
+                      {annotation.chapterHref ??
+                        t('annotations.unknownChapter')}
                     </span>
                     <time className="text-muted-foreground ml-auto text-[0.65rem]">
                       {dateFormatter.format(annotation.createdAt)}
@@ -139,7 +146,7 @@ export function AnnotationSidebar({
                   {unresolved ? (
                     <span className="text-destructive mt-2 flex items-center gap-1 text-xs">
                       <AlertTriangle aria-hidden="true" size={12} />
-                      无法定位原文
+                      {t('annotations.unresolved')}
                     </span>
                   ) : null}
                 </button>

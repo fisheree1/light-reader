@@ -7,6 +7,7 @@ import { asAppError } from '../../../lib/app-error';
 import type { Book } from '../../library/domain/book';
 import type { AiDraft } from '../domain/agent';
 import { researchServices, type ResearchServices } from './research-services';
+import { useI18n } from '../../../i18n/use-i18n';
 
 interface ResearchPageProps {
   services?: ResearchServices;
@@ -15,15 +16,14 @@ interface ResearchPageProps {
 export function ResearchPage({
   services = researchServices,
 }: ResearchPageProps) {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const controller = useRef<AbortController | null>(null);
   const [books, setBooks] = useState<Book[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [question, setQuestion] = useState('');
   const [draft, setDraft] = useState<AiDraft | null>(null);
-  const [status, setStatus] = useState(
-    '选择 2 至 8 本书，然后提出一个比较或研究问题。',
-  );
+  const [status, setStatus] = useState(() => t('research.initial'));
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
 
@@ -63,7 +63,7 @@ export function ResearchPage({
     setRunning(true);
     setDraft(null);
     setError(null);
-    setStatus('正在用本地模型扩展查询并建立图书索引…');
+    setStatus(t('research.expanding'));
     try {
       const result = await services.agent.runResearch(
         selected,
@@ -71,23 +71,21 @@ export function ResearchPage({
         nextController.signal,
         (event) => {
           if (event.type === 'retrieval-progress') {
-            setStatus('正在检索所选图书的本地正文…');
+            setStatus(t('research.retrieving'));
           } else if (event.type === 'output-delta') {
-            setStatus('正在生成带来源的研究草稿…');
+            setStatus(t('research.drafting'));
           }
         },
       );
       setDraft(result.draft);
-      setStatus(
-        `研究完成，共引用 ${String(result.draft.citations.length)} 个来源。`,
-      );
+      setStatus(t('research.done', { count: result.draft.citations.length }));
     } catch (value) {
       const appError = asAppError(value, 'AI_REQUEST_FAILED');
       if (appError.code !== 'USER_CANCELLED') setError(appError.userMessage);
       setStatus(
         appError.code === 'USER_CANCELLED'
-          ? '已停止本次研究。'
-          : '研究未完成。',
+          ? t('research.stopped')
+          : t('research.incomplete'),
       );
     } finally {
       setRunning(false);
@@ -100,11 +98,10 @@ export function ResearchPage({
       <header className="mb-6">
         <h1 className="flex items-center gap-2 text-2xl font-semibold">
           <Sparkles aria-hidden="true" size={22} />
-          跨书研究
+          {t('research.title')}
         </h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          仅把你明确选择的图书片段发送给本机
-          Ollama；查询扩展用于提高召回率，不等同于向量检索。
+          {t('research.description')}
         </p>
       </header>
 
@@ -114,15 +111,15 @@ export function ResearchPage({
       >
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 id="research-scope" className="text-sm font-semibold">
-            研究范围
+            {t('research.scope')}
           </h2>
           <span className="text-muted-foreground text-xs">
-            已选 {selectedIds.length}/8
+            {t('research.selected', { count: selectedIds.length })}
           </span>
         </div>
         {books.length === 0 ? (
           <p className="text-muted-foreground text-sm">
-            请先导入至少两本可提取正文的 EPUB 或 PDF。
+            {t('research.needBooks')}
           </p>
         ) : (
           <div className="grid gap-2 sm:grid-cols-2">
@@ -157,7 +154,7 @@ export function ResearchPage({
           id="research-question"
           htmlFor="research-question-input"
         >
-          研究问题
+          {t('research.question')}
         </label>
         <textarea
           className="bg-surface mt-2 min-h-28 w-full resize-y rounded-lg border p-3 text-sm"
@@ -166,7 +163,7 @@ export function ResearchPage({
           onChange={(event) => {
             setQuestion(event.currentTarget.value);
           }}
-          placeholder="例如：比较这些书对离线阅读与隐私的观点，并指出共同点和分歧。"
+          placeholder={t('research.questionPlaceholder')}
           value={question}
         />
         <div className="mt-3 flex items-center gap-3">
@@ -178,7 +175,7 @@ export function ResearchPage({
             type="button"
           >
             <Search aria-hidden="true" size={16} />
-            开始研究
+            {t('research.start')}
           </Button>
           {running ? (
             <Button
@@ -187,7 +184,7 @@ export function ResearchPage({
               variant="ghost"
             >
               <Square aria-hidden="true" size={14} />
-              停止
+              {t('research.stop')}
             </Button>
           ) : null}
           <p aria-live="polite" className="text-muted-foreground text-sm">
@@ -211,12 +208,14 @@ export function ResearchPage({
           className="bg-surface mt-6 rounded-lg border p-5"
         >
           <h2 id="research-draft" className="text-lg font-semibold">
-            研究草稿
+            {t('research.draft')}
           </h2>
           <div className="mt-3 text-sm leading-7 whitespace-pre-wrap">
             {draft.content}
           </div>
-          <h3 className="mt-6 text-sm font-semibold">可验证来源</h3>
+          <h3 className="mt-6 text-sm font-semibold">
+            {t('research.sources')}
+          </h3>
           <ol className="mt-2 grid gap-2">
             {draft.citations.map((citation, index) => (
               <li key={citation.id}>
@@ -239,8 +238,9 @@ export function ResearchPage({
                     [S{index + 1}] {citation.bookTitleSnapshot}
                   </span>
                   <span className="text-muted-foreground mt-1 line-clamp-2 block">
-                    {citation.chapterTitleSnapshot ?? '未命名位置'} ·{' '}
-                    {citation.quote}
+                    {citation.chapterTitleSnapshot ??
+                      t('research.untitledPlace')}{' '}
+                    · {citation.quote}
                   </span>
                 </button>
               </li>

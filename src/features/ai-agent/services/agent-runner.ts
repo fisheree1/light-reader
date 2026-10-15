@@ -7,7 +7,7 @@ import { agentModelRequestSchema } from '../../../platform/ai/model-provider-gat
 import type { AiSettings } from '../domain/ai-settings';
 import {
   agentRunSchema,
-  selectionAiActionLabels,
+  selectionAiActionLabel,
   transitionAgentRun,
   type AiDraft,
   type AgentRun,
@@ -17,6 +17,7 @@ import { AgentScopePolicy } from './agent-scope-policy';
 import type { PreparedSelectionRun } from './agent-consent-service';
 import { AiDraftService } from './ai-draft-service';
 import { ProviderTextRunner } from './provider-text-runner';
+import { translate } from '../../../i18n/i18n';
 
 const actionInstructions: Record<SelectionAiAction, string> = {
   summarize: '请用简洁中文总结文本的核心内容。',
@@ -80,7 +81,7 @@ export class AgentRunner {
         : actionInstructions[prepared.run.action];
     if (!instruction) {
       throw new AppError('AI_REQUEST_FAILED', {
-        message: '请输入自定义需求。',
+        message: translate('ai.customRequired'),
       });
     }
     const request = agentModelRequestSchema.parse({
@@ -111,5 +112,5 @@ export class AgentRunner {
 }
 
 export function getSelectionActionLabel(action: SelectionAiAction): string {
-  return selectionAiActionLabels[action];
+  return selectionAiActionLabel(action);
 }

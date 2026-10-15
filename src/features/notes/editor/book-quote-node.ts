@@ -4,6 +4,7 @@ import {
   bookQuoteReferenceSchema,
   type BookQuoteReference,
 } from '../domain/note';
+import { translate } from '../../../i18n/i18n';
 
 export interface BookQuoteNodeOptions {
   onNavigate: (reference: BookQuoteReference) => void;
@@ -41,7 +42,7 @@ function renderBookQuote(
   container.replaceChildren(quote, source);
   container.setAttribute(
     'aria-label',
-    `返回《${bookTitle}》中的引用：${reference.quote}`,
+    translate('notes.quoteLabel', { title: bookTitle, quote: reference.quote }),
   );
 }
 
@@ -55,7 +56,7 @@ export const BookQuoteNode = Node.create<BookQuoteNodeOptions>({
   addOptions() {
     return {
       onNavigate: () => undefined,
-      resolveBookTitle: () => '未知书籍',
+      resolveBookTitle: () => translate('common.unknownBook'),
     };
   },
 
@@ -106,7 +107,7 @@ export const BookQuoteNode = Node.create<BookQuoteNodeOptions>({
         renderBookQuote(button, reference.data, this.options.resolveBookTitle);
       } else {
         button.disabled = true;
-        button.textContent = '引用块数据损坏';
+        button.textContent = translate('notes.quoteDamaged');
       }
 
       const handleClick = () => {
@@ -128,7 +129,7 @@ export const BookQuoteNode = Node.create<BookQuoteNodeOptions>({
             );
           } else {
             button.disabled = true;
-            button.textContent = '引用块数据损坏';
+            button.textContent = translate('notes.quoteDamaged');
           }
           return true;
         },

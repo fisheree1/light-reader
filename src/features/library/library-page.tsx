@@ -13,12 +13,14 @@ import {
   libraryServices,
   type LibraryServices,
 } from './services/library-services';
+import { useI18n } from '../../i18n/use-i18n';
 
 interface LibraryPageProps {
   services?: LibraryServices;
 }
 
 export function LibraryPage({ services = libraryServices }: LibraryPageProps) {
+  const { t } = useI18n();
   const library = useLibrary(services);
   const navigate = useNavigate();
   const [managedBookId, setManagedBookId] = useState<string | null>(null);
@@ -31,10 +33,9 @@ export function LibraryPage({ services = libraryServices }: LibraryPageProps) {
     <div>
       <header className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">书架</h1>
+          <h1 className="text-2xl font-semibold">{t('library.title')}</h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            {services.storageDescription ??
-              '本地图书保存在应用受控目录中，支持 EPUB 和 PDF。'}
+            {t(services.storageDescription ?? 'library.storageDefault')}
           </p>
         </div>
         {library.isLoading || showLibraryControls ? (
@@ -49,32 +50,32 @@ export function LibraryPage({ services = libraryServices }: LibraryPageProps) {
 
       {showLibraryControls ? (
         <section
-          aria-label="书架筛选"
+          aria-label={t('library.filters')}
           className="bg-surface mb-6 flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-center"
         >
           <label className="relative min-w-0 flex-1">
-            <span className="sr-only">搜索书架</span>
+            <span className="sr-only">{t('library.searchLabel')}</span>
             <Search
               aria-hidden="true"
               className="text-muted-foreground absolute top-1/2 left-3 -translate-y-1/2"
               size={16}
             />
             <input
-              aria-label="搜索书架"
+              aria-label={t('library.searchLabel')}
               className="bg-background h-9 w-full rounded-md border pr-3 pl-9 text-sm"
               maxLength={200}
               onChange={(event) => {
                 library.setQuery(event.currentTarget.value);
               }}
-              placeholder="搜索书名、作者或标签"
+              placeholder={t('library.searchPlaceholder')}
               type="search"
               value={library.query}
             />
           </label>
           <label className="flex items-center gap-2 text-sm">
-            <span className="text-muted-foreground">排序</span>
+            <span className="text-muted-foreground">{t('library.sort')}</span>
             <select
-              aria-label="书架排序"
+              aria-label={t('library.sortLabel')}
               className="bg-background h-9 rounded-md border px-2"
               onChange={(event) => {
                 library.setSort(
@@ -83,9 +84,9 @@ export function LibraryPage({ services = libraryServices }: LibraryPageProps) {
               }}
               value={library.sort}
             >
-              <option value="recent">最近阅读</option>
-              <option value="added">添加时间</option>
-              <option value="title">标题</option>
+              <option value="recent">{t('library.sortRecent')}</option>
+              <option value="added">{t('library.sortAdded')}</option>
+              <option value="title">{t('library.sortTitle')}</option>
             </select>
           </label>
           <label className="flex h-9 items-center gap-2 px-2 text-sm">
@@ -97,7 +98,7 @@ export function LibraryPage({ services = libraryServices }: LibraryPageProps) {
               }}
               type="checkbox"
             />
-            仅显示收藏
+            {t('library.favoritesOnly')}
           </label>
         </section>
       ) : null}
@@ -122,7 +123,7 @@ export function LibraryPage({ services = libraryServices }: LibraryPageProps) {
           aria-live="polite"
           className="text-muted-foreground py-16 text-center text-sm"
         >
-          正在加载书架…
+          {t('library.loading')}
         </div>
       ) : library.loadError ? (
         <EmptyState
@@ -133,18 +134,18 @@ export function LibraryPage({ services = libraryServices }: LibraryPageProps) {
               }}
               variant="secondary"
             >
-              重试
+              {t('library.retry')}
             </Button>
           }
           description={library.loadError}
           icon={<CircleAlert size={28} />}
-          title="书架加载失败"
+          title={t('library.loadFailed')}
         />
       ) : library.books.length === 0 && hasFilter ? (
         <EmptyState
-          description="尝试更换关键词，或关闭“仅显示收藏”。"
+          description={t('library.noMatchesDescription')}
           icon={<Search size={28} />}
-          title="没有匹配的书籍"
+          title={t('library.noMatches')}
         />
       ) : library.books.length === 0 ? (
         <EmptyState
@@ -156,13 +157,13 @@ export function LibraryPage({ services = libraryServices }: LibraryPageProps) {
               }}
             />
           }
-          description="导入 EPUB 或 PDF，阅读数据只保存在当前设备。"
+          description={t('library.emptyDescription')}
           icon={<BookOpen size={28} />}
-          title="导入第一本书"
+          title={t('library.emptyTitle')}
         />
       ) : (
         <section
-          aria-label="书籍"
+          aria-label={t('library.books')}
           className="grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
         >
           {library.books.map((book) => (

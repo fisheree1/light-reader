@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 
 import { Button } from '../../components/ui/button';
 import { checkDatabaseHealth } from '../../database/client';
 import type { ReaderSettingsRepository } from '../../database/repositories/reader-settings-repository';
-import type { ReadingActivityRepository } from '../../database/repositories/reading-activity-repository';
 import { ReaderSettingsForm } from '../reader/components/reader-settings-form';
 import {
   defaultReaderSettings,
@@ -14,13 +14,17 @@ import { useReaderSettingsStore } from '../../stores/reader-settings-store';
 import { BackupSettings } from '../backup/components/backup-settings';
 import type { BackupManager } from '../backup/services/backup-service';
 import { backupManager as defaultBackupManager } from '../backup/services/backup-services';
-import type {
-  ReadingHistoryEntry,
-  ReadingStats,
-} from '../reader/domain/reading-activity';
 import { AiSettingsSection } from '../ai-agent/components/ai-settings-section';
+import { DictionarySettings } from '../dictionary/components/dictionary-settings';
+import {
+  dictionaryServices,
+  type DictionaryServices,
+} from '../dictionary/services/dictionary-services';
 import type { AgentFacade } from '../ai-agent/services/agent-facade';
 import { agentFacade as defaultAgentFacade } from '../ai-agent/services/ai-services';
+import { supportedLocales, type LocalePreference } from '../../i18n/i18n';
+import { useI18n } from '../../i18n/use-i18n';
+import { useAppStore } from '../../stores/app-store';
 
 type HealthStatus = 'idle' | 'checking' | 'healthy' | 'error';
 type SaveStatus = 'idle' | 'loading' | 'saving' | 'saved' | 'error';
@@ -28,25 +32,25 @@ type SaveStatus = 'idle' | 'loading' | 'saving' | 'saved' | 'error';
 interface SettingsPageProps {
   agentFacade?: AgentFacade;
   backupManager?: BackupManager;
-  readingActivityRepository?: ReadingActivityRepository;
+  dictionary?: Pick<DictionaryServices, 'dictionary' | 'picker'>;
   settingsRepository?: ReaderSettingsRepository;
 }
 
 export function SettingsPage({
   agentFacade = defaultAgentFacade,
   backupManager = defaultBackupManager,
-  readingActivityRepository,
+  dictionary = dictionaryServices,
   settingsRepository = readerServices.settingsRepository,
 }: SettingsPageProps) {
+  const { t } = useI18n();
+  const localePreference = useAppStore((state) => state.locale);
+  const setLocale = useAppStore((state) => state.setLocale);
+  const { hash } = useLocation();
   const [healthStatus, setHealthStatus] = useState<HealthStatus>('idle');
   const [readerSettings, setReaderSettings] = useState<ReaderDisplaySettings>(
     defaultReaderSettings,
   );
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('loading');
-  const [readingStats, setReadingStats] = useState<ReadingStats | null>(null);
-  const [readingHistory, setReadingHistory] = useState<ReadingHistoryEntry[]>(
-    [],
-  );
   const setGlobalSettings = useReaderSettingsStore(
     (state) => state.setGlobalSettings,
   );
@@ -70,23 +74,9 @@ export function SettingsPage({
   }, [setGlobalSettings, settingsRepository]);
 
   useEffect(() => {
-    const repository =
-      readingActivityRepository ?? readerServices.readingActivityRepository;
-    if (!repository) return;
-    let cancelled = false;
-    void Promise.all([repository.getStats(), repository.listRecent(10)]).then(
-      ([stats, history]) => {
-        if (!cancelled) {
-          setReadingStats(stats);
-          setReadingHistory(history);
-        }
-      },
-      () => undefined,
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [readingActivityRepository]);
+    // Deep links such as /settings#dictionaries scroll to their section.
+    if (hash) document.getElementById(hash.slice(1))?.scrollIntoView();
+  }, [hash]);
 
   async function handleSaveReaderSettings() {
     setSaveStatus('saving');
@@ -113,16 +103,42 @@ export function SettingsPage({
   return (
     <div className="mx-auto max-w-4xl">
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold">设置</h1>
+        <h1 className="text-2xl font-semibold">{t('settings.title')}</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          管理阅读偏好、数据备份和本地 AI。
+          {t('settings.description')}
         </p>
       </header>
 
+      <section className="bg-surface mb-4 flex flex-wrap items-center justify-between gap-4 rounded-xl border p-5">
+        <div>
+          <h2 className="font-medium" id="interface-language-title">
+            {t('settings.language')}
+          </h2>
+          <p className="text-muted-foreground mt-1 text-sm">
+            {t('settings.languageDescription')}
+          </p>
+        </div>
+        <select
+          aria-labelledby="interface-language-title"
+          className="bg-background h-9 rounded-md border px-2 text-sm"
+          onChange={(event) => {
+            setLocale(event.currentTarget.value as LocalePreference);
+          }}
+          value={localePreference}
+        >
+          <option value="system">{t('settings.languageSystem')}</option>
+          {supportedLocales.map((locale) => (
+            <option key={locale} lang={locale} value={locale}>
+              {locale === 'en' ? 'English' : '简体中文'}
+            </option>
+          ))}
+        </select>
+      </section>
+
       <section className="bg-surface rounded-xl border p-5 sm:p-6">
-        <h2 className="font-medium">全局阅读设置</h2>
+        <h2 className="font-medium">{t('settings.globalReading')}</h2>
         <p className="text-muted-foreground mt-1 text-sm">
-          新打开的 EPUB 默认使用这些主题和排版。单本图书可在阅读页覆盖。
+          {t('settings.globalReadingDescription')}
         </p>
         <div className="mt-5 max-w-xl">
           <ReaderSettingsForm
@@ -139,69 +155,35 @@ export function SettingsPage({
               disabled={saveStatus === 'loading' || saveStatus === 'saving'}
               onClick={() => void handleSaveReaderSettings()}
             >
-              {saveStatus === 'saving' ? '保存中…' : '保存全局设置'}
+              {saveStatus === 'saving'
+                ? t('common.saving')
+                : t('settings.saveGlobal')}
             </Button>
             <span aria-live="polite" className="text-muted-foreground text-sm">
-              {saveStatus === 'loading' ? '正在加载设置…' : null}
-              {saveStatus === 'saved' ? '阅读设置已保存' : null}
-              {saveStatus === 'error' ? '设置加载或保存失败，请重试' : null}
+              {saveStatus === 'loading' ? t('settings.loading') : null}
+              {saveStatus === 'saved' ? t('settings.saved') : null}
+              {saveStatus === 'error' ? t('settings.saveFailed') : null}
             </span>
           </div>
         </div>
       </section>
 
-      <section className="bg-surface mt-4 rounded-lg border p-5">
-        <h2 className="font-medium">阅读统计</h2>
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-md border p-3">
-            <p className="text-muted-foreground text-xs">累计阅读</p>
-            <p className="mt-1 text-xl font-semibold">
-              {readingStats
-                ? `${String(Math.floor(readingStats.totalSeconds / 3600))} 小时 ${String(
-                    Math.floor((readingStats.totalSeconds % 3600) / 60),
-                  )} 分钟`
-                : '—'}
-            </p>
-          </div>
-          <div className="rounded-md border p-3">
-            <p className="text-muted-foreground text-xs">阅读次数</p>
-            <p className="mt-1 text-xl font-semibold">
-              {readingStats?.sessionCount ?? '—'}
-            </p>
-          </div>
-          <div className="rounded-md border p-3">
-            <p className="text-muted-foreground text-xs">读过的书</p>
-            <p className="mt-1 text-xl font-semibold">
-              {readingStats?.booksRead ?? '—'}
-            </p>
-          </div>
+      <section className="bg-surface mt-4 flex items-center justify-between gap-4 rounded-lg border p-5">
+        <div>
+          <h2 className="font-medium">{t('settings.stats')}</h2>
+          <p className="text-muted-foreground mt-1 text-sm">
+            {t('settings.statsDescription')}
+          </p>
         </div>
-        <h3 className="mt-5 text-sm font-medium">最近阅读</h3>
-        {readingHistory.length ? (
-          <ol className="mt-2 divide-y rounded-md border">
-            {readingHistory.map((entry, index) => (
-              <li
-                className="flex items-center justify-between gap-4 p-3 text-sm"
-                key={`${entry.bookId}-${String(entry.startedAt)}-${String(index)}`}
-              >
-                <span className="truncate">
-                  {entry.bookTitle}
-                  <span className="text-muted-foreground ml-2">
-                    {entry.author ?? '未知作者'}
-                  </span>
-                </span>
-                <span className="text-muted-foreground shrink-0 text-xs">
-                  {new Date(entry.startedAt).toLocaleString('zh-CN')} ·{' '}
-                  {String(Math.max(1, Math.round(entry.durationSeconds / 60)))}{' '}
-                  分钟
-                </span>
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <p className="text-muted-foreground mt-2 text-sm">暂无阅读记录。</p>
-        )}
+        <Button asChild variant="secondary">
+          <Link to="/stats">{t('settings.viewStats')}</Link>
+        </Button>
       </section>
+
+      <DictionarySettings
+        dictionary={dictionary.dictionary}
+        picker={dictionary.picker}
+      />
 
       <BackupSettings manager={backupManager} />
 
@@ -209,22 +191,24 @@ export function SettingsPage({
 
       {import.meta.env.DEV ? (
         <section className="bg-surface mt-4 rounded-lg border p-5">
-          <h2 className="font-medium">开发诊断</h2>
+          <h2 className="font-medium">{t('settings.diagnostics')}</h2>
           <p className="text-muted-foreground mt-1 text-sm">
-            此检查仅能在 Tauri 开发窗口中运行，Web 预览不提供原生 SQL 插件。
+            {t('settings.diagnosticsDescription')}
           </p>
           <div className="mt-4 flex items-center gap-3">
             <Button
               disabled={healthStatus === 'checking'}
               onClick={() => void handleDatabaseCheck()}
             >
-              {healthStatus === 'checking' ? '检查中…' : '检查数据库'}
+              {healthStatus === 'checking'
+                ? t('settings.checking')
+                : t('settings.checkDatabase')}
             </Button>
             <span aria-live="polite" className="text-muted-foreground text-sm">
-              {healthStatus === 'healthy' ? '数据库连接正常' : null}
-              {healthStatus === 'error'
-                ? '数据库检查失败，请查看开发日志'
+              {healthStatus === 'healthy'
+                ? t('settings.databaseHealthy')
                 : null}
+              {healthStatus === 'error' ? t('settings.databaseFailed') : null}
             </span>
           </div>
         </section>

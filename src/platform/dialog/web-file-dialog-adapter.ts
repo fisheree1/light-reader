@@ -1,8 +1,13 @@
+import { supportedBookFormats } from '../../features/library/domain/book';
 import type {
   FileDialogAdapter,
   SelectedBookFile,
 } from './file-dialog-adapter';
 import type { WebSelectedBookSourceRegistry } from '../../storage/web-book-file-storage';
+
+const bookFileAccept = supportedBookFormats
+  .map((format) => `.${format}`)
+  .join(',');
 
 type InputFactory = () => HTMLInputElement;
 
@@ -19,12 +24,12 @@ export class WebFileDialogAdapter implements FileDialogAdapter {
   }
 
   async selectBooks(): Promise<SelectedBookFile[] | null> {
-    const files = await this.select('.epub,.pdf', true);
+    const files = await this.select(bookFileAccept, true);
     return files.length > 0 ? this.sourceRegistry.register(files) : null;
   }
 
   async selectBook(): Promise<SelectedBookFile | null> {
-    const files = await this.select('.epub,.pdf', false);
+    const files = await this.select(bookFileAccept, false);
     const selected = files.at(0);
     return selected
       ? (this.sourceRegistry.register([selected]).at(0) ?? null)
@@ -37,6 +42,11 @@ export class WebFileDialogAdapter implements FileDialogAdapter {
     return selected
       ? (this.sourceRegistry.register([selected]).at(0) ?? null)
       : null;
+  }
+
+  /** Opens the browser file picker; resolves with no files on cancel. */
+  selectFiles(accept: string, multiple: boolean): Promise<File[]> {
+    return this.select(accept, multiple);
   }
 
   private select(accept: string, multiple: boolean): Promise<File[]> {
