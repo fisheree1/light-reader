@@ -11,6 +11,7 @@ import type {
 import { AppError, asAppError, isAppError } from '../../../lib/app-error';
 import { createUuid } from '../../../lib/id';
 import {
+  bookFormatFromFileName,
   bookMetadataSchema,
   bookSchema,
   type Book,
@@ -19,6 +20,10 @@ import {
 import { fallbackTitleFromFileName } from '../../../storage/book-paths';
 import type { EpubMetadataParser } from './epub-metadata-parser';
 import { assertEpubFileSize, MAX_EPUB_FILE_SIZE } from './epub-limits';
+import {
+  FoliateBookMetadataParser,
+  isFoliateMetadataFormat,
+} from './foliate-metadata-parser';
 
 export type ImportBookResult =
   | { status: 'cancelled' }
@@ -51,26 +56,32 @@ interface BookImportDependencies {
   hasher: ContentHasher;
   idGenerator?: () => string;
   metadataParser: EpubMetadataParser;
+  foliateMetadataParser?: Pick<FoliateBookMetadataParser, 'parse'>;
   now?: () => number;
   repository: BookRepository;
   maxFileSize?: number;
 }
 
 function detectBookFormat(fileName: string): BookFormat {
-  const normalized = fileName.toLowerCase();
-  if (normalized.endsWith('.epub')) return 'epub';
-  if (normalized.endsWith('.pdf')) return 'pdf';
-  throw new AppError('UNSUPPORTED_FILE_TYPE');
+  const format = bookFormatFromFileName(fileName);
+  if (!format) throw new AppError('UNSUPPORTED_FILE_TYPE');
+  return format;
 }
 
 export class BookImportService implements BookImporter {
   private readonly dependencies: BookImportDependencies;
+  private readonly foliateMetadataParser: Pick<
+    FoliateBookMetadataParser,
+    'parse'
+  >;
   private readonly idGenerator: () => string;
   private readonly maxFileSize: number;
   private readonly now: () => number;
 
   constructor(dependencies: BookImportDependencies) {
     this.dependencies = dependencies;
+    this.foliateMetadataParser =
+      dependencies.foliateMetadataParser ?? new FoliateBookMetadataParser();
     this.idGenerator = dependencies.idGenerator ?? createUuid;
     this.maxFileSize = dependencies.maxFileSize ?? MAX_EPUB_FILE_SIZE;
     this.now = dependencies.now ?? Date.now;
@@ -142,8 +153,11 @@ export class BookImportService implements BookImporter {
       assertEpubFileSize(source.byteLength, this.maxFileSize);
     } catch (error) {
       if (isAppError(error)) {
-        if (format === 'pdf' && error.code === 'EPUB_TOO_LARGE') {
-          throw new AppError('PDF_TOO_LARGE', { cause: error });
+        if (format !== 'epub' && error.code === 'EPUB_TOO_LARGE') {
+          throw new AppError(
+            format === 'pdf' ? 'PDF_TOO_LARGE' : 'BOOK_TOO_LARGE',
+            { cause: error },
+          );
         }
         throw error;
       }
@@ -166,17 +180,23 @@ export class BookImportService implements BookImporter {
             source,
             selected.fileName,
           )
-        : {
-            metadata: bookMetadataSchema.parse({
-              title: fallbackTitleFromFileName(selected.fileName),
-              creators: [],
-              language: null,
-              publisher: null,
-              description: null,
-              identifier: null,
-            }),
-            cover: null,
-          };
+        : isFoliateMetadataFormat(format)
+          ? await this.foliateMetadataParser.parse(
+              source,
+              selected.fileName,
+              format,
+            )
+          : {
+              metadata: bookMetadataSchema.parse({
+                title: fallbackTitleFromFileName(selected.fileName),
+                creators: [],
+                language: null,
+                publisher: null,
+                description: null,
+                identifier: null,
+              }),
+              cover: null,
+            };
     const id = this.idGenerator();
     const timestamp = this.now();
 

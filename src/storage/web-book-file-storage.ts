@@ -1,3 +1,4 @@
+import { bookFormatMediaTypes } from '../features/library/domain/book';
 import type { SelectedBookFile } from '../platform/dialog/file-dialog-adapter';
 import { createUuid } from '../lib/id';
 import {
@@ -206,7 +207,7 @@ export class WebSelectedBookSourceRegistry {
 }
 
 function mediaTypeForBook(format: ManagedBookExtension): string {
-  return format === 'pdf' ? 'application/pdf' : 'application/epub+zip';
+  return bookFormatMediaTypes[format];
 }
 
 export class WebBookFileStorage

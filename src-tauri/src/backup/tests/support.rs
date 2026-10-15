@@ -44,6 +44,7 @@ pub(super) async fn apply_schema(path: &Path) -> SqliteConnection {
         include_str!("../../../migrations/0009_bookmarks_and_reading_activity.sql"),
         include_str!("../../../migrations/0010_pdf_books.sql"),
         include_str!("../../../migrations/0011_ai_book_chunks.sql"),
+        include_str!("../../../migrations/0012_foliate_formats.sql"),
     ] {
         connection
             .execute(migration)

@@ -7,7 +7,7 @@ use std::{
 
 static NEXT_DATABASE_ID: AtomicU64 = AtomicU64::new(0);
 
-const MIGRATIONS: [&str; 11] = [
+const MIGRATIONS: [&str; 12] = [
     include_str!("../migrations/0001_initial.sql"),
     include_str!("../migrations/0002_create_books.sql"),
     include_str!("../migrations/0003_reader_settings.sql"),
@@ -19,6 +19,7 @@ const MIGRATIONS: [&str; 11] = [
     include_str!("../migrations/0009_bookmarks_and_reading_activity.sql"),
     include_str!("../migrations/0010_pdf_books.sql"),
     include_str!("../migrations/0011_ai_book_chunks.sql"),
+    include_str!("../migrations/0012_foliate_formats.sql"),
 ];
 
 fn temporary_database_path() -> PathBuf {
@@ -250,6 +251,114 @@ async fn pdf_migration_preserves_all_book_dependents() {
             .await
             .expect("dependent record should remain queryable");
         assert_eq!(count, 1, "{table} record should survive PDF migration");
+    }
+    let foreign_key_failures: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM pragma_foreign_key_check")
+            .fetch_one(&mut connection)
+            .await
+            .expect("foreign keys should remain inspectable");
+    assert_eq!(foreign_key_failures, 0);
+
+    connection.close().await.expect("database should close");
+    std::fs::remove_file(path).expect("test database should be removable");
+}
+
+#[tokio::test]
+async fn foliate_format_migration_keeps_dependents_triggers_and_check() {
+    let path = temporary_database_path();
+    let mut connection = connect(&path).await;
+    connection
+        .execute("PRAGMA foreign_keys = ON")
+        .await
+        .expect("foreign keys should enable");
+    for migration in &MIGRATIONS[..11] {
+        connection
+            .execute(*migration)
+            .await
+            .expect("pre-format migration should apply");
+    }
+    insert_book(&mut connection, "kept-book", "Kept", 'k', 10).await;
+    connection
+        .execute(
+            r#"INSERT INTO annotations
+              (id, book_id, text, locator_json, color, created_at, updated_at)
+              VALUES ('kept-annotation', 'kept-book', 'searchable highlight',
+                '{"version":1,"format":"epub","cfi":"epubcfi(/6/2)"}', 'yellow', 11, 11);
+              INSERT INTO book_tags (book_id, tag, created_at)
+              VALUES ('kept-book', 'tag', 12);
+              INSERT INTO reading_sessions
+              (id, book_id, started_at, ended_at, duration_seconds)
+              VALUES ('kept-session', 'kept-book', 13, 23, 10);"#,
+        )
+        .await
+        .expect("dependent records should seed");
+
+    connection
+        .execute(MIGRATIONS[11])
+        .await
+        .expect("format migration should apply");
+
+    for format in ["mobi", "azw3", "fb2", "cbz"] {
+        sqlx::query(
+            r#"INSERT INTO books (
+              id, title, format, file_path, file_hash, metadata_json,
+              file_size, created_at, updated_at
+            ) VALUES (?, 'Book', ?, ?, ?, '{}', 1, 1, 1)"#,
+        )
+        .bind(format!("{format}-book"))
+        .bind(format)
+        .bind(format!("light-reader/books/{format}-book/book.{format}"))
+        .bind(format.repeat(64)[..64].to_string())
+        .execute(&mut connection)
+        .await
+        .expect("new Foliate formats should be accepted");
+    }
+    let rejected = sqlx::query(
+        r#"INSERT INTO books (
+          id, title, format, file_path, file_hash, metadata_json,
+          file_size, created_at, updated_at
+        ) VALUES ('docx-book', 'Book', 'docx', 'x', ?, '{}', 1, 1, 1)"#,
+    )
+    .bind("z".repeat(64))
+    .execute(&mut connection)
+    .await;
+    assert!(rejected.is_err(), "unknown formats must stay rejected");
+
+    let searchable: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM annotations_fts WHERE annotations_fts MATCH 'searchable'",
+    )
+    .fetch_one(&mut connection)
+    .await
+    .expect("annotation search should remain available");
+    assert_eq!(searchable, 1);
+
+    connection
+        .execute(
+            r#"INSERT INTO ai_book_chunks (
+              schema_version, chunk_id, book_id, source_file_hash, chapter_href,
+              chapter_title, start_locator_json, end_locator_json, text,
+              text_hash, estimated_tokens, ordinal
+            ) VALUES (1, 'chunk', 'kept-book', 'hash', NULL, NULL, '{}', NULL,
+              'derived text', 'h', 1, 0);
+            INSERT INTO book_content_index (book_id, chapter_href, chapter_title, text)
+            VALUES ('kept-book', 'one.xhtml', 'One', 'derived chapter');
+            DELETE FROM books WHERE id = 'kept-book';"#,
+        )
+        .await
+        .expect("book deletion should cascade");
+    for table in [
+        "annotations",
+        "book_tags",
+        "reading_sessions",
+        "ai_book_chunks",
+        "book_content_index",
+    ] {
+        let query = format!("SELECT COUNT(*) FROM {table} WHERE book_id = 'kept-book'");
+        let count: i64 = sqlx::query_scalar(&query)
+            .fetch_one(&mut connection)
+            .await
+            .expect("dependent table should remain queryable");
+        assert_eq!(count, 0, "{table} should follow book deletion");
     }
     let foreign_key_failures: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM pragma_foreign_key_check")

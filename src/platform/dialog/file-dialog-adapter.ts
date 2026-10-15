@@ -1,5 +1,7 @@
 import { open } from '@tauri-apps/plugin-dialog';
 
+import { supportedBookFormats } from '../../features/library/domain/book';
+
 import { fileNameFromPath } from '../../storage/book-paths';
 
 export interface SelectedBookFile {
@@ -18,7 +20,7 @@ export class TauriFileDialogAdapter implements FileDialogAdapter {
     const paths = await open({
       directory: false,
       multiple: true,
-      filters: [{ name: '电子书', extensions: ['epub', 'pdf'] }],
+      filters: [{ name: '电子书', extensions: [...supportedBookFormats] }],
       title: '批量导入电子书',
     });
     if (!Array.isArray(paths) || paths.length === 0) return null;
@@ -32,7 +34,7 @@ export class TauriFileDialogAdapter implements FileDialogAdapter {
     const path = await open({
       directory: false,
       multiple: false,
-      filters: [{ name: '电子书', extensions: ['epub', 'pdf'] }],
+      filters: [{ name: '电子书', extensions: [...supportedBookFormats] }],
       title: '导入电子书',
     });
 

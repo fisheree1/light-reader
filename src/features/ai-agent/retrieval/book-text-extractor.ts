@@ -1,5 +1,6 @@
 import type { BookFormat } from '../../library/domain/book';
 import { FflateEpubContentParser } from '../../search/services/epub-content-parser';
+import { FoliateBookContentParser } from '../../search/services/foliate-content-parser';
 import { PdfBookTextParser } from '../../../reader-engines/pdf-book-text-parser';
 import { bookTextBlockSchema, type BookTextBlock } from './book-retrieval';
 import {
@@ -19,13 +20,19 @@ export interface BookTextExtractor {
 export class LocalBookTextExtractor implements BookTextExtractor {
   private readonly epubParser: FflateEpubContentParser;
   private readonly pdfParser: PdfBookTextParser;
+  private readonly foliateParser: Pick<FoliateBookContentParser, 'parse'>;
 
   constructor(
     epubParser = new FflateEpubContentParser(),
     pdfParser = new PdfBookTextParser(),
+    foliateParser: Pick<
+      FoliateBookContentParser,
+      'parse'
+    > = new FoliateBookContentParser(),
   ) {
     this.epubParser = epubParser;
     this.pdfParser = pdfParser;
+    this.foliateParser = foliateParser;
   }
 
   async extract(
@@ -60,6 +67,30 @@ export class LocalBookTextExtractor implements BookTextExtractor {
           text: page.text,
         }),
       );
+    }
+
+    if (format !== 'epub') {
+      const sections = await this.foliateParser.parse(
+        source,
+        format,
+        options.signal,
+      );
+      return sections.map((section, ordinal) => {
+        emitBookIndexingProgress(
+          options,
+          'extracting-text',
+          ordinal + 1,
+          sections.length,
+        );
+        return bookTextBlockSchema.parse({
+          chapterHref: null,
+          chapterTitle: section.chapterTitle,
+          // Section CFIs navigate MOBI/AZW3/FB2 books without an EPUB spine.
+          locator: { version: 1, format: 'epub', cfi: section.chapterHref },
+          ordinal,
+          text: section.text,
+        });
+      });
     }
 
     const chapters = await this.epubParser.parse(new Uint8Array(source));

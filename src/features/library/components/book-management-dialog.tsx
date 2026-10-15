@@ -67,8 +67,8 @@ export function BookManagementDialog({
               <h2 className="font-semibold">确认删除《{book.title}》？</h2>
               <p className="text-muted-foreground mt-2 text-sm leading-6">
                 {deleteMode === 'delete-all'
-                  ? '将删除 EPUB、封面、阅读位置、高亮、批注、标签，并从独立笔记中移除这本书的引用块。笔记中的其他正文不会删除。'
-                  : '将删除 EPUB、封面及阅读数据，但独立笔记里的原文引用快照会保留。引用之后无法再跳回已删除的书籍。'}
+                  ? '将删除书籍文件、封面、阅读位置、高亮、批注、标签，并从独立笔记中移除这本书的引用块。笔记中的其他正文不会删除。'
+                  : '将删除书籍文件、封面及阅读数据，但独立笔记里的原文引用快照会保留。引用之后无法再跳回已删除的书籍。'}
               </p>
               <p className="text-destructive mt-3 text-sm font-medium">
                 此操作完成后无法撤销。

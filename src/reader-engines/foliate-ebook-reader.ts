@@ -32,6 +32,8 @@ import {
   type ViewModuleLoader,
 } from './foliate-reader-support';
 import { PageTurnGestures } from './page-turn-gestures';
+import { createFoliateFile, foliateSectionIndex } from './foliate-book-loader';
+import type { FoliateBookFormat } from '../features/library/domain/book';
 
 export class FoliateEbookReader implements EbookReader {
   private readonly listeners = new Set<RelocationListener>();
@@ -58,12 +60,16 @@ export class FoliateEbookReader implements EbookReader {
   private view: FoliateViewElement | null = null;
   private lifecycleVersion = 0;
 
+  private readonly format: FoliateBookFormat;
+
   constructor(
     loadViewModule: ViewModuleLoader = loadFoliateView,
     viewFactory: ViewFactory = createFoliateView,
+    format: FoliateBookFormat = 'epub',
   ) {
     this.loadViewModule = loadViewModule;
     this.viewFactory = viewFactory;
+    this.format = format;
   }
 
   mount(host: HTMLElement): void {
@@ -101,11 +107,7 @@ export class FoliateEbookReader implements EbookReader {
       view.addEventListener('show-annotation', this.handleShowAnnotation);
       host.replaceChildren(view);
 
-      await view.open(
-        new File([source], 'book.epub', {
-          type: 'application/epub+zip',
-        }),
-      );
+      await view.open(createFoliateFile(source, this.format));
       if (lifecycleVersion !== this.lifecycleVersion) {
         throw new AppError('READER_OPEN_FAILED');
       }
@@ -144,9 +146,10 @@ export class FoliateEbookReader implements EbookReader {
       locator.progression === undefined
         ? null
         : { fraction: locator.progression };
-    const destination =
-      locator.cfi ?? locator.chapterHref ?? fractionDestination;
-    if (!destination) throw new AppError('READER_NAVIGATION_FAILED');
+    const target = locator.cfi ?? locator.chapterHref;
+    const sectionIndex = target ? foliateSectionIndex(target) : null;
+    const destination = sectionIndex ?? target ?? fractionDestination;
+    if (destination === null) throw new AppError('READER_NAVIGATION_FAILED');
 
     try {
       await view.goTo(destination);

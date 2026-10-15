@@ -14,8 +14,44 @@ export const epubMetadataSchema = z.object({
 export type EpubMetadata = z.infer<typeof epubMetadataSchema>;
 export const bookMetadataSchema = epubMetadataSchema;
 export type BookMetadata = z.infer<typeof bookMetadataSchema>;
-export const bookFormatSchema = z.enum(['epub', 'pdf']);
+export const bookFormatSchema = z.enum([
+  'epub',
+  'pdf',
+  'mobi',
+  'azw3',
+  'fb2',
+  'cbz',
+]);
 export type BookFormat = z.infer<typeof bookFormatSchema>;
+
+/** Formats rendered by Foliate; they all use CFI-based `epub` locators. */
+export type FoliateBookFormat = Exclude<BookFormat, 'pdf'>;
+
+export const supportedBookFormats = bookFormatSchema.options;
+
+export const bookFormatLabels: Record<BookFormat, string> = {
+  epub: 'EPUB',
+  pdf: 'PDF',
+  mobi: 'MOBI',
+  azw3: 'AZW3',
+  fb2: 'FB2',
+  cbz: 'CBZ',
+};
+
+export const bookFormatMediaTypes: Record<BookFormat, string> = {
+  epub: 'application/epub+zip',
+  pdf: 'application/pdf',
+  mobi: 'application/x-mobipocket-ebook',
+  azw3: 'application/vnd.amazon.ebook',
+  fb2: 'application/x-fictionbook+xml',
+  cbz: 'application/vnd.comicbook+zip',
+};
+
+/** Detects a supported format from a file name, or `null` when unsupported. */
+export function bookFormatFromFileName(fileName: string): BookFormat | null {
+  const extension = fileName.toLowerCase().split('.').at(-1);
+  return supportedBookFormats.find((format) => format === extension) ?? null;
+}
 
 const controlledBookPath = z
   .string()

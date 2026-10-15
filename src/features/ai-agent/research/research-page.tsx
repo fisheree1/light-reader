@@ -122,7 +122,7 @@ export function ResearchPage({
         </div>
         {books.length === 0 ? (
           <p className="text-muted-foreground text-sm">
-            请先导入至少两本可提取正文的 EPUB 或 PDF。
+            请先导入至少两本可提取正文的电子书。
           </p>
         ) : (
           <div className="grid gap-2 sm:grid-cols-2">

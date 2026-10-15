@@ -76,6 +76,12 @@ pub fn run() {
             sql: include_str!("../migrations/0011_ai_book_chunks.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 12,
+            description: "allow MOBI, AZW3, FB2, and CBZ books",
+            sql: include_str!("../migrations/0012_foliate_formats.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();

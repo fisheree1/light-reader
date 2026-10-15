@@ -16,6 +16,7 @@ import { EmptyState } from '../../components/common/empty-state';
 import { Button } from '../../components/ui/button';
 import { IconButton } from '../../components/ui/icon-button';
 import { cn } from '../../lib/cn';
+import { bookFormatLabels } from '../library/domain/book';
 import { AnnotationPopover } from '../annotations/components/annotation-popover';
 import { AnnotationSidebar } from '../annotations/components/annotation-sidebar';
 import { AnnotationExportService } from '../annotations/services/annotation-export-service';
@@ -278,7 +279,7 @@ export function ReaderPage({
 
         <main className="relative min-w-0 flex-1">
           <section
-            aria-label={book?.format === 'pdf' ? 'PDF 正文' : 'EPUB 正文'}
+            aria-label={`${bookFormatLabels[book?.format ?? 'epub']} 正文`}
             className="reader-render-host bg-surface h-full"
             ref={hostRef}
           />

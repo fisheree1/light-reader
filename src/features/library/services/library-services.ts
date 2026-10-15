@@ -58,7 +58,8 @@ function createTauriLibraryServices(): LibraryServices {
     releaseCoverUrl: (url) => {
       URL.revokeObjectURL(url);
     },
-    storageDescription: '图书保存在桌面应用的受控目录中，支持 EPUB 和 PDF。',
+    storageDescription:
+      '图书保存在桌面应用的受控目录中，支持 EPUB、PDF、MOBI、AZW3、FB2 和 CBZ。',
   };
 }
 

@@ -34,7 +34,7 @@ export function LibraryPage({ services = libraryServices }: LibraryPageProps) {
           <h1 className="text-2xl font-semibold">书架</h1>
           <p className="text-muted-foreground mt-1 text-sm">
             {services.storageDescription ??
-              '本地图书保存在应用受控目录中，支持 EPUB 和 PDF。'}
+              '本地图书保存在应用受控目录中，支持 EPUB、PDF、MOBI、AZW3、FB2 和 CBZ。'}
           </p>
         </div>
         {library.isLoading || showLibraryControls ? (
@@ -156,7 +156,7 @@ export function LibraryPage({ services = libraryServices }: LibraryPageProps) {
               }}
             />
           }
-          description="导入 EPUB 或 PDF，阅读数据只保存在当前设备。"
+          description="导入 EPUB、PDF、MOBI、AZW3、FB2 或 CBZ，阅读数据只保存在当前设备。"
           icon={<BookOpen size={28} />}
           title="导入第一本书"
         />

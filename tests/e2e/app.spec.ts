@@ -6,6 +6,7 @@ import {
   readWebRecords,
   storeTestEpubForPaths,
 } from './book-fixture.js';
+import { createFb2Fixture } from '../../src/test/fixtures/foliate-fixtures.js';
 
 interface BrowserDiagnostics {
   pageErrors: string[];
@@ -292,6 +293,33 @@ test('imports and persists a real EPUB through browser storage', async ({
 
   await importTestEpub(page);
   await expect(page.getByRole('status')).toContainText('重复 1 本');
+});
+
+test('imports, reads, and searches an FB2 book', async ({ page }) => {
+  await page.goto('/library');
+  const chooserPromise = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: '导入电子书' }).click();
+  const chooser = await chooserPromise;
+  await chooser.setFiles({
+    name: 'fixture.fb2',
+    mimeType: 'application/x-fictionbook+xml',
+    buffer: Buffer.from(createFb2Fixture()),
+  });
+
+  await expect(page.getByRole('status')).toContainText('新增 1 本');
+  await page.getByRole('button', { name: '打开《FB2 测试书》' }).click();
+  await expect(page.getByRole('region', { name: 'FB2 正文' })).toBeVisible();
+  await findContentFrame(page, '第一章的正文内容。');
+
+  await page.goto('/search');
+  await page
+    .getByRole('searchbox', { name: '搜索本地内容' })
+    .fill('包含关键词');
+  await page.getByRole('button', { name: '搜索', exact: true }).click();
+  await expect(page.getByText(/第二章包含关键词/).first()).toBeVisible();
+  await page.getByRole('button', { name: /第二章包含关键词/ }).click();
+  await expect(page).toHaveURL(/\/reader\//);
+  await findContentFrame(page, '第二章包含关键词。');
 });
 
 test('persists global reading settings and a per-book override', async ({

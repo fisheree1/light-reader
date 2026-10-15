@@ -9,6 +9,7 @@ import {
   type LocalSearchResults,
 } from '../domain/search';
 import type { EpubContentParser } from './epub-content-parser';
+import { FoliateBookContentParser } from './foliate-content-parser';
 
 export interface SearchIndexRebuildResult {
   failedBooks: number;
@@ -23,6 +24,7 @@ export class LocalSearchService {
   private readonly source: ReaderBookSource;
   private readonly contentParser: EpubContentParser;
   private readonly pdfParser: Pick<PdfBookTextParser, 'parse'>;
+  private readonly foliateParser: Pick<FoliateBookContentParser, 'parse'>;
 
   constructor(
     repository: SearchRepository,
@@ -30,7 +32,12 @@ export class LocalSearchService {
     source: ReaderBookSource,
     contentParser: EpubContentParser,
     pdfParser: Pick<PdfBookTextParser, 'parse'> = new PdfBookTextParser(),
+    foliateParser: Pick<
+      FoliateBookContentParser,
+      'parse'
+    > = new FoliateBookContentParser(),
   ) {
+    this.foliateParser = foliateParser;
     this.repository = repository;
     this.bookRepository = bookRepository;
     this.source = source;
@@ -113,7 +120,9 @@ export class LocalSearchService {
               chapterTitle: `PDF 第 ${String(page.pageIndex + 1)} 页`,
               text: page.text,
             }))
-          : await this.contentParser.parse(new Uint8Array(source));
+          : book.format === 'epub'
+            ? await this.contentParser.parse(new Uint8Array(source))
+            : await this.foliateParser.parse(source, book.format);
       await this.repository.replaceBookContent(book.id, chapters);
       this.failedBookIds.delete(book.id);
       return true;

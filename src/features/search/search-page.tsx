@@ -121,7 +121,7 @@ export function SearchPage({ services = searchServices }: SearchPageProps) {
       <header className="mb-6">
         <h1 className="text-2xl font-semibold">搜索</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          在本机搜索书籍、笔记、高亮，以及 EPUB 和 PDF 正文。
+          在本机搜索书籍、笔记、高亮，以及电子书正文。
         </p>
       </header>
 
