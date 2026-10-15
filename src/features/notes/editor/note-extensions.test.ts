@@ -2,21 +2,38 @@ import { Editor } from '@tiptap/core';
 
 import { createNoteExtensions } from './note-extensions';
 
+function typeText(editor: Editor, text: string) {
+  for (const character of text) {
+    const { from, to } = editor.state.selection;
+    const handled = editor.view.someProp('handleTextInput', (handler) =>
+      handler(editor.view, from, to, character, () =>
+        editor.state.tr.insertText(character, from, to),
+      ),
+    );
+    if (!handled) {
+      editor.view.dispatch(editor.state.tr.insertText(character, from, to));
+    }
+  }
+}
+
 describe('note extensions', () => {
-  it('parses and serializes Markdown through the official extension', () => {
+  it('keeps Markdown shortcuts through StarterKit input rules', () => {
     const editor = new Editor({
       extensions: createNoteExtensions({
         onNavigate: vi.fn(),
         resolveBookTitle: () => '测试书',
       }),
-      content: '## Markdown 标题\n\n正文 **加粗**',
-      contentType: 'markdown',
     });
 
-    const json = editor.getJSON();
-    expect(json.type).toBe('doc');
-    expect(json.content.at(0)?.type).toBe('heading');
-    expect(editor.getMarkdown()).toContain('## Markdown 标题');
+    typeText(editor, '## 标题');
+    expect(editor.getJSON().content.at(0)).toMatchObject({
+      type: 'heading',
+      attrs: { level: 2 },
+    });
+
+    editor.commands.setContent('<p></p>');
+    typeText(editor, '正文 **加粗** ');
+    expect(JSON.stringify(editor.getJSON())).toContain('"type":"bold"');
     editor.destroy();
   });
 });

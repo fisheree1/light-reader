@@ -21,7 +21,7 @@ ReaderPage / useReader
      -> TauriBookFileStorage (AppData)
   -> BookRepository
   -> ReaderSettingsRepository
-     -> SQLite (desktop) / localStorage test adapter (Web)
+     -> SQLite (desktop) / IndexedDB adapter (Web)
   -> AnnotationService
      -> AnnotationRepository
      -> EbookReader highlight operations

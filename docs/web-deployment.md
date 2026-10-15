@@ -12,9 +12,31 @@ The production image builds the Vite application and serves it with Caddy:
 ```text
 Browser
   ├── HTTPS -> Caddy container -> static LightReader assets
-  ├── IndexedDB -> EPUB/PDF binaries
-  └── localStorage -> metadata, notes, settings and derived indexes
+  ├── IndexedDB light-reader-web-files -> EPUB/PDF binaries and covers
+  ├── IndexedDB light-reader-web-data  -> books, notes, highlights, bookmarks,
+  │                                       settings, reading history, indexes
+  └── localStorage -> unsaved note drafts and UI preferences only
 ```
+
+### Browser data storage
+
+All Web Repositories share one IndexedDB database, `light-reader-web-data`
+(version 1). Its object stores mirror the SQLite tables: `books` (unique
+`fileHash` index), `libraryMetadata`, `notes`, `annotations`, `bookmarks`,
+`readingSessions`, `readerOverrides`, `readingStates`, `settings`, plus the
+derived `bookContent` and `bookChunks` indexes. Reads and writes are
+asynchronous, so large indexes no longer block the page or hit the roughly
+5 MB localStorage limit. Multi-record changes run in one IndexedDB transaction;
+deleting a book removes every dependent record atomically, matching SQLite's
+`ON DELETE CASCADE`.
+
+Releases before this change kept that data in localStorage. When the database
+is first created, valid legacy records are copied into it and the migrated
+localStorage keys are removed. A key that contains any invalid record is left
+untouched so no data is silently dropped. Legacy full-text and AI indexes are
+not copied; they are rebuilt from the stored books on demand. Schema changes
+must bump the database version and add an `upgradeneeded` step rather than
+editing the version 1 layout.
 
 One CPU core and 256 MB are reserved as a container ceiling. A 2-core/4-GB,
 30-GB SSD server is sufficient because book parsing, PDF rendering, search and
@@ -173,5 +195,6 @@ Every published image also receives a `sha-<commit>` tag. For rollback, set
 - A direct refresh on `/library`, `/reader/...`, `/search`, or `/research`
   returns the application rather than a 404.
 - Security headers are present and `/assets/*` responses use immutable caching.
-- Import one EPUB and one text-based PDF, refresh the page, and confirm both can
-  still open from IndexedDB.
+- Import one EPUB and one text-based PDF, add a highlight and a note, refresh
+  the page, and confirm the books open and the highlight and note persist from
+  IndexedDB.

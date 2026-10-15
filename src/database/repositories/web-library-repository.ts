@@ -1,5 +1,3 @@
-import { z } from 'zod';
-
 import type { ReaderSettingsRepository } from './reader-settings-repository';
 import type { BookRepository } from './book-repository';
 import type { NoteRepository } from './note-repository';
@@ -14,46 +12,48 @@ import {
   type NoteReferenceUpdate,
 } from '../../features/library/domain/library';
 import { AppError } from '../../lib/app-error';
-
-const storageKey = 'light-reader-web-library-metadata';
-const metadataSchema = z.record(
-  z.string(),
-  z.object({
-    favorite: z.boolean(),
-    tags: z.array(z.string().trim().min(1).max(40)).max(20),
-  }),
-);
-type StoredMetadata = z.infer<typeof metadataSchema>;
+import { getWebDatabase, type WebDatabase } from '../web/web-database';
+import {
+  webLibraryMetadataSchema,
+  type WebLibraryMetadata,
+} from '../web/web-records';
+import { parseRecords } from '../web/web-repository-support';
 
 export class WebLibraryRepository implements LibraryRepository {
   private readonly bookRepository: BookRepository;
   private readonly noteRepository: NoteRepository;
   private readonly settingsRepository: ReaderSettingsRepository;
+  private readonly database: WebDatabase;
 
   constructor(
     bookRepository: BookRepository,
     noteRepository: NoteRepository,
     settingsRepository: ReaderSettingsRepository,
+    database: WebDatabase = getWebDatabase(),
   ) {
     this.bookRepository = bookRepository;
     this.noteRepository = noteRepository;
     this.settingsRepository = settingsRepository;
+    this.database = database;
   }
 
   async list(value: BookListOptions): Promise<LibraryBook[]> {
     const options = bookListOptionsSchema.parse(value);
     try {
       const books = await this.bookRepository.list();
-      const metadata = this.readMetadata();
+      const metadata = new Map(
+        (await this.readMetadata()).map((item) => [item.bookId, item]),
+      );
       const results = await Promise.all(
         books.map(async (book) => {
-          const stored = metadata[book.id] ?? { favorite: false, tags: [] };
+          const stored = metadata.get(book.id);
           const state = await this.settingsRepository
             .getReadingState(book.id)
             .catch(() => null);
           return libraryBookSchema.parse({
             ...book,
-            ...stored,
+            favorite: stored?.favorite ?? false,
+            tags: stored?.tags ?? [],
             lastReadAt: state?.updatedAt ?? null,
           });
         }),
@@ -75,20 +75,13 @@ export class WebLibraryRepository implements LibraryRepository {
   }
 
   async setFavorite(bookId: string, favorite: boolean): Promise<LibraryBook> {
-    await this.requireExistingBook(bookId);
-    const metadata = this.readMetadata();
-    const current = metadata[bookId] ?? { favorite: false, tags: [] };
-    metadata[bookId] = { ...current, favorite };
-    this.writeMetadata(metadata);
+    await this.updateMetadata(bookId, (current) => ({ ...current, favorite }));
     return this.requireBook(bookId);
   }
 
   async replaceTags(bookId: string, values: string[]): Promise<LibraryBook> {
-    await this.requireExistingBook(bookId);
-    const metadata = this.readMetadata();
-    const current = metadata[bookId] ?? { favorite: false, tags: [] };
-    metadata[bookId] = { ...current, tags: normalizeBookTags(values) };
-    this.writeMetadata(metadata);
+    const tags = normalizeBookTags(values);
+    await this.updateMetadata(bookId, (current) => ({ ...current, tags }));
     return this.requireBook(bookId);
   }
 
@@ -97,14 +90,12 @@ export class WebLibraryRepository implements LibraryRepository {
     values: NoteReferenceUpdate[],
   ): Promise<void> {
     const updates = noteReferenceUpdateSchema.array().parse(values);
-    const book = await this.requireExistingBook(bookId);
-    const originalMetadata = this.readMetadata();
+    await this.requireExistingBook(bookId);
     const originals = (
       await Promise.all(
         updates.map((update) => this.noteRepository.findById(update.id)),
       )
     ).filter((note) => note !== null);
-    let bookDeleted = false;
     try {
       for (const update of updates) {
         await this.noteRepository.update(update.id, {
@@ -112,22 +103,9 @@ export class WebLibraryRepository implements LibraryRepository {
           document: update.document,
         });
       }
+      // Removes tags, favorites, and other dependent records in one transaction.
       await this.bookRepository.delete(bookId);
-      bookDeleted = true;
-      this.writeMetadata(
-        Object.fromEntries(
-          Object.entries(originalMetadata).filter(([id]) => id !== bookId),
-        ),
-      );
     } catch (error) {
-      if (bookDeleted) {
-        await this.bookRepository.create(book).catch(() => undefined);
-      }
-      try {
-        this.writeMetadata(originalMetadata);
-      } catch {
-        // The original failure remains the actionable error.
-      }
       await Promise.allSettled(
         originals.map((note) =>
           this.noteRepository.update(note.id, {
@@ -173,16 +151,33 @@ export class WebLibraryRepository implements LibraryRepository {
     return right.lastReadAt - left.lastReadAt;
   }
 
-  private readMetadata(): StoredMetadata {
-    const value = localStorage.getItem(storageKey);
-    if (!value) return {};
-    const parsed: unknown = JSON.parse(value);
-    return metadataSchema.parse(parsed);
+  private async readMetadata(): Promise<WebLibraryMetadata[]> {
+    return parseRecords(
+      webLibraryMetadataSchema,
+      await this.database.getAll('libraryMetadata'),
+    );
   }
 
-  private writeMetadata(value: StoredMetadata): void {
-    localStorage.setItem(storageKey, JSON.stringify(value));
+  private async updateMetadata(
+    bookId: string,
+    transform: (current: WebLibraryMetadata) => WebLibraryMetadata,
+  ): Promise<void> {
+    await this.requireExistingBook(bookId);
+    try {
+      const stored = await this.database.get('libraryMetadata', bookId);
+      const current =
+        stored === undefined
+          ? { bookId, favorite: false, tags: [] }
+          : webLibraryMetadataSchema.parse(stored);
+      await this.database.write([
+        {
+          type: 'put',
+          store: 'libraryMetadata',
+          value: webLibraryMetadataSchema.parse(transform(current)),
+        },
+      ]);
+    } catch (error) {
+      throw new AppError('BOOK_UPDATE_FAILED', { cause: error });
+    }
   }
 }
-
-export { storageKey as WEB_LIBRARY_METADATA_KEY };

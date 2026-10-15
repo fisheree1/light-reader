@@ -35,14 +35,54 @@ export async function importTestEpub(page: Page): Promise<void> {
   });
 }
 
+/**
+ * Reads every record of one store in the app's browser database. It never
+ * creates the database, so the app still runs its own schema upgrade.
+ */
+export async function readWebRecords<T = unknown>(
+  page: Page,
+  storeName: string,
+): Promise<T[]> {
+  return page.evaluate(async (store) => {
+    const exists = (await indexedDB.databases()).some(
+      (info) => info.name === 'light-reader-web-data',
+    );
+    if (!exists) return [];
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('light-reader-web-data');
+      request.addEventListener('success', () => {
+        resolve(request.result);
+      });
+      request.addEventListener('error', () => {
+        reject(request.error ?? new Error('IndexedDB open failed'));
+      });
+    });
+    try {
+      if (!database.objectStoreNames.contains(store)) return [];
+      const request = database
+        .transaction(store, 'readonly')
+        .objectStore(store)
+        .getAll();
+      return await new Promise<unknown[]>((resolve, reject) => {
+        request.addEventListener('success', () => {
+          resolve(request.result);
+        });
+        request.addEventListener('error', () => {
+          reject(request.error ?? new Error('IndexedDB read failed'));
+        });
+      });
+    } finally {
+      database.close();
+    }
+  }, storeName) as Promise<T[]>;
+}
+
 export async function hasStoredTestEpub(page: Page): Promise<boolean> {
-  return page.evaluate(async () => {
-    const rawBooks = localStorage.getItem('light-reader-web-books');
-    if (!rawBooks) return false;
-    const books = JSON.parse(rawBooks) as {
-      filePath: string;
-      title: string;
-    }[];
+  const books = await readWebRecords<{ filePath: string; title: string }>(
+    page,
+    'books',
+  );
+  return page.evaluate(async (books) => {
     const book = books.find((item) => item.title === 'Web 测试 EPUB');
     if (!book) return false;
 
@@ -83,7 +123,7 @@ export async function hasStoredTestEpub(page: Page): Promise<boolean> {
         { once: true },
       );
     });
-  });
+  }, books);
 }
 
 export async function storeTestEpubForPaths(

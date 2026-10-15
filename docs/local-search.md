@@ -64,8 +64,8 @@ set of at most eight books and return at most eight chunks under a total context
 budget. Adjacent chunks may be merged,
 but their source ids remain attached for validation and traceability.
 
-Deleting a SQLite book triggers removal of its AI chunks. The browser test
-adapter performs the same cleanup in localStorage. Neither index copies the
+Deleting a SQLite book triggers removal of its AI chunks. The browser adapter
+removes them in the same IndexedDB transaction that deletes the book. Neither index copies the
 original EPUB/PDF binary, calls a network service, or gives the model access to
 SQL and managed file paths. Cross-book research may ask the same local Ollama
 model for up to six bounded query expansions before retrieval. Those terms are

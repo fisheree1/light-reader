@@ -6,38 +6,43 @@ import {
   type NoteSaveInput,
 } from '../../features/notes/domain/note';
 import { AppError } from '../../lib/app-error';
+import { getWebDatabase, type WebDatabase } from '../web/web-database';
+import { parseRecords, withAppError } from '../web/web-repository-support';
 import type { NoteRepository } from './note-repository';
 
-const storageKey = 'light-reader-web-notes';
-
 export class WebNoteRepository implements NoteRepository {
+  private readonly database: WebDatabase;
+
+  constructor(database: WebDatabase = getWebDatabase()) {
+    this.database = database;
+  }
+
   create(value: Note): Promise<Note> {
-    return this.writeResult(() => {
+    return withAppError('NOTE_WRITE_FAILED', async () => {
       const note = noteSchema.parse(value);
-      const notes = this.read();
-      if (notes.some((item) => item.id === note.id)) {
-        throw new Error('Duplicate note id');
-      }
       const created = {
         ...note,
         documentRecovered: false,
         plainText: extractPlainText(note.document),
       };
-      this.write([created, ...notes]);
+      await this.database.write([
+        { type: 'add', store: 'notes', value: created },
+      ]);
       return created;
     });
   }
 
   findById(id: string): Promise<Note | null> {
-    return this.readResult(
-      () => this.read().find((note) => note.id === id) ?? null,
-    );
+    return withAppError('NOTE_READ_FAILED', async () => {
+      const value = await this.database.get('notes', id);
+      return value === undefined ? null : noteSchema.parse(value);
+    });
   }
 
   list(titleQuery = ''): Promise<Note[]> {
-    return this.readResult(() => {
+    return withAppError('NOTE_READ_FAILED', async () => {
       const query = titleQuery.trim().toLocaleLowerCase();
-      return this.read()
+      return parseRecords(noteSchema, await this.database.getAll('notes'))
         .filter((note) => note.title.toLocaleLowerCase().includes(query))
         .sort(
           (left, right) =>
@@ -47,10 +52,9 @@ export class WebNoteRepository implements NoteRepository {
   }
 
   update(id: string, value: NoteSaveInput): Promise<Note> {
-    return this.writeResult(() => {
+    return withAppError('NOTE_WRITE_FAILED', async () => {
       const input = noteSaveInputSchema.parse(value);
-      const notes = this.read();
-      const current = notes.find((note) => note.id === id);
+      const current = await this.findById(id);
       if (!current) throw new AppError('NOTE_NOT_FOUND');
       const updated = noteSchema.parse({
         ...current,
@@ -59,45 +63,16 @@ export class WebNoteRepository implements NoteRepository {
         documentRecovered: false,
         updatedAt: Date.now(),
       });
-      this.write(notes.map((note) => (note.id === id ? updated : note)));
+      await this.database.write([
+        { type: 'put', store: 'notes', value: updated },
+      ]);
       return updated;
     });
   }
 
   delete(id: string): Promise<void> {
-    return this.writeResult(() => {
-      this.write(this.read().filter((note) => note.id !== id));
-    });
-  }
-
-  private read(): Note[] {
-    const value = localStorage.getItem(storageKey);
-    if (!value) return [];
-    const parsed: unknown = JSON.parse(value);
-    return noteSchema.array().parse(parsed);
-  }
-
-  private write(notes: Note[]): void {
-    localStorage.setItem(storageKey, JSON.stringify(notes));
-  }
-
-  private readResult<T>(action: () => T): Promise<T> {
-    return Promise.resolve()
-      .then(action)
-      .catch((error: unknown) => {
-        throw error instanceof AppError
-          ? error
-          : new AppError('NOTE_READ_FAILED', { cause: error });
-      });
-  }
-
-  private writeResult<T>(action: () => T): Promise<T> {
-    return Promise.resolve()
-      .then(action)
-      .catch((error: unknown) => {
-        throw error instanceof AppError
-          ? error
-          : new AppError('NOTE_WRITE_FAILED', { cause: error });
-      });
+    return withAppError('NOTE_WRITE_FAILED', () =>
+      this.database.write([{ type: 'delete', store: 'notes', key: id }]),
+    );
   }
 }

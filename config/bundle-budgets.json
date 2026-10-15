@@ -14,8 +14,8 @@
     {
       "name": "notes page",
       "pattern": "^notes-page-[^.]+\\.js$",
-      "maxBytes": 485000,
-      "maxGzipBytes": 150000
+      "maxBytes": 425000,
+      "maxGzipBytes": 135000
     },
     {
       "name": "shared data services",

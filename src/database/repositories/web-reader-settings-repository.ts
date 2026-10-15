@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 import {
   defaultReaderSettings,
   readerDisplaySettingsSchema,
@@ -7,33 +9,33 @@ import {
   type ReaderSettingsOverride,
   type ReadingState,
 } from '../../features/reader/domain/reader-settings';
-import { AppError } from '../../lib/app-error';
 import {
   bookLocatorSchema,
   type BookLocator,
 } from '../../reader-engines/types';
+import { getWebDatabase, type WebDatabase } from '../web/web-database';
+import { webSettingKeys } from '../web/web-records';
+import { withAppError } from '../web/web-repository-support';
 import type { ReaderSettingsRepository } from './reader-settings-repository';
 
-interface StoredReaderSettings {
-  bookOverrides: Record<string, unknown>;
-  global: unknown;
-  readingStates: Record<string, unknown>;
-}
-
-const storageKey = 'light-reader-reader-settings';
-
-function emptyStorage(): StoredReaderSettings {
-  return {
-    global: defaultReaderSettings,
-    bookOverrides: {},
-    readingStates: {},
-  };
-}
+const storedOverrideSchema = z.object({
+  bookId: z.string(),
+  settings: readerSettingsOverrideSchema,
+});
 
 export class WebReaderSettingsRepository implements ReaderSettingsRepository {
+  private readonly database: WebDatabase;
+
+  constructor(database: WebDatabase = getWebDatabase()) {
+    this.database = database;
+  }
+
   getGlobal(): Promise<ReaderDisplaySettings> {
-    return this.run('READER_SETTINGS_READ_FAILED', () => {
-      const stored = this.read().global;
+    return withAppError('READER_SETTINGS_READ_FAILED', async () => {
+      const stored = await this.database.get(
+        'settings',
+        webSettingKeys.readerGlobal,
+      );
       return readerDisplaySettingsSchema.parse({
         ...defaultReaderSettings,
         ...(typeof stored === 'object' && stored !== null ? stored : {}),
@@ -42,21 +44,26 @@ export class WebReaderSettingsRepository implements ReaderSettingsRepository {
   }
 
   saveGlobal(value: ReaderDisplaySettings): Promise<ReaderDisplaySettings> {
-    return this.run('READER_SETTINGS_WRITE_FAILED', () => {
+    return withAppError('READER_SETTINGS_WRITE_FAILED', async () => {
       const settings = readerDisplaySettingsSchema.parse(value);
-      const stored = this.read();
-      stored.global = settings;
-      this.write(stored);
+      await this.database.write([
+        {
+          type: 'put',
+          store: 'settings',
+          key: webSettingKeys.readerGlobal,
+          value: settings,
+        },
+      ]);
       return settings;
     });
   }
 
   getBookOverride(bookId: string): Promise<ReaderSettingsOverride | null> {
-    return this.run('READER_SETTINGS_READ_FAILED', () => {
-      const value = this.read().bookOverrides[bookId];
-      return value === undefined
+    return withAppError('READER_SETTINGS_READ_FAILED', async () => {
+      const stored = await this.database.get('readerOverrides', bookId);
+      return stored === undefined
         ? null
-        : readerSettingsOverrideSchema.parse(value);
+        : storedOverrideSchema.parse(stored).settings;
     });
   }
 
@@ -64,92 +71,41 @@ export class WebReaderSettingsRepository implements ReaderSettingsRepository {
     bookId: string,
     value: ReaderSettingsOverride,
   ): Promise<ReaderSettingsOverride> {
-    return this.run('READER_SETTINGS_WRITE_FAILED', () => {
+    return withAppError('READER_SETTINGS_WRITE_FAILED', async () => {
       const settings = readerSettingsOverrideSchema.parse(value);
-      const stored = this.read();
-      stored.bookOverrides[bookId] = settings;
-      this.write(stored);
+      await this.database.write([
+        { type: 'put', store: 'readerOverrides', value: { bookId, settings } },
+      ]);
       return settings;
     });
   }
 
   deleteBookOverride(bookId: string): Promise<void> {
-    return this.run('READER_SETTINGS_WRITE_FAILED', () => {
-      const stored = this.read();
-      stored.bookOverrides = Object.fromEntries(
-        Object.entries(stored.bookOverrides).filter(([id]) => id !== bookId),
-      );
-      this.write(stored);
-    });
+    return withAppError('READER_SETTINGS_WRITE_FAILED', () =>
+      this.database.write([
+        { type: 'delete', store: 'readerOverrides', key: bookId },
+      ]),
+    );
   }
 
   getReadingState(bookId: string): Promise<ReadingState | null> {
-    return this.run('READER_SETTINGS_READ_FAILED', () => {
-      const value = this.read().readingStates[bookId];
-      return value === undefined ? null : readingStateSchema.parse(value);
+    return withAppError('READER_SETTINGS_READ_FAILED', async () => {
+      const stored = await this.database.get('readingStates', bookId);
+      return stored === undefined ? null : readingStateSchema.parse(stored);
     });
   }
 
   saveReadingState(bookId: string, value: BookLocator): Promise<ReadingState> {
-    return this.run('READING_STATE_WRITE_FAILED', () => {
+    return withAppError('READING_STATE_WRITE_FAILED', async () => {
       const state = readingStateSchema.parse({
         bookId,
         locator: bookLocatorSchema.parse(value),
         updatedAt: Date.now(),
       });
-      const stored = this.read();
-      stored.readingStates[bookId] = state;
-      this.write(stored);
+      await this.database.write([
+        { type: 'put', store: 'readingStates', value: state },
+      ]);
       return state;
     });
-  }
-
-  private run<T>(
-    code:
-      | 'READER_SETTINGS_READ_FAILED'
-      | 'READER_SETTINGS_WRITE_FAILED'
-      | 'READING_STATE_WRITE_FAILED',
-    action: () => T,
-  ): Promise<T> {
-    return Promise.resolve()
-      .then(action)
-      .catch((error: unknown) => {
-        throw error instanceof AppError
-          ? error
-          : new AppError(code, { cause: error });
-      });
-  }
-
-  private read(): StoredReaderSettings {
-    try {
-      const value = localStorage.getItem(storageKey);
-      if (!value) return emptyStorage();
-      const parsed: unknown = JSON.parse(value);
-      if (typeof parsed !== 'object' || parsed === null) return emptyStorage();
-      const record = parsed as Record<string, unknown>;
-      return {
-        global: record.global ?? defaultReaderSettings,
-        bookOverrides:
-          typeof record.bookOverrides === 'object' &&
-          record.bookOverrides !== null
-            ? (record.bookOverrides as Record<string, unknown>)
-            : {},
-        readingStates:
-          typeof record.readingStates === 'object' &&
-          record.readingStates !== null
-            ? (record.readingStates as Record<string, unknown>)
-            : {},
-      };
-    } catch (error) {
-      throw new AppError('READER_SETTINGS_READ_FAILED', { cause: error });
-    }
-  }
-
-  private write(value: StoredReaderSettings): void {
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(value));
-    } catch (error) {
-      throw new AppError('READER_SETTINGS_WRITE_FAILED', { cause: error });
-    }
   }
 }

@@ -29,6 +29,11 @@ import {
   type PdfJsRuntimeLoader,
   type RenderedPage,
 } from './pdf-reader-support';
+import {
+  findPdfPageMatches,
+  PdfPageTextCache,
+  pdfPageProgression,
+} from './pdf-text-search';
 
 /**
  * PDF.js adapter. PDF.js workers, pages, canvases and text-layer DOM never
@@ -47,7 +52,9 @@ export class PdfEbookReader implements EbookReader {
     { start: number; end: number }[]
   >();
   private readonly selectionListeners = new Set<SelectionListener>();
-  private readonly textCache = new Map<number, string>();
+  private readonly textCache = new PdfPageTextCache(
+    pdfRenderLimits.textCachePages,
+  );
   private currentLocator: BookLocator = {
     version: 1,
     format: 'pdf',
@@ -186,7 +193,6 @@ export class PdfEbookReader implements EbookReader {
     this.clearSearch();
     if (!normalized) return [];
     const document = this.requireDocument();
-    const needle = normalized.toLocaleLowerCase();
     const results: ReaderSearchResult[] = [];
     try {
       for (
@@ -195,38 +201,17 @@ export class PdfEbookReader implements EbookReader {
         results.length < pdfRenderLimits.searchResults;
         pageIndex += 1
       ) {
-        const text = await this.getPageText(pageIndex);
-        const haystack = text.toLocaleLowerCase();
-        let start = 0;
-        while (
-          start < haystack.length &&
-          results.length < pdfRenderLimits.searchResults
-        ) {
-          const matchStart = haystack.indexOf(needle, start);
-          if (matchStart < 0) break;
-          const end = matchStart + normalized.length;
-          const ranges = this.searchRanges.get(pageIndex) ?? [];
-          ranges.push({ start: matchStart, end });
-          this.searchRanges.set(pageIndex, ranges);
-          results.push({
-            excerpt: {
-              pre: text.slice(Math.max(0, matchStart - 48), matchStart),
-              match: text.slice(matchStart, end),
-              post: text.slice(end, end + 48),
-            },
-            locator: {
-              version: 1,
-              format: 'pdf',
-              pageIndex,
-              textRange: { start: matchStart, end },
-              progression:
-                document.numPages === 1
-                  ? 1
-                  : pageIndex / (document.numPages - 1),
-            },
-          });
-          start = end;
+        const matches = findPdfPageMatches(
+          await this.getPageText(pageIndex),
+          normalized,
+          pageIndex,
+          document.numPages,
+          pdfRenderLimits.searchResults - results.length,
+        );
+        if (matches.ranges.length) {
+          this.searchRanges.set(pageIndex, matches.ranges);
         }
+        results.push(...matches.results);
       }
       for (const pageIndex of this.renderedPages.keys()) {
         this.drawPageOverlays(pageIndex);
@@ -562,7 +547,7 @@ export class PdfEbookReader implements EbookReader {
         readPageTextContent(page),
       ]);
       if (lifecycleVersion !== this.lifecycleVersion) return;
-      this.cachePageText(pageIndex, normalizedPageText(textContent));
+      this.textCache.set(pageIndex, normalizedPageText(textContent));
       const textLayer = new runtime.TextLayer({
         container: textLayerElement,
         textContentSource: textContent,
@@ -608,28 +593,14 @@ export class PdfEbookReader implements EbookReader {
 
   private async getPageText(pageIndex: number): Promise<string> {
     const cached = this.textCache.get(pageIndex);
-    if (cached !== undefined) {
-      this.textCache.delete(pageIndex);
-      this.textCache.set(pageIndex, cached);
-      return cached;
-    }
+    if (cached !== undefined) return cached;
     const page = await this.requireDocument().getPage(pageIndex + 1);
     try {
       const text = normalizedPageText(await readPageTextContent(page));
-      this.cachePageText(pageIndex, text);
+      this.textCache.set(pageIndex, text);
       return text;
     } finally {
       if (!this.renderedPages.has(pageIndex)) page.cleanup();
-    }
-  }
-
-  private cachePageText(pageIndex: number, text: string): void {
-    this.textCache.delete(pageIndex);
-    this.textCache.set(pageIndex, text);
-    while (this.textCache.size > pdfRenderLimits.textCachePages) {
-      const oldest = this.textCache.keys().next().value;
-      if (oldest === undefined) break;
-      this.textCache.delete(oldest);
     }
   }
 
@@ -661,8 +632,7 @@ export class PdfEbookReader implements EbookReader {
       pageIndex,
       withinPageProgression,
       ...(textRange ? { textRange } : {}),
-      progression:
-        document.numPages === 1 ? 1 : pageIndex / (document.numPages - 1),
+      progression: pdfPageProgression(pageIndex, document.numPages),
     });
     this.currentLocator = locator;
     if (notify) {

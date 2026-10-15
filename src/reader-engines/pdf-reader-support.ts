@@ -163,7 +163,7 @@ export async function createPdfPageShells(
 
 export function readPdfSelection(
   host: HTMLElement,
-  textCache: ReadonlyMap<number, string>,
+  textCache: { get(pageIndex: number): string | undefined },
   pageCount: number,
 ): ReaderTextSelection | null {
   const selection = host.ownerDocument.getSelection();

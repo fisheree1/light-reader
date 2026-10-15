@@ -102,6 +102,7 @@ test('keeps local AI settings and reader sidebar accessible', async ({
   ]);
   await page.getByLabel('启用本地 AI 助手').check();
   await page.getByRole('button', { name: '保存 AI 设置' }).click();
+  await expect(page.getByText('AI 设置已保存')).toBeVisible();
 
   await page.goto('/library');
   await importTestEpub(page);

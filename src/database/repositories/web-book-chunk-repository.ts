@@ -7,56 +7,41 @@ import {
   type BookChunkMatch,
   scoreBookChunkTerms,
 } from '../../features/ai-agent/retrieval/book-retrieval';
-import { AppError, isAppError } from '../../lib/app-error';
+import { AppError } from '../../lib/app-error';
+import { getWebDatabase, type WebDatabase } from '../web/web-database';
+import { parseRecords, withAppError } from '../web/web-repository-support';
 import type { BookChunkRepository } from './book-chunk-repository';
 
-const storageKey = 'light-reader-web-ai-book-chunks';
 const idSchema = z.string().trim().min(1).max(128);
-
-function readChunks(): BookChunk[] {
-  const value = localStorage.getItem(storageKey);
-  if (!value) return [];
-  const parsed: unknown = JSON.parse(value);
-  return bookChunkSchema.array().parse(parsed);
-}
-
-function writeChunks(chunks: BookChunk[]): void {
-  localStorage.setItem(storageKey, JSON.stringify(chunks));
-}
-
-export function removeWebBookChunks(bookId: string): void {
-  const id = idSchema.parse(bookId);
-  writeChunks(readChunks().filter((chunk) => chunk.bookId !== id));
-}
+const termsSchema = z.array(z.string().trim().min(2).max(32)).min(1).max(12);
 
 export class WebBookChunkRepository implements BookChunkRepository {
+  private readonly database: WebDatabase;
+
+  constructor(database: WebDatabase = getWebDatabase()) {
+    this.database = database;
+  }
+
   findById(bookId: string, chunkId: string): Promise<BookChunk | null> {
-    try {
-      const id = idSchema.parse(bookId);
-      const target = idSchema.parse(chunkId);
-      return Promise.resolve(
-        readChunks().find(
-          (chunk) => chunk.bookId === id && chunk.id === target,
-        ) ?? null,
-      );
-    } catch (error) {
-      return Promise.reject(new AppError('SEARCH_FAILED', { cause: error }));
-    }
+    return withAppError('SEARCH_FAILED', async () => {
+      const stored = await this.database.get('bookChunks', [
+        idSchema.parse(bookId),
+        idSchema.parse(chunkId),
+      ]);
+      return stored === undefined ? null : bookChunkSchema.parse(stored);
+    });
   }
 
   getIndexedSourceHash(bookId: string): Promise<string | null> {
-    try {
-      const id = idSchema.parse(bookId);
-      return Promise.resolve(
-        readChunks().find((chunk) => chunk.bookId === id)?.sourceFileHash ??
-          null,
+    return withAppError('SEARCH_INDEX_FAILED', async () => {
+      const [first] = await this.database.getAllByBook(
+        'bookChunks',
+        idSchema.parse(bookId),
       );
-    } catch (error) {
-      if (isAppError(error)) return Promise.reject(error);
-      return Promise.reject(
-        new AppError('SEARCH_INDEX_FAILED', { cause: error }),
-      );
-    }
+      return first === undefined
+        ? null
+        : bookChunkSchema.parse(first).sourceFileHash;
+    });
   }
 
   replaceBookChunks(
@@ -64,22 +49,22 @@ export class WebBookChunkRepository implements BookChunkRepository {
     values: BookChunk[],
     signal?: AbortSignal,
   ): Promise<void> {
-    try {
+    return withAppError('SEARCH_INDEX_FAILED', async () => {
       const id = idSchema.parse(bookId);
       const chunks = bookChunkSchema.array().parse(values);
       if (signal?.aborted) throw new AppError('USER_CANCELLED');
-      if (chunks.some((chunk) => chunk.bookId !== id)) throw new Error();
-      writeChunks([
-        ...readChunks().filter((chunk) => chunk.bookId !== id),
-        ...chunks,
+      if (chunks.some((chunk) => chunk.bookId !== id)) {
+        throw new Error('Chunk belongs to a different book.');
+      }
+      await this.database.write([
+        { type: 'deleteByBook', store: 'bookChunks', bookId: id },
+        ...chunks.map((chunk) => ({
+          type: 'put' as const,
+          store: 'bookChunks' as const,
+          value: chunk,
+        })),
       ]);
-      return Promise.resolve();
-    } catch (error) {
-      if (isAppError(error)) return Promise.reject(error);
-      return Promise.reject(
-        new AppError('SEARCH_INDEX_FAILED', { cause: error }),
-      );
-    }
+    });
   }
 
   searchBookChunks(
@@ -87,16 +72,16 @@ export class WebBookChunkRepository implements BookChunkRepository {
     terms: string[],
     limit: number,
   ): Promise<BookChunkMatch[]> {
-    try {
+    return withAppError('SEARCH_FAILED', async () => {
       const id = idSchema.parse(bookId);
-      const normalizedTerms = z
-        .array(z.string().trim().min(2).max(32))
-        .min(1)
-        .max(12)
+      const normalizedTerms = termsSchema
         .parse(terms)
         .map((term) => term.toLocaleLowerCase());
-      const matches = readChunks()
-        .filter((chunk) => chunk.bookId === id)
+      const chunks = parseRecords(
+        bookChunkSchema,
+        await this.database.getAllByBook('bookChunks', id),
+      );
+      return chunks
         .flatMap((chunk) => {
           const score = scoreBookChunkTerms(chunk.text, normalizedTerms);
           return score > 0
@@ -109,11 +94,6 @@ export class WebBookChunkRepository implements BookChunkRepository {
             left.chunk.ordinal - right.chunk.ordinal,
         )
         .slice(0, Math.max(1, Math.min(8, limit)));
-      return Promise.resolve(matches);
-    } catch (error) {
-      return Promise.reject(new AppError('SEARCH_FAILED', { cause: error }));
-    }
+    });
   }
 }
-
-export { storageKey as WEB_AI_BOOK_CHUNKS_KEY };
