@@ -97,6 +97,9 @@ test('keeps local AI settings and reader sidebar accessible', async ({
   page,
 }) => {
   await page.goto('/settings');
+  await expect(
+    page.getByRole('heading', { name: '本地 AI 助手' }),
+  ).toBeVisible();
   await expectNoAccessibilityViolations(page, [
     '[aria-labelledby="ai-settings-title"]',
   ]);
