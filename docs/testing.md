@@ -45,6 +45,13 @@ route changes, which made the limits fail without any real startup growth. The v
 `config/bundle-budgets.json` and run in CI immediately after the production
 build. Raise a limit only with a recorded reason and a reviewed build diff.
 
+Recorded raises:
+
+- 2026-10-15, total gzip 970000 → 985000: the Simplified/Traditional character
+  table for online discovery (about 9 KiB gzip after storing mutual pairs once)
+  plus the EPUB validator. Both load only with `/discover`; the initial load
+  grows by about 0.8 KiB (new Chinese interface strings).
+
 `pnpm build:verify` (also part of `bundle:check` and CI) checks what size
 budgets cannot see: no emitted chunk may import a path on the build machine
 (such as `node_modules/`), and the lazy Foliate loaders for MOBI/AZW3

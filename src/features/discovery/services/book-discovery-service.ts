@@ -9,6 +9,15 @@ import type {
 } from '../domain/catalog';
 import type { ParsedChapter } from '../domain/catalog';
 import {
+  detectChineseScript,
+  normalizeTitleKey,
+  searchQueryVariants,
+} from '../domain/chinese-script';
+import {
+  combineTranslationMethods,
+  type TranslationMethod,
+} from '../domain/edition';
+import {
   DiscoveryError,
   isSourceRefusal,
   throwIfCancelled,
@@ -22,11 +31,69 @@ import {
   sourceUrl,
 } from './bilinovel-parser';
 import {
+  EpubValidationError,
+  shortChapters,
+  textLength,
+  type AcquisitionReport,
+  type ChapterReport,
+} from '../domain/acquisition-report';
+import { validateEpub } from './epub-validator';
+import {
   buildNovelEpub,
   detectImage,
   type EpubChapter,
   type EpubImage,
 } from './epub-builder-service';
+
+/** A work found at one source. */
+export interface SourcedNovel {
+  id: string;
+  source: NovelSource;
+  title: string;
+  url: string;
+}
+
+/**
+ * Works from different sources whose normalized titles match. They are
+ * candidates only: entries are never merged, and each keeps its own source,
+ * IDs and catalogue.
+ */
+export interface SeriesCandidate {
+  key: string;
+  title: string;
+  entries: SourcedNovel[];
+}
+
+export interface SourceSearchFailure {
+  error: unknown;
+  source: NovelSource;
+}
+
+export interface MultiSourceSearchResult {
+  failures: SourceSearchFailure[];
+  groups: SeriesCandidate[];
+}
+
+/** Groups works by normalized title, keeping first-seen order. */
+export function groupBySeries(
+  novels: readonly SourcedNovel[],
+): SeriesCandidate[] {
+  const groups = new Map<string, SeriesCandidate>();
+  for (const novel of novels) {
+    const key = normalizeTitleKey(novel.title) || `${novel.source}:${novel.id}`;
+    const group = groups.get(key);
+    if (!group) {
+      groups.set(key, { key, title: novel.title, entries: [novel] });
+    } else if (
+      !group.entries.some(
+        (entry) => entry.source === novel.source && entry.id === novel.id,
+      )
+    ) {
+      group.entries.push(novel);
+    }
+  }
+  return [...groups.values()];
+}
 
 /** How long to stop contacting a source after it reports rate limiting. */
 export const RATE_LIMIT_COOLDOWN_MS = 2 * 60 * 1000;
@@ -113,6 +180,36 @@ export class BookDiscoveryService {
     });
   }
 
+  /**
+   * Searches each source in turn. The other script's spelling is tried only
+   * when the typed spelling finds nothing, so a hit costs one request per
+   * source. A failing source does not hide the others' results.
+   */
+  async searchSources(
+    sources: readonly NovelSource[],
+    query: string,
+    signal: AbortSignal,
+  ): Promise<MultiSourceSearchResult> {
+    const variants = searchQueryVariants(query);
+    const found: SourcedNovel[] = [];
+    const failures: SourceSearchFailure[] = [];
+    for (const source of sources) {
+      throwIfCancelled(signal);
+      try {
+        let results = await this.search(source, variants[0], signal);
+        if (results.length === 0 && variants[1])
+          results = await this.search(source, variants[1], signal);
+        found.push(...results.map((result) => ({ ...result, source })));
+      } catch (error) {
+        throwIfCancelled(signal);
+        failures.push({ source, error });
+      }
+    }
+    if (failures.length === sources.length && failures[0])
+      throw failures[0].error;
+    return { groups: groupBySeries(found), failures };
+  }
+
   async catalogue(source: NovelSource, id: string, signal: AbortSignal) {
     if (!/^\d{1,10}$/.test(id)) throw new DiscoveryError('SOURCE_INVALID');
     return this.fromSource(async () => {
@@ -181,7 +278,12 @@ export class BookDiscoveryService {
     const images: EpubImage[] = [];
     const imageCache = new Map<string, string | null>();
     const chapters: EpubChapter[] = [];
-    const translators = new Set<string>();
+    const chapterReports: ChapterReport[] = [];
+    let pagesFetched = 0;
+    const translators = new Set<string>(catalogue.translators);
+    const translationMethods: TranslationMethod[] = [
+      catalogue.translationMethod,
+    ];
     let bytesTotal = 0;
     let missingImages = 0;
     const budget = (bytes: number) => {
@@ -241,6 +343,7 @@ export class BookDiscoveryService {
       let path: string | null = chapter.path;
       let resolvedTitle = chapter.title;
       const pages: string[] = [];
+      let chapterImages = 0;
       const visited = new Set<string>();
       while (path) {
         throwIfCancelled(signal);
@@ -254,6 +357,7 @@ export class BookDiscoveryService {
         // Its rendered chapter page supplies the actual readable heading.
         if (visited.size === 1 && parsed.title) resolvedTitle = parsed.title;
         const replacements: (string | null)[] = [];
+        chapterImages += parsed.images.length;
         for (const [imageIndex, url] of parsed.images.entries()) {
           onProgress({
             stage: 'images',
@@ -274,9 +378,18 @@ export class BookDiscoveryService {
         budget(new TextEncoder().encode(html).byteLength);
         pages.push(html);
         parsed.translators.forEach((translator) => translators.add(translator));
+        translationMethods.push(parsed.translationMethod);
         path = parsed.nextPath ? pagePath(source, parsed.nextPath) : null;
       }
-      chapters.push({ title: resolvedTitle, html: pages.join('\n') });
+      const html = pages.join('\n');
+      chapters.push({ title: resolvedTitle, html });
+      pagesFetched += pages.length;
+      chapterReports.push({
+        title: resolvedTitle,
+        pages: pages.length,
+        characters: textLength(html),
+        images: chapterImages,
+      });
       onProgress({
         stage: 'fetching',
         completed: index + 1,
@@ -291,13 +404,22 @@ export class BookDiscoveryService {
     const revision = await this.hasher.sha256(
       new TextEncoder().encode(JSON.stringify({ chapters, imageHashes })),
     );
+    // Titles may be neutral; the chapter text then decides the script.
+    const script =
+      volume.script !== 'unknown'
+        ? volume.script
+        : detectChineseScript(chapters.map((item) => item.html).join(''));
     const origin = {
       source,
       novelId: catalogue.id,
       volumeId: volume.id,
       url: sourceUrl(source, `/novel/${catalogue.id}/vol_${volume.id}.html`),
       revision,
-      translators: [...translators],
+      translators: [...translators].slice(0, 20),
+      script,
+      translationMethod: combineTranslationMethods(translationMethods),
+      edition: volume.edition,
+      volumeKind: volume.kind,
     };
     const bytes = await buildNovelEpub(
       {
@@ -306,6 +428,9 @@ export class BookDiscoveryService {
         identifier: `urn:lightreader:${source}:${catalogue.id}:${volume.id}:${revision}`,
         sourceUrl: origin.url,
         translators: origin.translators,
+        script: origin.script,
+        translationMethod: origin.translationMethod,
+        edition: origin.edition,
         chapters,
         images,
         coverPath,
@@ -314,6 +439,27 @@ export class BookDiscoveryService {
       signal,
     );
     throwIfCancelled(signal);
+    const report: AcquisitionReport = {
+      source,
+      novelId: catalogue.id,
+      volumeId: volume.id,
+      title: volume.title,
+      expectedChapters: volume.chapters.length,
+      builtChapters: chapters.length,
+      pagesFetched,
+      images: {
+        total: imageCache.size,
+        embedded: images.length,
+        missing: missingImages,
+      },
+      epubBytes: bytes.byteLength,
+      chapters: chapterReports,
+      shortChapters: shortChapters(chapterReports),
+      validation: await validateEpub(bytes),
+    };
+    throwIfCancelled(signal);
+    // A structurally broken book would only fail later in the reader.
+    if (report.validation.errors.length) throw new EpubValidationError(report);
     onProgress({ stage: 'importing', completed: 0, total: 1 });
     const result = await this.importer.importBytes(
       `${volume.title}.epub`,
@@ -322,6 +468,6 @@ export class BookDiscoveryService {
     );
     // The volume is in the library now; its fetched pages are no longer needed.
     this.fetchCache.delete(cacheKey);
-    return { ...result, missingImages };
+    return { ...result, missingImages, report };
   }
 }

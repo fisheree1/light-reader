@@ -104,3 +104,27 @@ test('distinguishes no matches from a denied source', async ({ page }) => {
     page.getByRole('checkbox', { name: /测试轻小说 第二卷/ }),
   ).toBeDisabled();
 });
+
+test('groups the same work found on every source without merging it', async ({
+  page,
+}) => {
+  await page.goto('/discover');
+  await page
+    .getByRole('combobox', { name: '书源', exact: true })
+    .selectOption('all');
+  await expect(
+    page.getByRole('button', { name: '读取书源窗口', exact: true }),
+  ).toBeDisabled();
+  await page
+    .getByRole('searchbox', { name: '书名、别名或作者' })
+    .fill('測試輕小說');
+  await page.getByRole('button', { name: '搜索书源' }).click();
+  await expect(page.getByText(/未合并/)).toBeVisible();
+  await expect(page.getByRole('heading', { name: '测试轻小说' })).toHaveCount(
+    1,
+  );
+  await page.getByRole('button', { name: /查看卷册 · Linovelib/ }).click();
+  await expect(
+    page.getByRole('checkbox', { name: /测试轻小说 第一卷/ }),
+  ).toBeEnabled();
+});

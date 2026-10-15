@@ -8,13 +8,67 @@ import type {
   AcquisitionProgress,
   NovelCatalogue,
   NovelSource,
-  NovelSummary,
+  NovelVolume,
 } from './domain/catalog';
 import {
   discoveryErrorMessage,
   isSourceRefusal,
 } from './domain/discovery-error';
-import type { BookDiscoveryService } from './services/book-discovery-service';
+import {
+  groupBySeries,
+  type BookDiscoveryService,
+  type SeriesCandidate,
+  type SourceSearchFailure,
+} from './services/book-discovery-service';
+import type { ChineseScript } from './domain/chinese-script';
+import type { TranslationMethod, VolumeKind } from './domain/edition';
+import type { MessageKey } from '../../i18n/i18n';
+import {
+  EpubValidationError,
+  type AcquisitionReport,
+} from './domain/acquisition-report';
+
+type SearchScope = NovelSource | 'all';
+
+const sources: readonly NovelSource[] = ['bilinovel', 'linovelib'];
+
+const sourceNames: Record<NovelSource, string> = {
+  bilinovel: 'Bilinovel',
+  linovelib: 'Linovelib',
+};
+
+const methodKeys: Record<TranslationMethod, MessageKey> = {
+  human: 'discovery.methodHuman',
+  machine: 'discovery.methodMachine',
+  mixed: 'discovery.methodMixed',
+  unknown: 'discovery.methodUnknown',
+};
+
+const kindKeys: Partial<Record<VolumeKind, MessageKey>> = {
+  main: 'discovery.kindMain',
+  'side-story': 'discovery.kindSideStory',
+  collection: 'discovery.kindCollection',
+};
+
+const scriptKeys: Partial<Record<ChineseScript, MessageKey>> = {
+  hans: 'discovery.scriptHans',
+  hant: 'discovery.scriptHant',
+  mixed: 'discovery.scriptMixed',
+};
+
+/** Short labels for a volume's kind, edition and script, when known. */
+function volumeBadges(
+  volume: NovelVolume,
+  t: (key: MessageKey) => string,
+): string[] {
+  const kind = kindKeys[volume.kind];
+  const script = scriptKeys[volume.script];
+  return [
+    kind ? t(kind) : null,
+    volume.edition,
+    script ? t(script) : null,
+  ].filter((label): label is string => label !== null);
+}
 
 interface Outcome {
   volumeId: string;
@@ -23,6 +77,60 @@ interface Outcome {
   bookId?: string;
   message?: string;
   missingImages?: number;
+  report?: AcquisitionReport;
+}
+
+function ReportSummary({ report }: { report: AcquisitionReport }) {
+  const { t } = useI18n();
+  const [copied, setCopied] = useState(false);
+  const { errors, warnings } = report.validation;
+  return (
+    <div className="text-muted-foreground mt-1 grid gap-1 text-xs">
+      <p>
+        {t('discovery.reportSummary', {
+          built: report.builtChapters,
+          expected: report.expectedChapters,
+          pages: report.pagesFetched,
+          embedded: report.images.embedded,
+          images: report.images.total,
+        })}
+        {' · '}
+        <span className={errors.length ? 'text-destructive' : undefined}>
+          {errors.length
+            ? t('discovery.reportInvalid', { count: errors.length })
+            : t('discovery.reportValid')}
+        </span>
+        {warnings.length
+          ? ` · ${t('discovery.reportWarnings', { count: warnings.length })}`
+          : null}
+      </p>
+      {report.shortChapters.length ? (
+        <p>
+          {t('discovery.reportShort', {
+            titles: report.shortChapters.join('、'),
+          })}
+        </p>
+      ) : null}
+      <div>
+        <Button
+          variant="ghost"
+          className="h-7 px-2 text-xs"
+          onClick={() => {
+            void navigator.clipboard
+              .writeText(JSON.stringify(report, null, 2))
+              .then(() => {
+                setCopied(true);
+              })
+              .catch(() => {
+                setCopied(false);
+              });
+          }}
+        >
+          {copied ? t('discovery.reportCopied') : t('discovery.copyReport')}
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 export function DiscoveryPage({
@@ -32,9 +140,12 @@ export function DiscoveryPage({
 }) {
   const { t } = useI18n();
   const navigate = useNavigate();
+  const [scope, setScope] = useState<SearchScope>('bilinovel');
   const [source, setSource] = useState<NovelSource>('bilinovel');
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<NovelSummary[]>([]);
+  const [searchedQuery, setSearchedQuery] = useState('');
+  const [groups, setGroups] = useState<SeriesCandidate[]>([]);
+  const [failures, setFailures] = useState<SourceSearchFailure[]>([]);
   const [searched, setSearched] = useState(false);
   const [catalogue, setCatalogue] = useState<NovelCatalogue | null>(null);
   const [selection, setSelection] = useState<Set<string>>(new Set());
@@ -74,20 +185,51 @@ export function DiscoveryPage({
       }
     }
   };
+  const showResults = (
+    found: SeriesCandidate[],
+    failed: SourceSearchFailure[],
+  ) => {
+    setGroups(found);
+    setFailures(failed);
+    setSearched(true);
+    setCatalogue(null);
+    setOutcomes([]);
+    setSelection(new Set());
+  };
   const search = () =>
     perform(async (signal) => {
-      const found = await services.search(source, query, signal);
+      const typed = query.trim();
+      const found = await services.searchSources(
+        scope === 'all' ? sources : [scope],
+        typed,
+        signal,
+      );
       if (signal.aborted || !mounted.current) return;
-      setResults(found);
-      setSearched(true);
-      setCatalogue(null);
-      setOutcomes([]);
-      setSelection(new Set());
+      setSearchedQuery(typed);
+      showResults(found.groups, found.failures);
     });
-  const loadCatalogue = (id: string) =>
+  /** Searches one failed source again and adds its results to the list. */
+  const retrySource = (failed: NovelSource) =>
     perform(async (signal) => {
-      const result = await services.catalogue(source, id, signal);
+      const found = await services.searchSources(
+        [failed],
+        searchedQuery,
+        signal,
+      );
       if (signal.aborted || !mounted.current) return;
+      showResults(
+        groupBySeries([
+          ...groups.flatMap((group) => group.entries),
+          ...found.groups.flatMap((group) => group.entries),
+        ]),
+        failures.filter((item) => item.source !== failed),
+      );
+    });
+  const loadCatalogue = (from: NovelSource, id: string) =>
+    perform(async (signal) => {
+      const result = await services.catalogue(from, id, signal);
+      if (signal.aborted || !mounted.current) return;
+      setSource(from);
       setCatalogue(result);
       setSelection(new Set());
       setOutcomes([]);
@@ -122,6 +264,7 @@ export function DiscoveryPage({
                 status: result.status,
                 bookId: result.book.id,
                 missingImages: result.missingImages,
+                report: result.report,
               },
             ]);
             setSelection((previous) => {
@@ -140,6 +283,10 @@ export function DiscoveryPage({
                 title: volume.title,
                 status: 'failed',
                 message: discoveryErrorMessage(value),
+                report:
+                  value instanceof EpubValidationError
+                    ? value.report
+                    : undefined,
               },
             ]);
           // The source refused or throttled us: do not start the next volume.
@@ -163,16 +310,18 @@ export function DiscoveryPage({
         <div className="flex flex-wrap gap-2">
           <Button
             variant="secondary"
-            disabled={busy || !services.gateway.available}
+            disabled={busy || scope === 'all' || !services.gateway.available}
             onClick={() => {
+              if (scope === 'all') return;
               void perform(async (signal) => {
-                const found = await services.current(source, signal);
+                const found = await services.current(scope, signal);
                 if (signal.aborted || !mounted.current) return;
-                setResults(found);
-                setSearched(true);
-                setCatalogue(null);
-                setSelection(new Set());
-                setOutcomes([]);
+                showResults(
+                  groupBySeries(
+                    found.map((novel) => ({ ...novel, source: scope })),
+                  ),
+                  [],
+                );
               });
             }}
           >
@@ -180,9 +329,11 @@ export function DiscoveryPage({
           </Button>
           <Button
             variant="secondary"
+            disabled={scope === 'all'}
             onClick={() => {
+              if (scope === 'all') return;
               void services.gateway
-                .openSource(source)
+                .openSource(scope)
                 .catch((value: unknown) => {
                   setError(discoveryErrorMessage(value));
                 });
@@ -210,12 +361,15 @@ export function DiscoveryPage({
           <select
             className="bg-background h-9 rounded-md border px-2"
             disabled={busy}
-            value={source}
+            value={scope}
             onChange={(event) => {
-              setSource(event.currentTarget.value as NovelSource);
+              const next = event.currentTarget.value as SearchScope;
+              setScope(next);
+              if (next !== 'all') setSource(next);
               setError(null);
               setCatalogue(null);
-              setResults([]);
+              setGroups([]);
+              setFailures([]);
               setSearched(false);
               setSelection(new Set());
               setOutcomes([]);
@@ -223,6 +377,7 @@ export function DiscoveryPage({
           >
             <option value="bilinovel">Bilinovel</option>
             <option value="linovelib">Linovelib</option>
+            <option value="all">{t('discovery.allSources')}</option>
           </select>
         </label>
         <label className="grid min-w-48 flex-1 gap-1 text-sm">
@@ -310,6 +465,9 @@ export function DiscoveryPage({
                     })}
                   </p>
                 ) : null}
+                {outcome.report ? (
+                  <ReportSummary report={outcome.report} />
+                ) : null}
               </div>
               {outcome.bookId ? (
                 <Button
@@ -341,8 +499,17 @@ export function DiscoveryPage({
             {t('discovery.back')}
           </Button>
           <h2 className="mt-4 text-xl font-semibold">{catalogue.title}</h2>
+          <p className="text-muted-foreground text-sm">{catalogue.author}</p>
           <p className="text-muted-foreground mb-4 text-sm">
-            {catalogue.author}
+            {catalogue.translators.length
+              ? t('discovery.translators', {
+                  names: catalogue.translators.join('、'),
+                })
+              : t('discovery.translatorsUnknown')}
+            {' · '}
+            {t('discovery.methodLabel', {
+              method: t(methodKeys[catalogue.translationMethod]),
+            })}
           </p>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <label className="flex items-center gap-2 text-sm">
@@ -399,6 +566,16 @@ export function DiscoveryPage({
                           count: volume.chapters.length,
                         })}
                       </span>
+                      <span className="mt-1 flex flex-wrap gap-1">
+                        {volumeBadges(volume, t).map((label) => (
+                          <span
+                            className="bg-muted rounded px-1.5 py-0.5 text-xs"
+                            key={label}
+                          >
+                            {label}
+                          </span>
+                        ))}
+                      </span>
                       {volume.unavailableChapters ? (
                         <span className="text-destructive mt-1 block">
                           {t('discovery.restricted', {
@@ -418,26 +595,76 @@ export function DiscoveryPage({
             })}
           </ul>
         </section>
-      ) : results.length ? (
+      ) : groups.length || failures.length ? (
         <section aria-label={t('discovery.results')}>
+          {failures.length ? (
+            <ul className="mb-3 grid gap-2">
+              {failures.map((failure) => (
+                <li
+                  key={failure.source}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3 text-sm"
+                >
+                  <span className="text-destructive">
+                    {t('discovery.sourceFailed', {
+                      source: sourceNames[failure.source],
+                      message: discoveryErrorMessage(failure.error),
+                    })}
+                  </span>
+                  <Button
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={() => {
+                      void retrySource(failure.source);
+                    }}
+                  >
+                    {t('discovery.retrySource', {
+                      source: sourceNames[failure.source],
+                    })}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
           <p className="text-muted-foreground mb-3 text-xs">
             {t('discovery.resultLimit')}
           </p>
           <ul className="grid gap-3 sm:grid-cols-2">
-            {results.map((result) => (
-              <li key={result.id} className="bg-surface rounded-lg border p-4">
-                <h2 className="mb-3 font-medium">{result.title}</h2>
-                <Button
-                  variant="secondary"
-                  disabled={busy}
-                  onClick={() => {
-                    void loadCatalogue(result.id);
-                  }}
+            {groups.map((group) => {
+              const multiSource =
+                new Set(group.entries.map((entry) => entry.source)).size > 1;
+              return (
+                <li
+                  key={group.key}
+                  className="bg-surface rounded-lg border p-4"
                 >
-                  {t('discovery.chooseVolume')}
-                </Button>
-              </li>
-            ))}
+                  <h2 className="mb-3 font-medium">{group.title}</h2>
+                  {multiSource ? (
+                    <p className="text-muted-foreground mb-3 text-xs">
+                      {t('discovery.sameTitleNote')}
+                    </p>
+                  ) : null}
+                  <div className="flex flex-wrap gap-2">
+                    {group.entries.map((entry) => (
+                      <Button
+                        key={`${entry.source}:${entry.id}`}
+                        variant="secondary"
+                        disabled={busy}
+                        onClick={() => {
+                          void loadCatalogue(entry.source, entry.id);
+                        }}
+                      >
+                        {group.entries.length > 1
+                          ? t('discovery.chooseVolumeFrom', {
+                              source: sourceNames[entry.source],
+                              title: entry.title,
+                            })
+                          : t('discovery.chooseVolume')}
+                      </Button>
+                    ))}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </section>
       ) : !busy ? (

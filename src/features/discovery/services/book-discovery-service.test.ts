@@ -5,10 +5,18 @@ import { createTestBook } from '../../../test/fixtures/web-records';
 import { FflateEpubMetadataParser } from '../../library/services/epub-metadata-parser';
 import type { BookImporter } from '../../library/services/book-import-service';
 import { DiscoveryError } from '../domain/discovery-error';
+import { EpubValidationError } from '../domain/acquisition-report';
+import * as validator from './epub-validator';
 import {
   BookDiscoveryService,
+  groupBySeries,
   RATE_LIMIT_COOLDOWN_MS,
 } from './book-discovery-service';
+
+vi.mock('./epub-validator', async (original) => {
+  const actual = await original<typeof import('./epub-validator')>();
+  return { ...actual, validateEpub: vi.fn(actual.validateEpub) };
+});
 
 function setup() {
   const gateway = new FixtureNovelGateway();
@@ -258,5 +266,180 @@ describe('novel acquisition', () => {
     await expect(
       service.search('bilinovel', '测试', new AbortController().signal),
     ).rejects.toMatchObject({ code: 'SOURCE_COOLING_DOWN' });
+  });
+
+  it('records translators, script, method and edition in the origin and EPUB', async () => {
+    const { importBytes, service } = setup();
+    const signal = new AbortController().signal;
+    const catalogue = await service.catalogue('bilinovel', '1', signal);
+    await service.acquire(
+      {
+        source: 'bilinovel',
+        catalogue,
+        volume: catalogue.volumes[0],
+        allowMissingImages: false,
+        onProgress: vi.fn(),
+      },
+      signal,
+    );
+    const [, bytes, origin] = importBytes.mock.calls[0];
+    expect(origin).toMatchObject({
+      translators: ['测试译者'],
+      script: 'hans',
+      translationMethod: 'unknown',
+      edition: null,
+      volumeKind: 'main',
+    });
+    const files = unzipSync(bytes);
+    const opf = strFromU8(files['EPUB/package.opf']);
+    expect(opf).toContain('<dc:language>zh-Hans</dc:language>');
+    expect(opf).toContain(
+      '<dc:contributor id="trl0">测试译者</dc:contributor><meta refines="#trl0" property="role" scheme="marc:relators">trl</meta>',
+    );
+    expect(opf).not.toContain('<dc:description>');
+    const sourcePage = strFromU8(files['EPUB/source.xhtml']);
+    expect(sourcePage).toContain('<p>译者：测试译者</p>');
+    expect(sourcePage).toContain('<p>翻译类型：未知（来源未声明）</p>');
+  });
+
+  it('reports what was fetched and refuses to import a structurally broken EPUB', async () => {
+    const { service, importBytes } = setup();
+    const signal = new AbortController().signal;
+    const catalogue = await service.catalogue('bilinovel', '1', signal);
+    const input = {
+      source: 'bilinovel' as const,
+      catalogue,
+      volume: catalogue.volumes[0],
+      allowMissingImages: false,
+      onProgress: vi.fn(),
+    };
+    const { report } = await service.acquire(input, signal);
+    expect(report).toMatchObject({
+      source: 'bilinovel',
+      novelId: '1',
+      volumeId: '10',
+      expectedChapters: 2,
+      builtChapters: 2,
+      pagesFetched: 3,
+      images: { total: 2, embedded: 2, missing: 0 },
+      validation: { errors: [], warnings: [] },
+      // The fixture prologue is a few dozen characters: flagged for review.
+      shortChapters: ['序章'],
+    });
+    expect(report.chapters.map(({ pages, images }) => [pages, images])).toEqual(
+      [
+        [2, 0],
+        [1, 1],
+      ],
+    );
+    expect(report.chapters[0].characters).toBeGreaterThan(20);
+    expect(report.epubBytes).toBe(importBytes.mock.calls[0][1].byteLength);
+
+    vi.mocked(validator.validateEpub).mockResolvedValueOnce({
+      errors: [{ code: 'xhtml-invalid', path: 'EPUB/chapter-1.xhtml' }],
+      warnings: [],
+    });
+    const rejected = await service
+      .acquire(input, signal)
+      .catch((error: unknown) => error);
+    expect(rejected).toBeInstanceOf(EpubValidationError);
+    expect(rejected).toMatchObject({
+      code: 'SOURCE_BUILD_INVALID',
+      report: { validation: { errors: [{ code: 'xhtml-invalid' }] } },
+    });
+    expect(importBytes).toHaveBeenCalledTimes(1);
+  });
+
+  describe('multi-source search', () => {
+    it('tries the other script only when the typed spelling finds nothing', async () => {
+      const { gateway, service } = setup();
+      const signal = new AbortController().signal;
+      const read = gateway.readPage.bind(gateway);
+      const pages = vi
+        .spyOn(gateway, 'readPage')
+        .mockImplementation((source, request, requestSignal) =>
+          request.kind === 'search' && request.query === '测试轻小说'
+            ? Promise.resolve({
+                url: 'https://www.bilinovel.com/search.html',
+                html: '<p>没有符合条件的结果</p>',
+              })
+            : read(source, request, requestSignal),
+        );
+
+      const fallback = await service.searchSources(
+        ['bilinovel'],
+        '测试轻小说',
+        signal,
+      );
+      expect(pages.mock.calls.map(([, request]) => request)).toEqual([
+        { kind: 'search', query: '测试轻小说' },
+        { kind: 'search', query: '測試輕小說' },
+      ]);
+      expect(fallback.groups).toHaveLength(1);
+
+      pages.mockClear();
+      await service.searchSources(['bilinovel'], '輕小說', signal);
+      expect(pages).toHaveBeenCalledTimes(1);
+    });
+
+    it('groups same-titled works across sources without merging them', async () => {
+      const { service } = setup();
+      const result = await service.searchSources(
+        ['bilinovel', 'linovelib'],
+        '测试',
+        new AbortController().signal,
+      );
+      expect(result.failures).toEqual([]);
+      expect(result.groups).toEqual([
+        {
+          key: expect.any(String) as string,
+          title: '测试轻小说',
+          entries: [
+            expect.objectContaining({ source: 'bilinovel', id: '1' }),
+            expect.objectContaining({ source: 'linovelib', id: '1' }),
+          ],
+        },
+      ]);
+      expect(
+        groupBySeries([
+          { source: 'bilinovel', id: '1', title: '《敗北女角》', url: 'a' },
+          { source: 'linovelib', id: '9', title: '败北女角', url: 'b' },
+          { source: 'linovelib', id: '9', title: '败北女角', url: 'b' },
+          { source: 'linovelib', id: '3', title: '败北女角 外传', url: 'c' },
+        ]).map((group) => group.entries.length),
+      ).toEqual([2, 1]);
+    });
+
+    it("keeps one source's results when another fails, and fails when all do", async () => {
+      const { gateway, service } = setup();
+      const signal = new AbortController().signal;
+      const read = gateway.readPage.bind(gateway);
+      vi.spyOn(gateway, 'readPage').mockImplementation(
+        (source, request, requestSignal) =>
+          source === 'linovelib'
+            ? Promise.reject(new DiscoveryError('SOURCE_ACCESS_DENIED'))
+            : read(source, request, requestSignal),
+      );
+
+      const partial = await service.searchSources(
+        ['bilinovel', 'linovelib'],
+        '测试',
+        signal,
+      );
+      expect(partial.groups[0]?.entries).toEqual([
+        expect.objectContaining({ source: 'bilinovel' }),
+      ]);
+      expect(partial.failures).toEqual([
+        {
+          source: 'linovelib',
+          error: expect.objectContaining({
+            code: 'SOURCE_ACCESS_DENIED',
+          }) as unknown,
+        },
+      ]);
+      await expect(
+        service.searchSources(['linovelib'], '测试', signal),
+      ).rejects.toMatchObject({ code: 'SOURCE_ACCESS_DENIED' });
+    });
   });
 });

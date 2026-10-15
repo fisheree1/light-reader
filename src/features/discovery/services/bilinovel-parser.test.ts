@@ -260,4 +260,63 @@ describe('Bilinovel source parsing', () => {
       ).html,
     ).toContain('请求过于频繁');
   });
+
+  it('reads volume kind, edition, script and declared translation details', () => {
+    const fixture = parseCatalogue(
+      'bilinovel',
+      { url, html: novelFixture.catalogue },
+      '1',
+    );
+    expect(fixture.volumes[0]).toMatchObject({
+      kind: 'main',
+      edition: null,
+      script: 'hans',
+    });
+    expect(fixture).toMatchObject({
+      translators: [],
+      translationMethod: 'unknown',
+    });
+
+    const declared = parseCatalogue(
+      'bilinovel',
+      {
+        url,
+        html: `<h1>測試輕小說</h1><h2>作者：測試作者</h2><div class="intro"><p>譯者：甲組（機翻）</p></div>
+        <ul class="volume-chapters"><li><a href="/novel/1/vol_40.html"><h3>第一卷（文庫版）</h3></a></li>
+        <li class="jsChapter"><a href="/novel/1/201.html">開場與說明</a></li></ul>
+        <ul class="volume-chapters"><li><a href="/novel/1/vol_41.html"><h3>短篇集</h3></a></li>
+        <li class="jsChapter"><a href="/novel/1/202.html">番外</a></li></ul>`,
+      },
+      '1',
+    );
+    expect(declared).toMatchObject({
+      translators: ['甲組'],
+      translationMethod: 'machine',
+    });
+    expect(
+      declared.volumes.map(({ kind, edition, script }) => ({
+        kind,
+        edition,
+        script,
+      })),
+    ).toEqual([
+      { kind: 'main', edition: '文库版', script: 'hant' },
+      { kind: 'collection', edition: null, script: 'unknown' },
+    ]);
+  });
+
+  it('reports translation declarations found on a chapter page', () => {
+    const parsed = parseChapter(
+      'bilinovel',
+      {
+        url,
+        html: '<h1 id="atitle">序章</h1><div id="acontent"><p>正文内容。</p><p>译者：乙</p><p>翻译方式：人工翻译</p></div>',
+      },
+      '/novel/1/101.html',
+    );
+    expect(parsed).toMatchObject({
+      translators: ['乙'],
+      translationMethod: 'human',
+    });
+  });
 });

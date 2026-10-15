@@ -13,6 +13,7 @@ export const discoveryErrorKeys = {
   SOURCE_SELECT_BOOK: 'discovery.errorSelectBook',
   SOURCE_RATE_LIMITED: 'discovery.errorRateLimited',
   SOURCE_COOLING_DOWN: 'discovery.errorCoolingDown',
+  SOURCE_BUILD_INVALID: 'discovery.errorBuildInvalid',
 } as const satisfies Record<string, MessageKey>;
 
 export type DiscoveryErrorCode = keyof typeof discoveryErrorKeys;

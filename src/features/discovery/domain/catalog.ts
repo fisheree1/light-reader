@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+import type { ChineseScript } from './chinese-script';
+import type { TranslationMethod, VolumeKind } from './edition';
+
 export const sourceSchema = z.enum(['bilinovel', 'linovelib']);
 export type NovelSource = z.infer<typeof sourceSchema>;
 
@@ -33,6 +36,12 @@ export interface NovelVolume {
   unavailableChapters: number;
   coverUrl: string | null;
   contentKind: 'novel' | 'other';
+  /** Main volume, side story or collection, from the title. */
+  kind: VolumeKind;
+  /** Explicit edition label such as 文库版 or Web 版; null when not stated. */
+  edition: string | null;
+  /** Script of the volume and chapter titles; `unknown` without evidence. */
+  script: ChineseScript;
 }
 
 export interface NovelCatalogue {
@@ -41,6 +50,10 @@ export interface NovelCatalogue {
   author: string;
   url: string;
   volumes: NovelVolume[];
+  /** Translators declared on the catalogue page. */
+  translators: string[];
+  /** Translation method declared on the catalogue page. */
+  translationMethod: TranslationMethod;
 }
 
 export type PageRequest =
@@ -75,4 +88,5 @@ export interface ParsedChapter {
   images: string[];
   nextPath: string | null;
   translators: string[];
+  translationMethod: TranslationMethod;
 }

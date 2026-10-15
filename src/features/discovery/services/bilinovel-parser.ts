@@ -6,7 +6,14 @@ import {
   type PageSnapshot,
   type ParsedChapter,
 } from '../domain/catalog';
+import { detectChineseScript } from '../domain/chinese-script';
 import { DiscoveryError } from '../domain/discovery-error';
+import {
+  classifyVolumeKind,
+  detectEdition,
+  detectTranslationMethod,
+  extractTranslators,
+} from '../domain/edition';
 
 function firstNonEmpty(...values: (string | null | undefined)[]): string {
   return values.find((value) => Boolean(value?.trim())) ?? '';
@@ -68,6 +75,20 @@ const emptySearchNotice =
 
 const rateLimitNotice =
   /\b429\b|too many requests|rate limit|请求过于频繁|访问过于频繁|访问太频繁|操作过于频繁/i;
+
+const blockSelector = 'p, div, li, dd, dt, td, h2, h3, h4, blockquote';
+
+/**
+ * Text of the innermost block elements, one per line, so line-based
+ * declarations ("译者：…") are not glued to neighbouring text.
+ */
+function blockText(root: Element): string {
+  return [...root.querySelectorAll(blockSelector)]
+    .filter((element) => !element.querySelector(blockSelector))
+    .map((element) => element.textContent.trim())
+    .filter(Boolean)
+    .join('\n');
+}
 
 function parseDocument(snapshot: PageSnapshot): Document {
   if (snapshot.html.length > 2 * 1024 * 1024)
@@ -233,16 +254,24 @@ export function parseCatalogue(
       contentKind: /画集|ART\s*WORKS|\[日版\]/i.test(volumeTitle)
         ? 'other'
         : 'novel',
+      kind: classifyVolumeKind(volumeTitle),
+      edition: detectEdition(volumeTitle),
+      script: detectChineseScript(
+        [volumeTitle, ...chapters.map((item) => item.title)].join(''),
+      ),
     });
   }
   if (volumes.length === 0 || volumes.length > 200)
     throw new DiscoveryError('SOURCE_INVALID');
+  const pageText = blockText(document.body);
   return {
     id,
     title,
     author,
     url: sourceUrl(source, `/novel/${id}.html`),
     volumes,
+    translators: extractTranslators(pageText),
+    translationMethod: detectTranslationMethod(pageText),
   };
 }
 
@@ -445,20 +474,14 @@ export function parseChapter(
   }
   if (hasNextPage && !nextPath && !nextIsChapter)
     throw new DiscoveryError('SOURCE_INCOMPLETE');
-  const translators = [
-    ...new Set(
-      [...safeContent.querySelectorAll('p, div')]
-        .flatMap((node) => [
-          ...node.textContent.matchAll(/译者[：:]\s*([^\n\r<>]{1,100})/g),
-        ])
-        .map((match) => match[1].trim()),
-    ),
-  ].slice(0, 20);
+  const declarationText = blockText(safeContent.body);
+  const translators = extractTranslators(declarationText);
   return {
     title: document.querySelector('#atitle, h1')?.textContent.trim() ?? '',
     html,
     images,
     nextPath,
     translators,
+    translationMethod: detectTranslationMethod(declarationText),
   };
 }
