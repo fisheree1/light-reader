@@ -1,6 +1,7 @@
 import type { BookRepository } from './book-repository';
 import {
   readingSessionSchema,
+  type BookReadingTotal,
   type ReadingHistoryEntry,
   type ReadingSession,
   type ReadingStats,
@@ -94,6 +95,54 @@ export class WebReadingActivityRepository implements ReadingActivityRepository {
       return entries.filter(
         (entry): entry is ReadingHistoryEntry => entry !== null,
       );
+    });
+  }
+
+  listSessionsSince(since: number): Promise<ReadingSession[]> {
+    return withAppError('READING_ACTIVITY_FAILED', async () =>
+      (await this.readAll())
+        .filter((session) => session.startedAt >= since)
+        .sort(
+          (left, right) =>
+            left.startedAt - right.startedAt || left.id.localeCompare(right.id),
+        ),
+    );
+  }
+
+  listBookTotals(limit = 20): Promise<BookReadingTotal[]> {
+    return withAppError('READING_ACTIVITY_FAILED', async () => {
+      const totals = new Map<
+        string,
+        { lastReadAt: number; sessionCount: number; totalSeconds: number }
+      >();
+      for (const session of await this.readAll()) {
+        const current = totals.get(session.bookId) ?? {
+          lastReadAt: 0,
+          sessionCount: 0,
+          totalSeconds: 0,
+        };
+        totals.set(session.bookId, {
+          lastReadAt: Math.max(current.lastReadAt, session.startedAt),
+          sessionCount: current.sessionCount + 1,
+          totalSeconds: current.totalSeconds + session.durationSeconds,
+        });
+      }
+      const entries = await Promise.all(
+        [...totals].map(async ([bookId, total]) => {
+          const book = await this.bookRepository.findById(bookId);
+          return book && total.totalSeconds > 0
+            ? { bookId, bookTitle: book.title, author: book.author, ...total }
+            : null;
+        }),
+      );
+      return entries
+        .filter((entry): entry is BookReadingTotal => entry !== null)
+        .sort(
+          (left, right) =>
+            right.totalSeconds - left.totalSeconds ||
+            right.lastReadAt - left.lastReadAt,
+        )
+        .slice(0, Math.max(1, Math.min(100, Math.trunc(limit))));
     });
   }
 

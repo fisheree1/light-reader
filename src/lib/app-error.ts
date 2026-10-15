@@ -28,6 +28,8 @@ export const appErrorMessages = {
   BOOKMARK_WRITE_FAILED: '无法保存书签，请稍后重试。',
   BOOKMARK_NOT_FOUND: '这个书签已经不存在。',
   READING_ACTIVITY_FAILED: '无法记录阅读时长，但不会影响继续阅读。',
+  READING_STATS_FAILED: '无法加载阅读统计，请稍后重试。',
+  READING_GOAL_WRITE_FAILED: '无法保存阅读目标，请稍后重试。',
   ANNOTATION_READ_FAILED: '无法加载高亮和批注，请稍后重试。',
   ANNOTATION_WRITE_FAILED: '无法保存高亮或批注，请稍后重试。',
   ANNOTATION_NOT_FOUND: '这条高亮已经不存在。',

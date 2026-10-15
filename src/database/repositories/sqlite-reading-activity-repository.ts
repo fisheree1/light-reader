@@ -1,7 +1,9 @@
 import {
+  bookReadingTotalSchema,
   readingHistoryEntrySchema,
   readingSessionSchema,
   readingStatsSchema,
+  type BookReadingTotal,
   type ReadingHistoryEntry,
   type ReadingSession,
   type ReadingStats,
@@ -122,6 +124,57 @@ export class SqliteReadingActivityRepository implements ReadingActivityRepositor
           author: row.author,
           startedAt: row.started_at,
           durationSeconds: row.duration_seconds,
+        }),
+      );
+    } catch (error) {
+      throw new AppError('READING_ACTIVITY_FAILED', { cause: error });
+    }
+  }
+
+  async listSessionsSince(since: number): Promise<ReadingSession[]> {
+    try {
+      const database = await this.databaseProvider();
+      const rows = await database.select<SessionRecord[]>(
+        'SELECT id, book_id, started_at, ended_at, duration_seconds FROM reading_sessions WHERE started_at >= $1 ORDER BY started_at ASC, id ASC',
+        [Math.max(0, Math.trunc(since))],
+      );
+      return rows.map(mapSession);
+    } catch (error) {
+      throw new AppError('READING_ACTIVITY_FAILED', { cause: error });
+    }
+  }
+
+  async listBookTotals(limit = 20): Promise<BookReadingTotal[]> {
+    try {
+      const database = await this.databaseProvider();
+      const rows = await database.select<
+        {
+          book_id: string;
+          book_title: string;
+          author: string | null;
+          total_seconds: number;
+          session_count: number;
+          last_read_at: number;
+        }[]
+      >(
+        `SELECT s.book_id, b.title AS book_title, b.author,
+           SUM(s.duration_seconds) AS total_seconds,
+           COUNT(*) AS session_count, MAX(s.started_at) AS last_read_at
+         FROM reading_sessions s JOIN books b ON b.id = s.book_id
+         GROUP BY s.book_id
+         HAVING SUM(s.duration_seconds) > 0
+         ORDER BY total_seconds DESC, last_read_at DESC
+         LIMIT $1`,
+        [Math.max(1, Math.min(100, Math.trunc(limit)))],
+      );
+      return rows.map((row) =>
+        bookReadingTotalSchema.parse({
+          bookId: row.book_id,
+          bookTitle: row.book_title,
+          author: row.author,
+          totalSeconds: row.total_seconds,
+          sessionCount: row.session_count,
+          lastReadAt: row.last_read_at,
         }),
       );
     } catch (error) {

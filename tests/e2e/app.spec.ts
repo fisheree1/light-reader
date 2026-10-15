@@ -322,6 +322,29 @@ test('imports, reads, and searches an FB2 book', async ({ page }) => {
   await findContentFrame(page, '第二章包含关键词。');
 });
 
+test('records reading time and shows it on the stats page', async ({
+  page,
+}) => {
+  await page.goto('/library');
+  await importTestEpub(page);
+  await page.getByRole('button', { name: '打开《Web 测试 EPUB》' }).click();
+  await expect(page.getByRole('button', { name: '第一章' })).toBeVisible();
+  // Sessions are stored with whole-second durations.
+  await page.waitForTimeout(1_500);
+  await page.getByRole('link', { name: '返回书架' }).click();
+
+  await page.getByRole('link', { name: '统计' }).click();
+  await expect(page.getByRole('heading', { name: '阅读统计' })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Web 测试 EPUB/ })).toBeVisible();
+  await expect(page.getByRole('img', { name: /有 1 天阅读/ })).toBeVisible();
+
+  await page.getByLabel('每日分钟数').fill('20');
+  await page.getByRole('button', { name: '保存目标' }).click();
+  await expect(page.getByText('阅读目标已保存')).toBeVisible();
+  await page.reload();
+  await expect(page.getByText(/今天已读 0 \/ 20 分钟/)).toBeVisible();
+});
+
 test('persists global reading settings and a per-book override', async ({
   page,
 }) => {

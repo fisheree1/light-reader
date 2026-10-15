@@ -86,4 +86,41 @@ describe('WebReadingActivityRepository', () => {
       code: 'READING_ACTIVITY_FAILED',
     });
   });
+
+  it('lists sessions since a time and totals per existing book', async () => {
+    const repository = new WebReadingActivityRepository(
+      books,
+      createTestWebDatabase(),
+    );
+    for (const [id, bookId, startedAt, durationSeconds] of [
+      ['a', book.id, 1_000, 60],
+      ['b', book.id, 5_000, 120],
+      ['c', 'deleted-book', 3_000, 30],
+      ['d', book.id, 500, 0],
+    ] as const) {
+      await repository.startSession({
+        id,
+        bookId,
+        startedAt,
+        endedAt: startedAt + durationSeconds * 1000,
+        durationSeconds,
+      });
+    }
+
+    await expect(repository.listSessionsSince(1_000)).resolves.toMatchObject([
+      { id: 'a' },
+      { id: 'c' },
+      { id: 'b' },
+    ]);
+    await expect(repository.listBookTotals()).resolves.toEqual([
+      {
+        bookId: book.id,
+        bookTitle: book.title,
+        author: book.author,
+        totalSeconds: 180,
+        sessionCount: 3,
+        lastReadAt: 5_000,
+      },
+    ]);
+  });
 });

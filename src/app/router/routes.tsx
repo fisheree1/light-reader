@@ -36,6 +36,13 @@ export const routes: RouteObject[] = [
           return { Component: ResearchPage };
         },
       },
+      {
+        path: 'stats',
+        lazy: async () => {
+          const { StatsPage } = await import('../../features/stats/stats-page');
+          return { Component: StatsPage };
+        },
+      },
       { path: 'settings', element: <SettingsPage /> },
       { path: '*', element: <Navigate replace to="/library" /> },
     ],

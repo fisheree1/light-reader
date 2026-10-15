@@ -139,3 +139,18 @@ test('keeps local AI settings and reader sidebar accessible', async ({
   await expect(sidebar).toBeHidden();
   await expect(trigger).toBeFocused();
 });
+
+test('keeps the reading stats page axe clean', async ({ page }) => {
+  await page.goto('/library');
+  await importTestEpub(page);
+  await page.getByRole('button', { name: '打开《Web 测试 EPUB》' }).click();
+  await expect(page.getByRole('button', { name: '第一章' })).toBeVisible();
+  await page.waitForTimeout(1_200);
+  await page.getByRole('link', { name: '返回书架' }).click();
+
+  await page.goto('/stats');
+  await expect(
+    page.getByRole('heading', { name: '每日阅读目标' }),
+  ).toBeVisible();
+  await expectNoAccessibilityViolations(page);
+});

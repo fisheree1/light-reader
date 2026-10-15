@@ -1,4 +1,5 @@
 import {
+  BarChart3,
   BookOpen,
   Moon,
   NotebookPen,
@@ -20,6 +21,7 @@ const navigationItems = [
   { icon: NotebookPen, label: '笔记', to: '/notes' },
   { icon: Search, label: '搜索', to: '/search' },
   { icon: Sparkles, label: '研究', to: '/research' },
+  { icon: BarChart3, label: '统计', to: '/stats' },
   { icon: Settings, label: '设置', to: '/settings' },
 ] as const;
 
