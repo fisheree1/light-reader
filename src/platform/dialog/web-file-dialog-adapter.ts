@@ -44,6 +44,11 @@ export class WebFileDialogAdapter implements FileDialogAdapter {
       : null;
   }
 
+  /** Opens the browser file picker; resolves with no files on cancel. */
+  selectFiles(accept: string, multiple: boolean): Promise<File[]> {
+    return this.select(accept, multiple);
+  }
+
   private select(accept: string, multiple: boolean): Promise<File[]> {
     return new Promise((resolve) => {
       const input = this.createInput();

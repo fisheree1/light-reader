@@ -152,7 +152,7 @@ export class IndexedDbWebBinaryStore implements WebBinaryStore {
   }
 }
 
-class LazyIndexedDbWebBinaryStore implements WebBinaryStore {
+export class LazyIndexedDbWebBinaryStore implements WebBinaryStore {
   private delegate: IndexedDbWebBinaryStore | null = null;
 
   delete(path: string): Promise<void> {

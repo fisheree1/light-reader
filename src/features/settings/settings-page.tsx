@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 
 import { Button } from '../../components/ui/button';
 import { checkDatabaseHealth } from '../../database/client';
@@ -15,6 +15,11 @@ import { BackupSettings } from '../backup/components/backup-settings';
 import type { BackupManager } from '../backup/services/backup-service';
 import { backupManager as defaultBackupManager } from '../backup/services/backup-services';
 import { AiSettingsSection } from '../ai-agent/components/ai-settings-section';
+import { DictionarySettings } from '../dictionary/components/dictionary-settings';
+import {
+  dictionaryServices,
+  type DictionaryServices,
+} from '../dictionary/services/dictionary-services';
 import type { AgentFacade } from '../ai-agent/services/agent-facade';
 import { agentFacade as defaultAgentFacade } from '../ai-agent/services/ai-services';
 
@@ -24,14 +29,17 @@ type SaveStatus = 'idle' | 'loading' | 'saving' | 'saved' | 'error';
 interface SettingsPageProps {
   agentFacade?: AgentFacade;
   backupManager?: BackupManager;
+  dictionary?: Pick<DictionaryServices, 'dictionary' | 'picker'>;
   settingsRepository?: ReaderSettingsRepository;
 }
 
 export function SettingsPage({
   agentFacade = defaultAgentFacade,
   backupManager = defaultBackupManager,
+  dictionary = dictionaryServices,
   settingsRepository = readerServices.settingsRepository,
 }: SettingsPageProps) {
+  const { hash } = useLocation();
   const [healthStatus, setHealthStatus] = useState<HealthStatus>('idle');
   const [readerSettings, setReaderSettings] = useState<ReaderDisplaySettings>(
     defaultReaderSettings,
@@ -58,6 +66,11 @@ export function SettingsPage({
       cancelled = true;
     };
   }, [setGlobalSettings, settingsRepository]);
+
+  useEffect(() => {
+    // Deep links such as /settings#dictionaries scroll to their section.
+    if (hash) document.getElementById(hash.slice(1))?.scrollIntoView();
+  }, [hash]);
 
   async function handleSaveReaderSettings() {
     setSaveStatus('saving');
@@ -132,6 +145,11 @@ export function SettingsPage({
           <Link to="/stats">查看阅读统计</Link>
         </Button>
       </section>
+
+      <DictionarySettings
+        dictionary={dictionary.dictionary}
+        picker={dictionary.picker}
+      />
 
       <BackupSettings manager={backupManager} />
 

@@ -37,4 +37,38 @@ describe('SelectionToolbar', () => {
       screen.queryByRole('toolbar', { name: '文字选择工具栏' }),
     ).not.toBeInTheDocument();
   });
+
+  it('offers dictionary lookup and toggles read-aloud', async () => {
+    const user = userEvent.setup();
+    const lookup = vi.fn();
+    const toggle = vi.fn();
+    const { rerender } = render(
+      <SelectionToolbar
+        onCreate={() => Promise.resolve()}
+        onLookup={lookup}
+        selection={selection}
+        speech={{ speaking: false, onToggle: toggle }}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: '查词' }));
+    await user.click(screen.getByRole('button', { name: '朗读' }));
+    expect(lookup).toHaveBeenCalledOnce();
+    expect(toggle).toHaveBeenCalledOnce();
+
+    rerender(
+      <SelectionToolbar
+        onCreate={() => Promise.resolve()}
+        selection={selection}
+        speech={{ speaking: true, onToggle: toggle }}
+      />,
+    );
+    expect(screen.getByRole('button', { name: '停止朗读' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(
+      screen.queryByRole('button', { name: '查词' }),
+    ).not.toBeInTheDocument();
+  });
 });

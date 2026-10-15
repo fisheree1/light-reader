@@ -36,13 +36,20 @@ import type { AgentFacade } from '../ai-agent/services/agent-facade';
 import { agentFacade as defaultAgentFacade } from '../ai-agent/services/ai-services';
 import type { AiDraft } from '../ai-agent/domain/agent';
 import { NoteService } from '../notes/services/note-service';
+import { DictionaryPanel } from '../dictionary/components/dictionary-panel';
+import { useSpeech } from '../dictionary/hooks/use-speech';
+import {
+  dictionaryServices,
+  type DictionaryServices,
+} from '../dictionary/services/dictionary-services';
 
 interface ReaderPageProps {
   agentFacade?: AgentFacade;
+  dictionary?: DictionaryServices;
   services?: ReaderServices;
 }
 
-type ReaderRightSidebar = 'annotations' | 'bookmarks' | 'ai';
+type ReaderRightSidebar = 'annotations' | 'bookmarks' | 'ai' | 'dictionary';
 
 function isEditingTarget(target: EventTarget | null) {
   return (
@@ -54,6 +61,7 @@ function isEditingTarget(target: EventTarget | null) {
 
 export function ReaderPage({
   agentFacade = defaultAgentFacade,
+  dictionary = dictionaryServices,
   services = readerServices,
 }: ReaderPageProps) {
   const { bookId = '' } = useParams();
@@ -110,6 +118,8 @@ export function ReaderPage({
     null,
   );
   const aiReturnFocusRef = useRef<HTMLElement | null>(null);
+  const [lookupText, setLookupText] = useState('');
+  const speech = useSpeech(dictionary.speech, book?.metadata.language);
   const isAnnotationSidebarOpen = rightSidebar === 'annotations';
   const isBookmarkSidebarOpen = rightSidebar === 'bookmarks';
   const isAiAssistantOpen = rightSidebar === 'ai';
@@ -289,8 +299,24 @@ export function ReaderPage({
               await createHighlight(color);
               setRightSidebar('annotations');
             }}
+            onLookup={() => {
+              if (!selection) return;
+              setLookupText(selection.text);
+              setRightSidebar('dictionary');
+            }}
             onOpenAi={openAiAssistant}
             selection={selection}
+            speech={
+              speech.available
+                ? {
+                    speaking: speech.speaking,
+                    onToggle: () => {
+                      if (speech.speaking) speech.stop();
+                      else if (selection) void speech.speak(selection.text);
+                    },
+                  }
+                : undefined
+            }
           />
 
           {isChapterSearchOpen ? (
@@ -445,6 +471,17 @@ export function ReaderPage({
             selection={
               selection ?? (aiSelectionBookId === bookId ? aiSelection : null)
             }
+          />
+        ) : null}
+        {rightSidebar === 'dictionary' && lookupText ? (
+          <DictionaryPanel
+            canSpeak={speech.available}
+            dictionary={dictionary.dictionary}
+            onClose={() => {
+              setRightSidebar(null);
+            }}
+            onSpeak={(text) => void speech.speak(text)}
+            text={lookupText}
           />
         ) : null}
       </div>

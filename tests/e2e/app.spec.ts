@@ -7,6 +7,7 @@ import {
   storeTestEpubForPaths,
 } from './book-fixture.js';
 import { createFb2Fixture } from '../../src/test/fixtures/foliate-fixtures.js';
+import { createStarDictFixture } from '../../src/test/fixtures/stardict-fixture.js';
 
 interface BrowserDiagnostics {
   pageErrors: string[];
@@ -343,6 +344,56 @@ test('records reading time and shows it on the stats page', async ({
   await expect(page.getByText('阅读目标已保存')).toBeVisible();
   await page.reload();
   await expect(page.getByText(/今天已读 0 \/ 20 分钟/)).toBeVisible();
+});
+
+test('imports a StarDict dictionary and looks up a selection', async ({
+  page,
+}) => {
+  const dictionary = createStarDictFixture(
+    [
+      ['lightreader', 'n. 本地优先的阅读应用'],
+      ['这是 LightReader 自制的无版权测试内容', '测试用释义：整句词条'],
+    ],
+    { name: 'E2E 词典' },
+  );
+  await page.goto('/settings');
+  const chooserPromise = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: '导入 StarDict 词典' }).click();
+  const chooser = await chooserPromise;
+  await chooser.setFiles([
+    {
+      name: 'e2e.ifo',
+      mimeType: 'text/plain',
+      buffer: Buffer.from(dictionary.ifo),
+    },
+    {
+      name: 'e2e.idx',
+      mimeType: 'application/octet-stream',
+      buffer: Buffer.from(dictionary.idx),
+    },
+    {
+      name: 'e2e.dict.dz',
+      mimeType: 'application/octet-stream',
+      buffer: Buffer.from(dictionary.dict),
+    },
+  ]);
+  await expect(page.getByText('已导入《E2E 词典》')).toBeVisible();
+
+  await page.goto('/library');
+  await importTestEpub(page);
+  await page.getByRole('button', { name: '打开《Web 测试 EPUB》' }).click();
+  const contentFrame = await findContentFrame(
+    page,
+    '这是 LightReader 自制的无版权测试内容。',
+  );
+  await contentFrame
+    .getByText('这是 LightReader 自制的无版权测试内容。')
+    .selectText();
+  await page.getByRole('button', { name: '查词', exact: true }).click();
+
+  const panel = page.getByRole('complementary', { name: '词典' });
+  await expect(panel.getByRole('region', { name: 'E2E 词典' })).toBeVisible();
+  await expect(panel.getByText('测试用释义：整句词条')).toBeVisible();
 });
 
 test('persists global reading settings and a per-book override', async ({

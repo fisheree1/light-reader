@@ -61,6 +61,12 @@ export const appErrorMessages = {
   BACKUP_VERSION_UNSUPPORTED: '此备份版本与当前 LightReader 不兼容。',
   BACKUP_RESTORE_FAILED: '无法恢复备份，原有数据已保留。',
   BACKUP_CAPACITY_INSUFFICIENT: '可用空间不足，无法完成这次备份操作。',
+  DICTIONARY_INVALID:
+    '词典文件不完整或格式不受支持。请同时选择 StarDict 的 .ifo、.idx 和 .dict.dz 文件。',
+  DICTIONARY_TOO_LARGE: '词典文件过大，无法导入。',
+  DICTIONARY_WRITE_FAILED: '无法保存词典，请检查磁盘空间后重试。',
+  DICTIONARY_READ_FAILED: '无法读取已导入的词典，请尝试重新导入。',
+  SPEECH_UNAVAILABLE: '当前系统不支持语音朗读。',
   EXPORT_CANCELLED: '',
   EXPORT_FAILED: '无法导出内容，请检查保存位置后重试。',
   UNKNOWN: '发生了意外错误，请重试。',

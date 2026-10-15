@@ -1,4 +1,4 @@
-import { Highlighter, Sparkles } from 'lucide-react';
+import { BookA, Highlighter, Sparkles, Square, Volume2 } from 'lucide-react';
 import { useState } from 'react';
 
 import { Button } from '../../../components/ui/button';
@@ -14,15 +14,19 @@ const colors: { className: string; label: string; value: AnnotationColor }[] = [
 ];
 
 interface SelectionToolbarProps {
+  onLookup?: () => void;
   onOpenAi?: () => void;
   onCreate: (color: AnnotationColor) => Promise<void>;
   selection: ReaderTextSelection | null;
+  speech?: { onToggle: () => void; speaking: boolean };
 }
 
 export function SelectionToolbar({
+  onLookup,
   onOpenAi,
   onCreate,
   selection,
+  speech,
 }: SelectionToolbarProps) {
   const [color, setColor] = useState<AnnotationColor>('yellow');
   const [isCreating, setIsCreating] = useState(false);
@@ -78,6 +82,27 @@ export function SelectionToolbar({
         <Highlighter aria-hidden="true" size={15} />
         {isCreating ? '添加中…' : '添加高亮'}
       </Button>
+      {onLookup ? (
+        <Button onClick={onLookup} size="sm" variant="secondary">
+          <BookA aria-hidden="true" size={15} />
+          查词
+        </Button>
+      ) : null}
+      {speech ? (
+        <Button
+          aria-pressed={speech.speaking}
+          onClick={speech.onToggle}
+          size="sm"
+          variant="secondary"
+        >
+          {speech.speaking ? (
+            <Square aria-hidden="true" size={15} />
+          ) : (
+            <Volume2 aria-hidden="true" size={15} />
+          )}
+          {speech.speaking ? '停止朗读' : '朗读'}
+        </Button>
+      ) : null}
       {onOpenAi ? (
         <Button onClick={onOpenAi} size="sm" variant="secondary">
           <Sparkles aria-hidden="true" size={15} />
