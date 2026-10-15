@@ -8,8 +8,8 @@
     {
       "name": "application shell",
       "pattern": "^index-[^.]+\\.js$",
-      "maxBytes": 365000,
-      "maxGzipBytes": 115000
+      "maxBytes": 280000,
+      "maxGzipBytes": 90000
     },
     {
       "name": "notes page",
@@ -19,7 +19,7 @@
     },
     {
       "name": "shared data services",
-      "pattern": "^(?:notes|library)-services-[^.]+\\.js$",
+      "pattern": "^library-services-[\\w-]{8}\\.js$",
       "maxBytes": 290000,
       "maxGzipBytes": 92000
     },
@@ -31,7 +31,7 @@
     },
     {
       "name": "PDF runtime",
-      "pattern": "^pdf-[^.]+\\.js$",
+      "pattern": "^pdf-[\\w-]{8}\\.js$",
       "maxBytes": 455000,
       "maxGzipBytes": 135000
     },
