@@ -1,8 +1,8 @@
 {
   "version": 1,
   "total": {
-    "maxBytes": 3165000,
-    "maxGzipBytes": 985000
+    "maxBytes": 3195000,
+    "maxGzipBytes": 995000
   },
   "initialLoad": {
     "maxBytes": 570000,

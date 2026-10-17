@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Globe, Search } from 'lucide-react';
 import { Button } from '../../components/ui/button';
@@ -23,6 +23,8 @@ import {
 import type { ChineseScript } from './domain/chinese-script';
 import type { TranslationMethod, VolumeKind } from './domain/edition';
 import type { MessageKey } from '../../i18n/i18n';
+import { OpdsPanel } from './opds/opds-panel';
+import type { OpdsService } from './opds/opds-service';
 import {
   EpubValidationError,
   type AcquisitionReport,
@@ -133,10 +135,89 @@ function ReportSummary({ report }: { report: AcquisitionReport }) {
   );
 }
 
+type DiscoveryTab = 'novels' | 'opds';
+
+function DiscoveryTabs({
+  onChange,
+  tab,
+}: {
+  onChange: (tab: DiscoveryTab) => void;
+  tab: DiscoveryTab;
+}) {
+  const { t } = useI18n();
+  const tabs: [DiscoveryTab, MessageKey][] = [
+    ['novels', 'opds.tabNovels'],
+    ['opds', 'opds.tabOpds'],
+  ];
+  return (
+    <div
+      aria-label={t('opds.tabs')}
+      className="bg-muted mb-5 inline-flex gap-1 rounded-lg p-1"
+      role="tablist"
+    >
+      {tabs.map(([value, label]) => (
+        <button
+          aria-selected={tab === value}
+          className={
+            tab === value
+              ? 'bg-surface rounded-md px-3 py-1.5 text-sm font-medium shadow-sm'
+              : 'text-muted-foreground hover:text-foreground rounded-md px-3 py-1.5 text-sm'
+          }
+          key={value}
+          onClick={() => {
+            onChange(value);
+          }}
+          role="tab"
+          type="button"
+        >
+          {t(label)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Online books: light-novel sources, and OPDS catalogs when available. Each
+ * tab keeps its own state while the page stays open.
+ */
 export function DiscoveryPage({
+  opds,
   services,
 }: {
+  opds?: OpdsService;
   services: BookDiscoveryService;
+}) {
+  const { t } = useI18n();
+  const [tab, setTab] = useState<DiscoveryTab>('novels');
+  const tabs = opds ? <DiscoveryTabs onChange={setTab} tab={tab} /> : null;
+  return (
+    <>
+      <div hidden={tab !== 'novels'}>
+        <NovelDiscovery services={services} tabs={tabs} />
+      </div>
+      {opds && tab === 'opds' ? (
+        <div>
+          <header className="mb-6">
+            <h1 className="text-2xl font-semibold">{t('discovery.title')}</h1>
+            <p className="text-muted-foreground mt-1 text-sm">
+              {t('opds.description')}
+            </p>
+          </header>
+          {tabs}
+          <OpdsPanel services={opds} />
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function NovelDiscovery({
+  services,
+  tabs,
+}: {
+  services: BookDiscoveryService;
+  tabs: ReactNode;
 }) {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -344,6 +425,7 @@ export function DiscoveryPage({
           </Button>
         </div>
       </header>
+      {tabs}
       {!services.gateway.available ? (
         <p role="status" className="bg-muted mb-5 rounded-lg p-4 text-sm">
           {t('discovery.unavailable')}

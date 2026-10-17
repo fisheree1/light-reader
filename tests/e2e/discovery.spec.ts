@@ -128,3 +128,27 @@ test('groups the same work found on every source without merging it', async ({
     page.getByRole('checkbox', { name: /测试轻小说 第一卷/ }),
   ).toBeEnabled();
 });
+
+test('adds an OPDS catalog, browses it and imports a book', async ({
+  page,
+}) => {
+  await page.goto('/discover');
+  await page.getByRole('tab', { name: 'OPDS 书库' }).click();
+  await page.getByLabel('名称').fill('测试书库');
+  await page.getByLabel('OPDS 地址').fill('https://opds.test/catalog');
+  await page.getByRole('button', { name: '添加书库' }).click();
+  await page.getByRole('button', { name: /最新书籍/ }).click();
+  const book = page.getByRole('listitem').filter({ hasText: '原创测试长篇' });
+  await book.getByRole('button', { name: '下载 EPUB 并加入书架' }).click();
+  await expect(book.getByText('已加入书架')).toBeVisible();
+  await book.getByRole('button', { name: '开始阅读' }).click();
+  await expect(page).toHaveURL(/\/reader\//);
+
+  // The catalog list survives a reload.
+  await page.goto('/discover');
+  await page.getByRole('tab', { name: 'OPDS 书库' }).click();
+  await expect(
+    page.getByRole('combobox', { name: '书库', exact: true }),
+  ).toHaveValue(/.+/);
+  await expect(page.getByRole('button', { name: /最新书籍/ })).toBeVisible();
+});

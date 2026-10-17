@@ -508,7 +508,7 @@ fn allowed_image(source: Source, url: &Url) -> bool {
             .any(|extension| url.path().to_lowercase().ends_with(extension))
 }
 
-fn public_ip(address: IpAddr) -> bool {
+pub(crate) fn public_ip(address: IpAddr) -> bool {
     match address {
         IpAddr::V4(ip) => {
             !ip.is_private()

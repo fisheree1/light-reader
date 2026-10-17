@@ -766,6 +766,52 @@ export const zhCN = {
     sources: '可验证来源',
     untitledPlace: '未命名位置',
   },
+  opds: {
+    tabs: '书源类型',
+    tabNovels: '轻小说网站',
+    tabOpds: 'OPDS 书库',
+    description:
+      '浏览和搜索 OPDS 书库（如自建的 Calibre-Web、Kavita、Komga，或公版书目录），下载电子书加入书架。',
+    unavailable: 'OPDS 下载需要桌面版。',
+    catalogs: 'OPDS 书库',
+    catalog: '书库',
+    noCatalogs: '尚未添加书库',
+    remove: '移除书库',
+    name: '名称',
+    namePlaceholder: '我的书库',
+    address: 'OPDS 地址',
+    add: '添加书库',
+    addInvalid:
+      '请输入有效且未添加过的 http(s) 地址，不要在地址中包含用户名或密码。',
+    suggested: '推荐：',
+    notice:
+      '请只添加你有权使用的书库。书库自身地址可以是局域网地址；书库中指向其他网站的链接只允许 HTTPS 公网地址。暂不支持需要登录的书库。书库列表保存在本机，不包含在备份中。',
+    home: '书库首页',
+    searchLabel: '搜索 {catalog}',
+    searchPlaceholder: '书名或作者',
+    search: '搜索书库',
+    downloading: '正在下载并导入…',
+    acquire: '下载 {format} 并加入书架',
+    noFormat: '没有可导入的格式',
+    empty: '这里没有条目',
+    emptyDescription: '换个关键词搜索，或返回上一级。',
+    initial: '添加一个 OPDS 书库',
+    initialDescription: '输入书库的 OPDS 地址，或使用上方推荐的公版书目录。',
+    previous: '上一页',
+    next: '下一页',
+    errorInvalidUrl:
+      '地址不被允许：仅支持书库自身地址，或指向公网的 HTTPS 链接。',
+    errorUnreachable: '无法连接书库，请检查地址和网络后重试。',
+    errorNotFeed: '这个地址返回的不是 OPDS 目录（可能是登录页或普通网页）。',
+    errorUnsupported:
+      '暂不支持 OPDS 2.0（JSON）目录，请使用该书库的 OPDS 1.x 地址。',
+    errorAuthRequired: '该书库需要登录，暂不支持。',
+    errorNotFound: '书库中找不到这个页面或文件。',
+    errorTooLarge: '文件过大，已停止下载。',
+    errorNoSearch: '这个书库不支持搜索。',
+    errorNoFormat:
+      '这本书没有可导入的格式（EPUB、AZW3、MOBI、FB2、PDF、CBZ）。',
+  },
 };
 
 type DeepStringRecord<T> = {

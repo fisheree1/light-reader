@@ -15,14 +15,18 @@ export const routes: RouteObject[] = [
       {
         path: 'discover',
         lazy: async () => {
-          const [{ DiscoveryPage }, { discoveryServices }] = await Promise.all([
-            import('../../features/discovery/discovery-page'),
-            import('../../features/discovery/services/discovery-services'),
+          const [{ DiscoveryPage }, { discoveryServices, opdsServices }] =
+            await Promise.all([
+              import('../../features/discovery/discovery-page'),
+              import('../../features/discovery/services/discovery-services'),
+            ]);
+          const [services, opds] = await Promise.all([
+            discoveryServices,
+            opdsServices,
           ]);
-          const services = await discoveryServices;
           return {
             Component: function DiscoveryRoute() {
-              return <DiscoveryPage services={services} />;
+              return <DiscoveryPage opds={opds} services={services} />;
             },
           };
         },

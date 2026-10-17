@@ -7,6 +7,7 @@ mod ai;
 mod backup;
 mod catalog;
 mod library;
+mod opds;
 mod transactions;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -103,6 +104,7 @@ pub fn run() {
     builder
         .manage(ai::OllamaState::new())
         .manage(catalog::CatalogState::new())
+        .manage(opds::OpdsState::new())
         .invoke_handler(tauri::generate_handler![
             ai::ai_ollama_status,
             ai::ai_ollama_chat,
@@ -122,7 +124,10 @@ pub fn run() {
             catalog::catalog_read_page,
             catalog::catalog_cancel,
             catalog::catalog_open_source,
-            catalog::catalog_read_image
+            catalog::catalog_read_image,
+            opds::opds_read_feed,
+            opds::opds_download,
+            opds::opds_cancel
         ])
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
