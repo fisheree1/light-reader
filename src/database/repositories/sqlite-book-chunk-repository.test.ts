@@ -1,3 +1,4 @@
+import type { AtomicChunkReplace } from '../atomic-writes';
 import type { SqlDatabase } from '../client';
 import type { BookChunk } from '../../features/ai-agent/retrieval/book-retrieval';
 import { SqliteBookChunkRepository } from './sqlite-book-chunk-repository';
@@ -57,10 +58,12 @@ class RecordingDatabase implements SqlDatabase {
 }
 
 describe('SqliteBookChunkRepository', () => {
-  it('replaces one book index in a transaction and maps stored locators', async () => {
+  it('replaces one book index through one atomic command and maps stored locators', async () => {
     const database = new RecordingDatabase();
-    const repository = new SqliteBookChunkRepository(() =>
-      Promise.resolve(database),
+    const replaceChunks = vi.fn<AtomicChunkReplace>(() => Promise.resolve());
+    const repository = new SqliteBookChunkRepository(
+      () => Promise.resolve(database),
+      replaceChunks,
     );
 
     await repository.replaceBookChunks(chunk.bookId, [chunk]);
@@ -71,18 +74,48 @@ describe('SqliteBookChunkRepository', () => {
       chunk.sourceFileHash,
     );
 
-    expect(database.executions.map(({ query }) => query.trim())).toEqual(
-      expect.arrayContaining([
-        'BEGIN IMMEDIATE',
-        'DELETE FROM ai_book_chunks WHERE book_id = $1',
-        'COMMIT',
-      ]),
+    expect(replaceChunks).toHaveBeenCalledWith(chunk.bookId, [
+      {
+        schemaVersion: row.schema_version,
+        chunkId: row.chunk_id,
+        bookId: row.book_id,
+        sourceFileHash: row.source_file_hash,
+        chapterHref: row.chapter_href,
+        chapterTitle: row.chapter_title,
+        startLocatorJson: row.start_locator_json,
+        endLocatorJson: null,
+        text: row.text,
+        textHash: row.text_hash,
+        estimatedTokens: row.estimated_tokens,
+        ordinal: row.ordinal,
+      },
+    ]);
+    expect(database.executions).toEqual([]);
+  });
+
+  it('serializes end locators and maps command failures to SEARCH_INDEX_FAILED', async () => {
+    const endLocator = { ...chunk.startLocator, progression: 0.4 };
+    const replaceChunks = vi.fn(() =>
+      Promise.reject(new Error('database is locked')),
     );
-    expect(
-      database.executions.some(({ query }) =>
-        query.includes('INSERT INTO ai_book_chunks'),
-      ),
-    ).toBe(true);
+    const repository = new SqliteBookChunkRepository(
+      () => Promise.resolve(new RecordingDatabase()),
+      replaceChunks,
+    );
+
+    await expect(
+      repository.replaceBookChunks(chunk.bookId, [{ ...chunk, endLocator }]),
+    ).rejects.toMatchObject({
+      code: 'SEARCH_INDEX_FAILED',
+      cause: { message: 'database is locked' },
+    });
+    expect(replaceChunks).toHaveBeenCalledWith(chunk.bookId, [
+      expect.objectContaining({ endLocatorJson: JSON.stringify(endLocator) }),
+    ]);
+    await expect(
+      repository.replaceBookChunks('book-2', [chunk]),
+    ).rejects.toMatchObject({ code: 'SEARCH_INDEX_FAILED' });
+    expect(replaceChunks).toHaveBeenCalledOnce();
   });
 
   it('always scopes FTS and short-term fallback searches to one book', async () => {
@@ -106,41 +139,20 @@ describe('SqliteBookChunkRepository', () => {
     expect(database.selections[1]?.query).toContain('book_id = $1');
   });
 
-  it('取消写入时回滚事务，不提交半成品索引', async () => {
+  it('取消后不再写入索引', async () => {
     const controller = new AbortController();
-    class CancellingDatabase extends RecordingDatabase {
-      override execute(
-        query: string,
-        values: unknown[] = [],
-      ): Promise<unknown> {
-        const result = super.execute(query, values);
-        if (query.includes('INSERT INTO ai_book_chunks')) controller.abort();
-        return result;
-      }
-    }
-    const database = new CancellingDatabase();
-    const repository = new SqliteBookChunkRepository(() =>
-      Promise.resolve(database),
+    controller.abort();
+    const database = new RecordingDatabase();
+    const replaceChunks = vi.fn(() => Promise.resolve());
+    const repository = new SqliteBookChunkRepository(
+      () => Promise.resolve(database),
+      replaceChunks,
     );
 
     await expect(
       repository.replaceBookChunks(chunk.bookId, [chunk], controller.signal),
     ).rejects.toMatchObject({ code: 'USER_CANCELLED' });
-
-    expect(database.executions.map(({ query }) => query.trim())).toEqual(
-      expect.arrayContaining([
-        'BEGIN IMMEDIATE',
-        'DELETE FROM ai_book_chunks WHERE book_id = $1',
-        'ROLLBACK',
-      ]),
-    );
-    expect(
-      database.executions.some(({ query }) =>
-        query.includes('INSERT INTO ai_book_chunks'),
-      ),
-    ).toBe(true);
-    expect(database.executions.map(({ query }) => query.trim())).not.toContain(
-      'COMMIT',
-    );
+    expect(replaceChunks).not.toHaveBeenCalled();
+    expect(database.executions).toEqual([]);
   });
 });
