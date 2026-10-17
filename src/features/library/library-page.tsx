@@ -35,7 +35,10 @@ export function LibraryPage({ services = libraryServices }: LibraryPageProps) {
   const [managedBookId, setManagedBookId] = useState<string | null>(null);
   const managedBook =
     library.books.find((book) => book.id === managedBookId) ?? null;
-  const hasFilter = Boolean(library.query.trim()) || library.favoritesOnly;
+  const hasFilter =
+    Boolean(library.query.trim()) ||
+    library.favoritesOnly ||
+    library.status !== 'all';
   const showLibraryControls = library.books.length > 0 || hasFilter;
   const entries = library.groupSeries
     ? groupBySeries(library.books)
@@ -127,6 +130,24 @@ export function LibraryPage({ services = libraryServices }: LibraryPageProps) {
               <option value="recent">{t('library.sortRecent')}</option>
               <option value="added">{t('library.sortAdded')}</option>
               <option value="title">{t('library.sortTitle')}</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <span className="text-muted-foreground">{t('library.status')}</span>
+            <select
+              aria-label={t('library.statusLabel')}
+              className="bg-background h-9 rounded-md border px-2"
+              onChange={(event) => {
+                library.setStatus(
+                  event.currentTarget.value as typeof library.status,
+                );
+              }}
+              value={library.status}
+            >
+              <option value="all">{t('library.statusAll')}</option>
+              <option value="unread">{t('library.statusUnread')}</option>
+              <option value="reading">{t('library.statusReading')}</option>
+              <option value="finished">{t('library.statusFinished')}</option>
             </select>
           </label>
           <label className="flex h-9 items-center gap-2 px-2 text-sm">

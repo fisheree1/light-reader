@@ -5,6 +5,7 @@ import {
   type BookDeletionMode,
   type BookDetails,
   type BookSort,
+  type BookStatusFilter,
   type LibraryBook,
 } from '../domain/library';
 import type { LibraryServices } from '../services/library-services';
@@ -20,6 +21,7 @@ export function useLibrary(services: LibraryServices) {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<BookSort>('recent');
   const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [status, setStatus] = useState<BookStatusFilter>('all');
   const [groupSeries, setGroupSeries] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [isImporting, setIsImporting] = useState(false);
@@ -31,20 +33,22 @@ export function useLibrary(services: LibraryServices) {
     setIsLoading(true);
     setLoadError(null);
     try {
-      setBooks(await services.management.list({ query, sort, favoritesOnly }));
+      setBooks(
+        await services.management.list({ query, sort, favoritesOnly, status }),
+      );
     } catch (error) {
       setLoadError(asAppError(error, 'DATABASE_READ_FAILED').userMessage);
     } finally {
       setIsLoading(false);
     }
-  }, [favoritesOnly, query, services.management, sort]);
+  }, [favoritesOnly, query, services.management, sort, status]);
 
   useEffect(() => {
     let active = true;
     const timer = setTimeout(
       () => {
         services.management
-          .list({ query, sort, favoritesOnly })
+          .list({ query, sort, favoritesOnly, status })
           .then((persistedBooks) => {
             if (active) setBooks(persistedBooks);
           })
@@ -66,7 +70,7 @@ export function useLibrary(services: LibraryServices) {
       active = false;
       clearTimeout(timer);
     };
-  }, [favoritesOnly, query, services.management, sort]);
+  }, [favoritesOnly, query, services.management, sort, status]);
 
   const importBook = useCallback(async () => {
     setIsImporting(true);
@@ -245,7 +249,9 @@ export function useLibrary(services: LibraryServices) {
     setGroupSeries,
     setQuery,
     setSort,
+    setStatus,
     sort,
+    status,
     updateDetails,
   };
 }

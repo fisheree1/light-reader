@@ -4,6 +4,7 @@ import { bookMetadataSchema } from '../../features/library/domain/book';
 import {
   bookDetailsSchema,
   bookListOptionsSchema,
+  FINISHED_PROGRESS,
   bookTagSchema,
   normalizeBookTags,
   noteReferenceUpdateSchema,
@@ -42,7 +43,8 @@ const deleteBookAtomically: AtomicBookDelete = (bookId, noteUpdates) =>
 
 const bookColumns = `b.id, b.title, b.author, b.format, b.file_path,
   b.file_hash, b.cover_path, b.metadata_json, b.file_size, b.created_at,
-  b.updated_at, b.favorite, rs.updated_at AS last_read_at`;
+  b.updated_at, b.favorite, rs.updated_at AS last_read_at,
+  rs.progression AS progression`;
 
 function validId(value: string): string {
   const id = value.trim();
@@ -94,6 +96,8 @@ export class SqliteLibraryRepository implements LibraryRepository {
       where.push(`(
         b.title LIKE ${binding} ESCAPE '\\' COLLATE NOCASE OR
         COALESCE(b.author, '') LIKE ${binding} ESCAPE '\\' COLLATE NOCASE OR
+        COALESCE(json_extract(b.metadata_json, '$.series.title'), '')
+          LIKE ${binding} ESCAPE '\\' COLLATE NOCASE OR
         EXISTS (
           SELECT 1 FROM book_tags bt
           WHERE bt.book_id = b.id
@@ -102,6 +106,12 @@ export class SqliteLibraryRepository implements LibraryRepository {
       )`);
     }
     if (options.favoritesOnly) where.push('b.favorite = 1');
+    const finished = `COALESCE(rs.progression, 0) >= ${String(FINISHED_PROGRESS)}`;
+    if (options.status === 'unread') where.push('rs.updated_at IS NULL');
+    if (options.status === 'reading')
+      where.push(`rs.updated_at IS NOT NULL AND NOT (${finished})`);
+    if (options.status === 'finished')
+      where.push(`rs.updated_at IS NOT NULL AND ${finished}`);
 
     try {
       const database = await this.databaseProvider();

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import type { BookOrigin } from './book-origin';
+import { readingStatus } from './reading-status';
 
 /** A book's place in a series; `index` orders volumes and may be fractional. */
 export const bookSeriesSchema = z.object({
@@ -137,16 +138,25 @@ export function groupBySeries<T extends SeriesBook>(
   });
 }
 
-/** The volume to continue: the one read most recently, else the first. */
-export function continueVolume<T extends { lastReadAt: number | null }>(
-  books: readonly T[],
-): T | null {
-  let latest: T | null = null;
-  for (const book of books)
-    if (
-      book.lastReadAt !== null &&
-      book.lastReadAt > (latest?.lastReadAt ?? -1)
-    )
-      latest = book;
-  return latest ?? books.at(0) ?? null;
+/**
+ * The volume to continue: the one read most recently, or the next unfinished
+ * volume after it once it is finished; the first volume when none was read.
+ * `books` must be in series order.
+ */
+export function continueVolume<
+  T extends { lastReadAt: number | null; progress: number | null },
+>(books: readonly T[]): T | null {
+  let latest = -1;
+  books.forEach((book, index) => {
+    const at = book.lastReadAt;
+    if (at !== null && at > (books[latest]?.lastReadAt ?? -1)) latest = index;
+  });
+  if (latest === -1) return books.at(0) ?? null;
+  const current = books[latest];
+  if (readingStatus(current) !== 'finished') return current;
+  return (
+    books
+      .slice(latest + 1)
+      .find((book) => readingStatus(book) !== 'finished') ?? current
+  );
 }

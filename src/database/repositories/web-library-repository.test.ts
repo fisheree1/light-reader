@@ -1,3 +1,4 @@
+import type { BookListOptions } from '../../features/library/domain/library';
 import {
   createTestBook,
   createTestNote,
@@ -42,7 +43,7 @@ async function setup() {
   };
 }
 
-const options = { query: '', favoritesOnly: false } as const;
+const options = { query: '', favoritesOnly: false, status: 'all' } as const;
 
 describe('WebLibraryRepository', () => {
   it('sorts by title, added time, and recent reading', async () => {
@@ -114,6 +115,35 @@ describe('WebLibraryRepository', () => {
         series: null,
       }),
     ).rejects.toMatchObject({ code: 'BOOK_NOT_FOUND' });
+  });
+
+  it('reports progress, filters by reading status and matches series names', async () => {
+    const { repository, settings } = await setup();
+    await settings.saveReadingState('alpha', {
+      version: 1,
+      format: 'epub',
+      chapterHref: 'one.xhtml',
+      progression: 0.5,
+    });
+    await settings.saveReadingState('mid', {
+      version: 1,
+      format: 'epub',
+      chapterHref: 'one.xhtml',
+      progression: 1,
+    });
+    await repository.updateDetails('zulu', {
+      title: 'Zulu',
+      author: null,
+      series: { title: '星之系列', index: 1 },
+    });
+    const ids = async (overrides: Partial<BookListOptions>) =>
+      (await repository.list({ ...options, sort: 'title', ...overrides })).map(
+        (book) => [book.id, book.progress],
+      );
+    expect(await ids({ status: 'reading' })).toEqual([['alpha', 0.5]]);
+    expect(await ids({ status: 'finished' })).toEqual([['mid', 1]]);
+    expect(await ids({ status: 'unread' })).toEqual([['zulu', null]]);
+    expect(await ids({ query: '星之' })).toEqual([['zulu', null]]);
   });
 
   it('deletes the book with note snapshots and its metadata', async () => {

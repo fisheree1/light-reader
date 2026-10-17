@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { IconButton } from '../../../components/ui/icon-button';
 import { cn } from '../../../lib/cn';
 import type { LibraryBook } from '../domain/library';
+import { readingStatus } from '../domain/reading-status';
 import type { LibraryServices } from '../services/library-services';
 import { useI18n } from '../../../i18n/use-i18n';
 
@@ -26,6 +27,11 @@ export function BookCard({
 }: BookCardProps) {
   const { formatDate, t } = useI18n();
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
+  const status = readingStatus(book);
+  // Floor, so a book shows 100% only once it is actually finished.
+  const percent = Math.floor((book.progress ?? 0) * 100);
+  const readDate = (value: number) =>
+    formatDate(value, { month: 'numeric', day: 'numeric' });
 
   useEffect(() => {
     let active = true;
@@ -81,15 +87,28 @@ export function BookCard({
         <p className="text-muted-foreground mt-1 truncate text-xs">
           {book.author ?? t('common.unknownAuthor')}
         </p>
+        {status === 'reading' && book.progress !== null ? (
+          <span
+            aria-hidden="true"
+            className="bg-muted mt-2 block h-1 overflow-hidden rounded-full"
+          >
+            <span
+              className="bg-primary block h-full rounded-full"
+              style={{ width: `${String(percent)}%` }}
+            />
+          </span>
+        ) : null}
         <p className="text-muted-foreground mt-2 text-xs">
           {book.lastReadAt === null
             ? t('library.notStarted')
-            : t('library.lastRead', {
-                date: formatDate(book.lastReadAt, {
-                  month: 'numeric',
-                  day: 'numeric',
-                }),
-              })}
+            : status === 'finished'
+              ? t('library.finished', { date: readDate(book.lastReadAt) })
+              : book.progress === null
+                ? t('library.lastRead', { date: readDate(book.lastReadAt) })
+                : t('library.progressRead', {
+                    percent,
+                    date: readDate(book.lastReadAt),
+                  })}
         </p>
         {book.tags.length > 0 ? (
           <span className="mt-2 flex min-w-0 gap-1 overflow-hidden">

@@ -1,4 +1,5 @@
 import {
+  continueVolume,
   groupBySeries,
   parseSeriesIndex,
   seriesKey,
@@ -88,5 +89,27 @@ describe('series grouping', () => {
     expect(seriesTitleFromVolume('Work Vol. 2')).toBe('Work');
     expect(seriesTitleFromVolume('第一卷')).toBe('第一卷');
     expect(seriesKey('Ａ・B c')).toBe(seriesKey('abc'));
+  });
+});
+
+describe('continueVolume', () => {
+  const at = (lastReadAt: number | null, progress: number | null) => ({
+    lastReadAt,
+    progress,
+  });
+
+  it('starts at the first volume and resumes the latest unfinished one', () => {
+    const unread = [at(null, null), at(null, null)];
+    expect(continueVolume(unread)).toBe(unread[0]);
+    const reading = [at(10, 1), at(30, 0.4), at(20, 0.2)];
+    expect(continueVolume(reading)).toBe(reading[1]);
+    expect(continueVolume([])).toBeNull();
+  });
+
+  it('moves past a finished volume to the next unfinished one', () => {
+    const books = [at(50, 1), at(10, 0.99), at(null, null), at(null, null)];
+    expect(continueVolume(books)).toBe(books[2]);
+    const allDone = [at(10, 1), at(50, 0.985)];
+    expect(continueVolume(allDone)).toBe(allDone[1]);
   });
 });

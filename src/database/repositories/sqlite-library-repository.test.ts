@@ -128,6 +128,7 @@ function options(overrides: Partial<BookListOptions> = {}): BookListOptions {
     query: '',
     sort: 'recent',
     favoritesOnly: false,
+    status: 'all',
     ...overrides,
   };
 }
@@ -150,6 +151,35 @@ describe('SqliteLibraryRepository', () => {
     await expect(
       repository.list(options({ sort: 'title' })),
     ).resolves.toMatchObject([{ id: 'book-1' }, { id: 'book-2' }]);
+  });
+
+  it('maps progress and filters by reading status and series name in SQL', async () => {
+    const database = new MemoryLibraryDatabase();
+    database.rows = database.rows.map((row) =>
+      row.id === 'book-2' ? { ...row, progression: 0.42 } : row,
+    );
+    const repository = new SqliteLibraryRepository(() =>
+      Promise.resolve(database),
+    );
+    await expect(repository.list(options())).resolves.toMatchObject([
+      { id: 'book-2', progress: 0.42 },
+      { id: 'book-1', progress: null },
+    ]);
+    for (const [status, clause] of [
+      ['unread', 'rs.updated_at IS NULL'],
+      ['reading', 'NOT (COALESCE(rs.progression, 0) >= 0.98)'],
+      [
+        'finished',
+        'rs.updated_at IS NOT NULL AND COALESCE(rs.progression, 0) >= 0.98',
+      ],
+    ] as const) {
+      await repository.list(options({ status }));
+      expect(database.selections.at(-2)?.query).toContain(clause);
+    }
+    await repository.list(options({ query: '系列' }));
+    expect(database.selections.at(-2)?.query).toContain(
+      "json_extract(b.metadata_json, '$.series.title')",
+    );
   });
 
   it('escapes local search input and applies favorite filtering', async () => {

@@ -12,6 +12,7 @@ import {
   libraryBookSchema,
   normalizeBookTags,
   noteReferenceUpdateSchema,
+  readingStatus,
   type BookDetails,
   type BookListOptions,
   type LibraryBook,
@@ -61,6 +62,7 @@ export class WebLibraryRepository implements LibraryRepository {
             favorite: stored?.favorite ?? false,
             tags: stored?.tags ?? [],
             lastReadAt: state?.updatedAt ?? null,
+            progress: state?.locator.progression ?? null,
           });
         }),
       );
@@ -69,9 +71,14 @@ export class WebLibraryRepository implements LibraryRepository {
         .filter(
           (book) =>
             (!options.favoritesOnly || book.favorite) &&
+            (options.status === 'all' ||
+              readingStatus(book) === options.status) &&
             (!query ||
               book.title.toLocaleLowerCase().includes(query) ||
               (book.author ?? '').toLocaleLowerCase().includes(query) ||
+              (book.metadata.series?.title ?? '')
+                .toLocaleLowerCase()
+                .includes(query) ||
               book.tags.some((tag) => tag.toLocaleLowerCase().includes(query))),
         )
         .sort((left, right) => this.compare(left, right, options.sort));
@@ -159,6 +166,7 @@ export class WebLibraryRepository implements LibraryRepository {
         query: '',
         sort: 'added',
         favoritesOnly: false,
+        status: 'all',
       })
     ).find((item) => item.id === bookId);
     if (!book) throw new AppError('BOOK_NOT_FOUND');

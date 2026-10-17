@@ -13,8 +13,17 @@ normalizes a maximum of 20 tags, including case-insensitive duplicate removal.
 The `book_tags` foreign key cascades when its book is deleted.
 
 `LibraryRepository.list` joins the latest `reading_states.updated_at` value and
-returns a `LibraryBook` domain object. It supports local title, author, and tag
-matching, an optional favorites filter, and three deterministic orders:
+returns a `LibraryBook` domain object, including `progress` (the saved
+`reading_states.progression`, 0–1, or `null` when the reader reported none). It
+supports local title, author, tag, and series-name matching (SQLite reads the
+series with `json_extract`), an optional favorites filter, a reading-status
+filter, and three deterministic orders.
+
+Reading status comes from `readingStatus` (`domain/reading-status.ts`): no
+reading state means not started, and progress at or above `FINISHED_PROGRESS`
+(0.98, since paginated readers rarely report exactly 1 on the last page) means
+finished. Everything else is "reading". Cards show the floored percentage with
+a progress bar, or "已读完". The orders are:
 
 - `recent`: books with reading state first, newest read first; unread books use
   newest-added order.
@@ -48,9 +57,9 @@ places each series where its first member appears. Names match ignoring width,
 case, punctuation, and spaces. Volumes are ordered by position, then source
 volume ID, then numeric-aware title. A series with only one book on the shelf
 shows as a plain book. The shelf's "按系列分组" toggle (on by default, not
-persisted) turns grouping off. Each series is collapsed by default and offers
-"continue" (the most recently read volume, else the first). Shelf search does
-not match series names yet.
+persisted) turns grouping off. Each series is collapsed by default, counts its
+finished volumes, and offers "continue": the most recently read volume, or the
+next unfinished volume once that one is finished, else the first volume.
 
 ## Delete modes
 
