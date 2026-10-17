@@ -9,6 +9,7 @@ mod catalog;
 mod library;
 mod opds;
 mod syosetu;
+mod transactions;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -118,6 +119,10 @@ pub fn run() {
             backup::restore_full_backup_snapshot,
             backup::available_backup_space,
             library::delete_library_book,
+            transactions::library_replace_book_tags,
+            transactions::search_replace_book_content,
+            transactions::search_rebuild_text_indexes,
+            transactions::ai_replace_book_chunks,
             catalog::catalog_read_page,
             catalog::catalog_cancel,
             catalog::catalog_open_source,

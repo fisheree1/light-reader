@@ -6,8 +6,12 @@ import {
   type BookChunk,
   type BookChunkMatch,
 } from '../../features/ai-agent/retrieval/book-retrieval';
-import { AppError, isAppError } from '../../lib/app-error';
+import { AppError } from '../../lib/app-error';
 import { bookLocatorSchema } from '../../reader-engines/types';
+import {
+  replaceChunksAtomically,
+  type AtomicChunkReplace,
+} from '../atomic-writes';
 import { getDatabase, type SqlDatabase } from '../client';
 import type { BookChunkRepository } from './book-chunk-repository';
 
@@ -70,9 +74,14 @@ function mapRow(value: unknown): BookChunk {
 
 export class SqliteBookChunkRepository implements BookChunkRepository {
   private readonly databaseProvider: DatabaseProvider;
+  private readonly atomicChunkReplace: AtomicChunkReplace;
 
-  constructor(databaseProvider: DatabaseProvider = getDatabase) {
+  constructor(
+    databaseProvider: DatabaseProvider = getDatabase,
+    atomicChunkReplace: AtomicChunkReplace = replaceChunksAtomically,
+  ) {
     this.databaseProvider = databaseProvider;
+    this.atomicChunkReplace = atomicChunkReplace;
   }
 
   async findById(bookId: string, chunkId: string): Promise<BookChunk | null> {
@@ -115,41 +124,31 @@ export class SqliteBookChunkRepository implements BookChunkRepository {
     if (chunks.some((chunk) => chunk.bookId !== id)) {
       throw new AppError('SEARCH_INDEX_FAILED');
     }
-    const database = await this.databaseProvider();
-    await database.execute('BEGIN IMMEDIATE');
+    if (signal?.aborted) throw new AppError('USER_CANCELLED');
     try {
-      await database.execute('DELETE FROM ai_book_chunks WHERE book_id = $1', [
+      // Loads the plugin pool the command writes through. Once started, the
+      // replacement commits or rolls back as a whole, like the web adapter.
+      await this.databaseProvider();
+      await this.atomicChunkReplace(
         id,
-      ]);
-      for (const chunk of chunks) {
-        if (signal?.aborted) throw new AppError('USER_CANCELLED');
-        await database.execute(
-          `INSERT INTO ai_book_chunks (
-             schema_version, chunk_id, book_id, source_file_hash,
-             chapter_href, chapter_title, start_locator_json,
-             end_locator_json, text, text_hash, estimated_tokens, ordinal
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-          [
-            chunk.schemaVersion,
-            chunk.id,
-            chunk.bookId,
-            chunk.sourceFileHash,
-            chunk.chapterHref,
-            chunk.chapterTitle,
-            JSON.stringify(chunk.startLocator),
-            chunk.endLocator ? JSON.stringify(chunk.endLocator) : null,
-            chunk.text,
-            chunk.textHash,
-            chunk.estimatedTokens,
-            chunk.ordinal,
-          ],
-        );
-      }
-      if (signal?.aborted) throw new AppError('USER_CANCELLED');
-      await database.execute('COMMIT');
+        chunks.map((chunk) => ({
+          schemaVersion: chunk.schemaVersion,
+          chunkId: chunk.id,
+          bookId: chunk.bookId,
+          sourceFileHash: chunk.sourceFileHash,
+          chapterHref: chunk.chapterHref,
+          chapterTitle: chunk.chapterTitle,
+          startLocatorJson: JSON.stringify(chunk.startLocator),
+          endLocatorJson: chunk.endLocator
+            ? JSON.stringify(chunk.endLocator)
+            : null,
+          text: chunk.text,
+          textHash: chunk.textHash,
+          estimatedTokens: chunk.estimatedTokens,
+          ordinal: chunk.ordinal,
+        })),
+      );
     } catch (error) {
-      await database.execute('ROLLBACK').catch(() => undefined);
-      if (isAppError(error)) throw error;
       throw new AppError('SEARCH_INDEX_FAILED', { cause: error });
     }
   }
