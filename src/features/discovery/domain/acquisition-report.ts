@@ -1,4 +1,4 @@
-import type { NovelSource } from './catalog';
+import type { BookOrigin } from '../../library/domain/book-origin';
 import type { EpubValidation } from '../services/epub-validator';
 import { DiscoveryError } from './discovery-error';
 
@@ -17,7 +17,7 @@ export interface ChapterReport {
  * its source by hand (see docs/online-book-discovery-acceptance.md).
  */
 export interface AcquisitionReport {
-  source: NovelSource;
+  source: BookOrigin['source'];
   novelId: string;
   volumeId: string;
   title: string;

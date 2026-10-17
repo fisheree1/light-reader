@@ -16,14 +16,17 @@ export const routes: RouteObject[] = [
       {
         path: 'discover',
         lazy: async () => {
-          const [{ DiscoveryPage }, { discoveryServices, opdsServices }] =
-            await Promise.all([
-              import('../../features/discovery/discovery-page'),
-              import('../../features/discovery/services/discovery-services'),
-            ]);
-          const [services, opds] = await Promise.all([
+          const [
+            { DiscoveryPage },
+            { discoveryServices, opdsServices, syosetuServices },
+          ] = await Promise.all([
+            import('../../features/discovery/discovery-page'),
+            import('../../features/discovery/services/discovery-services'),
+          ]);
+          const [services, opds, syosetu] = await Promise.all([
             discoveryServices,
             opdsServices,
+            syosetuServices,
           ]);
           return {
             Component: function DiscoveryRoute() {
@@ -32,6 +35,7 @@ export const routes: RouteObject[] = [
                   library={libraryServices.management}
                   opds={opds}
                   services={services}
+                  syosetu={syosetu}
                 />
               );
             },

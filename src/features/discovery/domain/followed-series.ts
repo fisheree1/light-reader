@@ -1,11 +1,13 @@
 import { seriesTitleFromVolume } from '../../library/domain/book-series';
 import type { LibraryBook } from '../../library/domain/library';
-import type { NovelSource } from './catalog';
+import type { BookOrigin } from '../../library/domain/book-origin';
+
+type OriginSource = BookOrigin['source'];
 
 /** A shelf book that was fetched from a light-novel source. */
 export interface OwnedVolume {
   bookId: string;
-  source: NovelSource;
+  source: OriginSource;
   novelId: string;
   volumeId: string;
   seriesTitle: string;
@@ -15,7 +17,7 @@ export interface OwnedVolume {
 
 /** A source work with at least one volume on the shelf. */
 export interface FollowedSeries {
-  source: NovelSource;
+  source: OriginSource;
   novelId: string;
   title: string;
   volumes: number;
@@ -24,7 +26,7 @@ export interface FollowedSeries {
 }
 
 export function volumeKey(
-  source: NovelSource,
+  source: OriginSource,
   novelId: string,
   volumeId: string,
 ): string {

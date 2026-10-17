@@ -42,6 +42,10 @@ export async function buildNovelEpub(
     translationMethod?: TranslationMethod;
     edition?: string | null;
     series?: { title: string; index: number } | null;
+    /** BCP 47 language for an untranslated original, such as `ja`. */
+    language?: string;
+    /** Vertical writing, right to left (縦書き). */
+    vertical?: boolean;
     chapters: EpubChapter[];
     images: EpubImage[];
     coverPath: string | null;
@@ -66,17 +70,25 @@ export async function buildNovelEpub(
     'META-INF/container.xml',
     '<?xml version="1.0" encoding="UTF-8"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="EPUB/package.opf" media-type="application/oebps-package+xml"/></rootfiles></container>',
   );
+  const original = input.language !== undefined;
   const language =
-    input.script === 'hans'
+    input.language ??
+    (input.script === 'hans'
       ? 'zh-Hans'
       : input.script === 'hant'
         ? 'zh-Hant'
-        : 'zh';
+        : 'zh');
   const xhtml = (title: string, body: string) =>
     `<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="${language}" xml:lang="${language}"><head><title>${escapeXml(title)}</title><link rel="stylesheet" href="style.css"/></head><body>${body}</body></html>`;
   add(
     'EPUB/style.css',
-    'body{line-height:1.7}img{max-width:100%;height:auto}p{margin:0.6em 0}ruby{ruby-position:over}',
+    'body{line-height:1.7}img{max-width:100%;height:auto}p{margin:0.6em 0}ruby{ruby-position:over}' +
+      (original
+        ? 'p{margin:0}.afterword,.preface{margin:2em 0;opacity:.8}'
+        : '') +
+      (input.vertical
+        ? 'html{writing-mode:vertical-rl;-webkit-writing-mode:vertical-rl;-epub-writing-mode:vertical-rl}'
+        : ''),
   );
   const methodLabel = {
     human: '人工翻译',
@@ -93,8 +105,15 @@ export async function buildNovelEpub(
       [
         `<h1>${escapeXml(input.title)}</h1>`,
         detail('作者', input.author),
-        detail('译者', input.translators.join('、') || '未知（来源未声明）'),
-        detail('翻译类型', methodLabel),
+        ...(original
+          ? []
+          : [
+              detail(
+                '译者',
+                input.translators.join('、') || '未知（来源未声明）',
+              ),
+              detail('翻译类型', methodLabel),
+            ]),
         input.edition ? detail('版本', input.edition) : '',
         `<p><a href="${escapeXml(input.sourceUrl)}">${escapeXml(input.sourceUrl)}</a></p>`,
         input.missingImages
@@ -151,7 +170,7 @@ export async function buildNovelEpub(
     : '';
   add(
     'EPUB/package.opf',
-    `<?xml version="1.0" encoding="UTF-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="book-id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="book-id">${escapeXml(input.identifier)}</dc:identifier><dc:title>${escapeXml(input.title)}</dc:title><dc:creator>${escapeXml(input.author)}</dc:creator><dc:language>${language}</dc:language><dc:source>${escapeXml(input.sourceUrl)}</dc:source>${contributors}${series}<meta property="dcterms:modified">2000-01-01T00:00:00Z</meta></metadata><manifest>${manifest.join('')}</manifest><spine>${spine.join('')}</spine></package>`,
+    `<?xml version="1.0" encoding="UTF-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="book-id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="book-id">${escapeXml(input.identifier)}</dc:identifier><dc:title>${escapeXml(input.title)}</dc:title><dc:creator>${escapeXml(input.author)}</dc:creator><dc:language>${language}</dc:language><dc:source>${escapeXml(input.sourceUrl)}</dc:source>${contributors}${series}<meta property="dcterms:modified">2000-01-01T00:00:00Z</meta></metadata><manifest>${manifest.join('')}</manifest><spine${input.vertical ? ' page-progression-direction="rtl"' : ''}>${spine.join('')}</spine></package>`,
   );
   return new Promise((resolve, reject) => {
     const abort = () => {

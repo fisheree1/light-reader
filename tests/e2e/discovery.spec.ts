@@ -179,3 +179,29 @@ test('follows a fetched series and marks volumes already on the shelf', async ({
   await page.goto('/discover?source=bilinovel&novel=1');
   await expect(page.getByText(/书架中已有 1 卷/)).toBeVisible();
 });
+
+test('saves a なろう part as a Japanese EPUB and finds it from the shelf', async ({
+  page,
+}) => {
+  await page.goto('/discover');
+  await page.getByRole('tab', { name: 'なろう（日文原作）' }).click();
+  await page.getByRole('searchbox').fill('テスト');
+  await page.getByRole('button', { name: '搜索なろう' }).click();
+  await page.getByRole('button', { name: '查看目录' }).click();
+  await page.getByRole('checkbox', { name: /第一部/ }).check();
+  await page.getByRole('button', { name: '获取所选 1 卷' }).click();
+  await expect(page.getByText('已加入书架', { exact: true })).toBeVisible();
+
+  // The shelf link of the saved work reopens its contents in this tab.
+  await page.goto('/discover?source=syosetu&novel=n0001aa');
+  await expect(
+    page.getByRole('tab', { name: 'なろう（日文原作）' }),
+  ).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByText(/书架中已有 1 卷/)).toBeVisible();
+
+  await page.goto('/library');
+  await page
+    .getByRole('button', { name: '打开《テスト用の長編 第一部 はじまり》' })
+    .click();
+  await expect(page).toHaveURL(/\/reader\//);
+});
