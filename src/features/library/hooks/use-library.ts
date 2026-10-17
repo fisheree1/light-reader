@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { asAppError } from '../../../lib/app-error';
 import {
   type BookDeletionMode,
+  type BookDetails,
   type BookSort,
   type LibraryBook,
 } from '../domain/library';
@@ -19,6 +20,7 @@ export function useLibrary(services: LibraryServices) {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<BookSort>('recent');
   const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [groupSeries, setGroupSeries] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [isImporting, setIsImporting] = useState(false);
   const [mutatingBookId, setMutatingBookId] = useState<string | null>(null);
@@ -168,6 +170,30 @@ export function useLibrary(services: LibraryServices) {
     [services.management, updateBook],
   );
 
+  const updateDetails = useCallback(
+    async (bookId: string, details: BookDetails) => {
+      setMutatingBookId(bookId);
+      setNotice(null);
+      try {
+        updateBook(await services.management.updateDetails(bookId, details));
+        setNotice({
+          kind: 'success',
+          message: translate('library.detailsSaved'),
+        });
+        return true;
+      } catch (error) {
+        setNotice({
+          kind: 'error',
+          message: asAppError(error, 'BOOK_UPDATE_FAILED').userMessage,
+        });
+        return false;
+      } finally {
+        setMutatingBookId(null);
+      }
+    },
+    [services.management, updateBook],
+  );
+
   const deleteBook = useCallback(
     async (bookId: string, mode: BookDeletionMode) => {
       setMutatingBookId(bookId);
@@ -203,6 +229,7 @@ export function useLibrary(services: LibraryServices) {
     books,
     deleteBook,
     favoritesOnly,
+    groupSeries,
     importBook,
     importEpub: importBook,
     isImporting,
@@ -215,8 +242,10 @@ export function useLibrary(services: LibraryServices) {
     replaceTags,
     setFavorite,
     setFavoritesOnly,
+    setGroupSeries,
     setQuery,
     setSort,
     sort,
+    updateDetails,
   };
 }

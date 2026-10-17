@@ -88,6 +88,34 @@ describe('WebLibraryRepository', () => {
     );
   });
 
+  it('updates details and series while keeping tags and file metadata', async () => {
+    const { repository, books } = await setup();
+    await repository.replaceTags('zulu', ['小说']);
+    const updated = await repository.updateDetails('zulu', {
+      title: '新书名',
+      author: '作者',
+      series: { title: '测试系列', index: 1.5 },
+    });
+    expect(updated).toMatchObject({
+      title: '新书名',
+      author: '作者',
+      tags: ['小说'],
+      metadata: { series: { title: '测试系列', index: 1.5 } },
+    });
+    // The file's own metadata keeps the original title.
+    expect((await books.findById('zulu'))?.metadata.title).toBe('Zulu');
+    await expect(
+      repository.list({ ...options, sort: 'added', query: '新书名' }),
+    ).resolves.toMatchObject([{ id: 'zulu' }]);
+    await expect(
+      repository.updateDetails('missing', {
+        title: 'x',
+        author: null,
+        series: null,
+      }),
+    ).rejects.toMatchObject({ code: 'BOOK_NOT_FOUND' });
+  });
+
   it('deletes the book with note snapshots and its metadata', async () => {
     const { repository, notes, database } = await setup();
     await notes.create(createTestNote());

@@ -41,6 +41,7 @@ export async function buildNovelEpub(
     script?: ChineseScript;
     translationMethod?: TranslationMethod;
     edition?: string | null;
+    series?: { title: string; index: number } | null;
     chapters: EpubChapter[];
     images: EpubImage[];
     coverPath: string | null;
@@ -144,9 +145,13 @@ export async function buildNovelEpub(
         `<dc:contributor id="trl${String(index)}">${escapeXml(translator)}</dc:contributor><meta refines="#trl${String(index)}" property="role" scheme="marc:relators">trl</meta>`,
     )
     .join('');
+  // EPUB 3 collection plus Calibre's meta, which most other readers use.
+  const series = input.series
+    ? `<meta property="belongs-to-collection" id="series">${escapeXml(input.series.title)}</meta><meta refines="#series" property="collection-type">series</meta><meta refines="#series" property="group-position">${String(input.series.index)}</meta><meta name="calibre:series" content="${escapeXml(input.series.title)}"/><meta name="calibre:series_index" content="${String(input.series.index)}"/>`
+    : '';
   add(
     'EPUB/package.opf',
-    `<?xml version="1.0" encoding="UTF-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="book-id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="book-id">${escapeXml(input.identifier)}</dc:identifier><dc:title>${escapeXml(input.title)}</dc:title><dc:creator>${escapeXml(input.author)}</dc:creator><dc:language>${language}</dc:language><dc:source>${escapeXml(input.sourceUrl)}</dc:source>${contributors}<meta property="dcterms:modified">2000-01-01T00:00:00Z</meta></metadata><manifest>${manifest.join('')}</manifest><spine>${spine.join('')}</spine></package>`,
+    `<?xml version="1.0" encoding="UTF-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="book-id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="book-id">${escapeXml(input.identifier)}</dc:identifier><dc:title>${escapeXml(input.title)}</dc:title><dc:creator>${escapeXml(input.author)}</dc:creator><dc:language>${language}</dc:language><dc:source>${escapeXml(input.sourceUrl)}</dc:source>${contributors}${series}<meta property="dcterms:modified">2000-01-01T00:00:00Z</meta></metadata><manifest>${manifest.join('')}</manifest><spine>${spine.join('')}</spine></package>`,
   );
   return new Promise((resolve, reject) => {
     const abort = () => {

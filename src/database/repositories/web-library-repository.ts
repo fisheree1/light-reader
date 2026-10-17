@@ -3,10 +3,16 @@ import type { BookRepository } from './book-repository';
 import type { NoteRepository } from './note-repository';
 import type { LibraryRepository } from './library-repository';
 import {
+  bookSchema,
+  bookMetadataSchema,
+} from '../../features/library/domain/book';
+import {
+  bookDetailsSchema,
   bookListOptionsSchema,
   libraryBookSchema,
   normalizeBookTags,
   noteReferenceUpdateSchema,
+  type BookDetails,
   type BookListOptions,
   type LibraryBook,
   type NoteReferenceUpdate,
@@ -82,6 +88,35 @@ export class WebLibraryRepository implements LibraryRepository {
   async replaceTags(bookId: string, values: string[]): Promise<LibraryBook> {
     const tags = normalizeBookTags(values);
     await this.updateMetadata(bookId, (current) => ({ ...current, tags }));
+    return this.requireBook(bookId);
+  }
+
+  async updateDetails(
+    bookId: string,
+    value: BookDetails,
+  ): Promise<LibraryBook> {
+    const details = bookDetailsSchema.parse(value);
+    const book = await this.requireExistingBook(bookId);
+    try {
+      await this.database.write([
+        {
+          type: 'put',
+          store: 'books',
+          value: bookSchema.parse({
+            ...book,
+            title: details.title,
+            author: details.author,
+            metadata: bookMetadataSchema.parse({
+              ...book.metadata,
+              series: details.series,
+            }),
+            updatedAt: Date.now(),
+          }),
+        },
+      ]);
+    } catch (error) {
+      throw new AppError('BOOK_UPDATE_FAILED', { cause: error });
+    }
     return this.requireBook(bookId);
   }
 

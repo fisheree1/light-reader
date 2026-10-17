@@ -11,6 +11,11 @@ import {
   MAX_EPUB_COVER_SIZE,
   MAX_EPUB_PACKAGE_SIZE,
 } from './epub-limits';
+import {
+  bookSeriesSchema,
+  parseSeriesIndex,
+  type BookSeries,
+} from '../domain/book-series';
 
 export interface ParsedEpub {
   cover: ExtractedCover | null;
@@ -138,6 +143,39 @@ export function readEpubPackage(data: Uint8Array): EpubPackage {
   return { opf, opfPath };
 }
 
+/** EPUB 3 `belongs-to-collection` (a series), else Calibre's series meta. */
+export function readSeries(opf: Document): BookSeries | null {
+  const metas = Array.from(opf.getElementsByTagNameNS('*', 'meta'));
+  const refining = (id: string, property: string) =>
+    metas
+      .find(
+        (meta) =>
+          meta.getAttribute('refines') === `#${id}` &&
+          meta.getAttribute('property') === property,
+      )
+      ?.textContent.trim() ?? null;
+  for (const meta of metas) {
+    if (meta.getAttribute('property') !== 'belongs-to-collection') continue;
+    const id = meta.getAttribute('id');
+    const type = id ? refining(id, 'collection-type') : null;
+    if (type && type !== 'series') continue;
+    const parsed = bookSeriesSchema.safeParse({
+      title: meta.textContent.trim().slice(0, 200),
+      index: id ? parseSeriesIndex(refining(id, 'group-position')) : null,
+    });
+    if (parsed.success) return parsed.data;
+  }
+  const named = (name: string) =>
+    metas
+      .find((meta) => meta.getAttribute('name') === name)
+      ?.getAttribute('content') ?? null;
+  const parsed = bookSeriesSchema.safeParse({
+    title: named('calibre:series')?.trim().slice(0, 200),
+    index: parseSeriesIndex(named('calibre:series_index')),
+  });
+  return parsed.success ? parsed.data : null;
+}
+
 function coverExtension(mediaType: string): ExtractedCover['extension'] | null {
   switch (mediaType.toLowerCase()) {
     case 'image/jpeg':
@@ -216,6 +254,7 @@ export class FflateEpubMetadataParser implements EpubMetadataParser {
         publisher: firstText(opf, 'publisher'),
         description: firstText(opf, 'description'),
         identifier: firstText(opf, 'identifier'),
+        series: readSeries(opf),
       };
 
       return Promise.resolve({

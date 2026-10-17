@@ -22,6 +22,36 @@ matching, an optional favorites filter, and three deterministic orders:
 - `title`: Unicode title order using SQLite `NOCASE`, with added time as a
   deterministic tie breaker.
 
+## Editing details and series
+
+`LibraryRepository.updateDetails` changes the shelf title, author, and series.
+The file and the metadata parsed from it (`metadata.title`, `creators`, and so
+on) stay unchanged. On desktop it is a single `UPDATE books` statement that
+rewrites `metadata_json`, so it needs no transaction. On the Web it is one
+IndexedDB `put`. No migration is involved: the series lives in
+`metadata_json` as `series: { title, index } | null`.
+
+`series` is set in three ways:
+
+- **Import:** read from an EPUB 3 `belongs-to-collection` of type `series`
+  (with `group-position`), otherwise from Calibre's `calibre:series` and
+  `calibre:series_index`. Online discovery writes both for every fetched
+  volume, using the work title and the volume's catalogue position.
+- **User edits:** clearing the series name stores `null`, which means "no
+  series".
+- **Older fetched volumes:** these have no `series` key at all. They join the
+  series of other volumes from the same source work, or are grouped by
+  `source:novelId`, with the work title taken from the volume title.
+
+`groupBySeries` (`domain/book-series.ts`) runs on the already sorted list and
+places each series where its first member appears. Names match ignoring width,
+case, punctuation, and spaces. Volumes are ordered by position, then source
+volume ID, then numeric-aware title. A series with only one book on the shelf
+shows as a plain book. The shelf's "按系列分组" toggle (on by default, not
+persisted) turns grouping off. Each series is collapsed by default and offers
+"continue" (the most recently read volume, else the first). Shelf search does
+not match series names yet.
+
 ## Delete modes
 
 Both modes remove the managed EPUB or PDF and its cover, then delete the `books` record. SQLite

@@ -1,10 +1,19 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { Tags, Trash2, X } from 'lucide-react';
+import { BookText, Tags, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
 
 import { Button } from '../../../components/ui/button';
 import { IconButton } from '../../../components/ui/icon-button';
-import type { BookDeletionMode, LibraryBook } from '../domain/library';
+import type {
+  BookDeletionMode,
+  BookDetails,
+  LibraryBook,
+} from '../domain/library';
+import {
+  parseSeriesIndex,
+  seriesTitleFromVolume,
+  type BookSeries,
+} from '../domain/book-series';
 import { useI18n } from '../../../i18n/use-i18n';
 
 interface BookManagementDialogProps {
@@ -12,9 +21,22 @@ interface BookManagementDialogProps {
   busy: boolean;
   onDelete: (mode: BookDeletionMode) => Promise<boolean>;
   onOpenChange: (open: boolean) => void;
+  onSaveDetails: (details: BookDetails) => Promise<boolean>;
   onSaveTags: (tags: string[]) => Promise<boolean>;
   open: boolean;
 }
+
+/** The series shown for editing, including one the shelf derives. */
+function initialSeries(book: LibraryBook): BookSeries | null {
+  const { series, origin } = book.metadata;
+  if (series !== undefined) return series;
+  return origin
+    ? { title: seriesTitleFromVolume(book.title), index: null }
+    : null;
+}
+
+const inputClass =
+  'bg-background mt-1 h-10 w-full rounded-md border px-3 text-sm';
 
 function parseTags(value: string): string[] {
   return value
@@ -28,10 +50,29 @@ export function BookManagementDialog({
   busy,
   onDelete,
   onOpenChange,
+  onSaveDetails,
   onSaveTags,
   open,
 }: BookManagementDialogProps) {
   const { t } = useI18n();
+  const series = initialSeries(book);
+  const [title, setTitle] = useState(book.title);
+  const [author, setAuthor] = useState(book.author ?? '');
+  const [seriesTitle, setSeriesTitle] = useState(series?.title ?? '');
+  const [seriesIndex, setSeriesIndex] = useState(
+    series?.index === null || series?.index === undefined
+      ? ''
+      : String(series.index),
+  );
+  const indexInvalid =
+    seriesIndex.trim() !== '' && parseSeriesIndex(seriesIndex) === null;
+  const details: BookDetails = {
+    title: title.trim(),
+    author: author.trim() || null,
+    series: seriesTitle.trim()
+      ? { title: seriesTitle.trim(), index: parseSeriesIndex(seriesIndex) }
+      : null,
+  };
   const [tags, setTags] = useState(book.tags.join(', '));
   const [deleteMode, setDeleteMode] = useState<BookDeletionMode | null>(null);
 
@@ -102,6 +143,88 @@ export function BookManagementDialog({
           ) : (
             <>
               <section className="mt-6">
+                <h2 className="inline-flex items-center gap-2 text-sm font-medium">
+                  <BookText aria-hidden="true" size={15} />
+                  {t('bookManagement.details')}
+                </h2>
+                <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                  <label className="text-sm sm:col-span-2">
+                    {t('bookManagement.titleLabel')}
+                    <input
+                      className={inputClass}
+                      maxLength={500}
+                      onChange={(event) => {
+                        setTitle(event.currentTarget.value);
+                      }}
+                      value={title}
+                    />
+                  </label>
+                  <label className="text-sm sm:col-span-2">
+                    {t('bookManagement.authorLabel')}
+                    <input
+                      className={inputClass}
+                      maxLength={500}
+                      onChange={(event) => {
+                        setAuthor(event.currentTarget.value);
+                      }}
+                      placeholder={t('common.unknownAuthor')}
+                      value={author}
+                    />
+                  </label>
+                  <label className="text-sm">
+                    {t('bookManagement.seriesTitle')}
+                    <input
+                      className={inputClass}
+                      maxLength={200}
+                      onChange={(event) => {
+                        setSeriesTitle(event.currentTarget.value);
+                      }}
+                      value={seriesTitle}
+                    />
+                  </label>
+                  <label className="text-sm">
+                    {t('bookManagement.seriesIndex')}
+                    <input
+                      aria-describedby={
+                        indexInvalid ? 'book-series-index-error' : undefined
+                      }
+                      aria-invalid={indexInvalid}
+                      className={inputClass}
+                      disabled={!seriesTitle.trim()}
+                      inputMode="decimal"
+                      maxLength={10}
+                      onChange={(event) => {
+                        setSeriesIndex(event.currentTarget.value);
+                      }}
+                      value={seriesIndex}
+                    />
+                  </label>
+                </div>
+                {indexInvalid ? (
+                  <p
+                    className="text-destructive mt-2 text-xs"
+                    id="book-series-index-error"
+                  >
+                    {t('bookManagement.seriesIndexInvalid')}
+                  </p>
+                ) : null}
+                <p className="text-muted-foreground mt-2 text-xs">
+                  {t('bookManagement.seriesHint')}
+                </p>
+                <div className="mt-3 flex justify-end">
+                  <Button
+                    disabled={busy || !details.title || indexInvalid}
+                    onClick={() => void onSaveDetails(details)}
+                    size="sm"
+                  >
+                    {busy
+                      ? t('common.saving')
+                      : t('bookManagement.saveDetails')}
+                  </Button>
+                </div>
+              </section>
+
+              <section className="mt-7 border-t pt-5">
                 <label className="text-sm font-medium" htmlFor="book-tags">
                   <span className="inline-flex items-center gap-2">
                     <Tags aria-hidden="true" size={15} />

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { bookOriginSchema } from './book-origin';
+import { bookSeriesSchema } from './book-series';
 
 const optionalMetadataText = z.string().trim().min(1).nullable();
 
@@ -11,6 +12,8 @@ export const epubMetadataSchema = z.object({
   description: optionalMetadataText,
   identifier: optionalMetadataText,
   origin: bookOriginSchema.optional(),
+  // From the file (EPUB 3 collection or Calibre series) or set by the user.
+  series: bookSeriesSchema.nullable().optional(),
 });
 
 export type EpubMetadata = z.infer<typeof epubMetadataSchema>;

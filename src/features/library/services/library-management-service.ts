@@ -7,6 +7,7 @@ import type { BookFileDeletionStorage } from '../../../storage/book-file-storage
 import {
   bookDeletionModeSchema,
   type BookDeletionMode,
+  type BookDetails,
   type BookListOptions,
   type LibraryBook,
   type NoteReferenceUpdate,
@@ -26,6 +27,7 @@ export interface LibraryManagement {
   list(options: BookListOptions): Promise<LibraryBook[]>;
   replaceTags(bookId: string, tags: string[]): Promise<LibraryBook>;
   setFavorite(bookId: string, favorite: boolean): Promise<LibraryBook>;
+  updateDetails(bookId: string, details: BookDetails): Promise<LibraryBook>;
 }
 
 export class LibraryManagementService implements LibraryManagement {
@@ -59,6 +61,10 @@ export class LibraryManagementService implements LibraryManagement {
 
   replaceTags(bookId: string, tags: string[]): Promise<LibraryBook> {
     return this.libraryRepository.replaceTags(bookId, tags);
+  }
+
+  updateDetails(bookId: string, details: BookDetails): Promise<LibraryBook> {
+    return this.libraryRepository.updateDetails(bookId, details);
   }
 
   async deleteBook(

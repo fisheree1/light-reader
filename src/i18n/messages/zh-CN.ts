@@ -217,6 +217,14 @@ export const zhCN = {
     cleanupPending: '书籍已移出书架，残留隔离文件将在后续清理。',
     deletedAll: '书籍及相关数据已删除，共移除 {count} 个笔记引用。',
     deletedKeepReferences: '书籍文件和阅读数据已删除，笔记引用快照已保留。',
+    groupSeries: '按系列分组',
+    seriesLabel: '系列《{title}》',
+    seriesSummary: '{count} 卷 · 已开始 {opened} 卷',
+    seriesExpand: '展开系列《{title}》',
+    seriesCollapse: '收起系列《{title}》',
+    seriesContinue: '继续阅读：{title}',
+    seriesStart: '开始阅读：{title}',
+    detailsSaved: '书籍信息已保存。',
   },
   common: {
     unknownAuthor: '未知作者',
@@ -229,7 +237,7 @@ export const zhCN = {
   },
   bookManagement: {
     title: '管理《{title}》',
-    description: '编辑标签，或安全地从本机删除这本书。',
+    description: '编辑书籍信息与标签，或安全地从本机删除这本书。',
     close: '关闭书籍管理',
     confirmTitle: '确认删除《{title}》？',
     deleteAllDetail:
@@ -248,6 +256,15 @@ export const zhCN = {
     deleteAllHint: '同时移除阅读数据以及笔记中的该书引用块。',
     keepReferences: '删除文件但保留笔记引用',
     keepReferencesHint: '保留笔记中的原文、章节和定位快照，不再支持返回原书。',
+    details: '书籍信息',
+    titleLabel: '书名',
+    authorLabel: '作者',
+    seriesTitle: '系列名',
+    seriesIndex: '系列顺序',
+    seriesIndexInvalid: '请输入 0–100000 之间的数字，最多 3 位小数。',
+    seriesHint:
+      '系列名相同的书会在书架上合并显示，按顺序排列（可用小数，如 2.5）。清空系列名即不归入系列。只修改书架中的信息，不改动书籍文件。',
+    saveDetails: '保存书籍信息',
   },
   reader: {
     backToLibrary: '返回书架',

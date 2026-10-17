@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { noteDocumentSchema } from '../../notes/domain/note';
 import { bookSchema } from './book';
+import { bookSeriesSchema } from './book-series';
 
 export const bookTagSchema = z.string().trim().min(1).max(40);
 export const bookSortSchema = z.enum(['recent', 'added', 'title']);
@@ -22,6 +23,15 @@ export const libraryBookSchema = bookSchema.extend({
 });
 
 export type LibraryBook = z.infer<typeof libraryBookSchema>;
+
+/** The details a user can edit; the file's own metadata stays unchanged. */
+export const bookDetailsSchema = z.object({
+  title: z.string().trim().min(1).max(500),
+  author: z.string().trim().min(1).max(500).nullable(),
+  series: bookSeriesSchema.nullable(),
+});
+
+export type BookDetails = z.infer<typeof bookDetailsSchema>;
 
 export const bookDeletionModeSchema = z.enum([
   'delete-all',

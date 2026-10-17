@@ -51,6 +51,9 @@ Recorded raises:
   table for online discovery (about 9 KiB gzip after storing mutual pairs once)
   plus the EPUB validator. Both load only with `/discover`; the initial load
   grows by about 0.8 KiB (new Chinese interface strings).
+- 2026-10-17, total raw 3150000 → 3165000: shelf series grouping and the
+  book details editor (about 10 KiB raw). The management dialog is now
+  lazy-loaded, so the initial load fell from 547.3 to about 517.6 KiB.
 
 `pnpm build:verify` (also part of `bundle:check` and CI) checks what size
 budgets cannot see: no emitted chunk may import a path on the build machine

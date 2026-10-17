@@ -71,6 +71,18 @@ class MemoryLibraryDatabase implements SqlDatabase {
           ? { ...row, favorite: Number(values[0]) as 0 | 1 }
           : row,
       );
+    } else if (query.includes('UPDATE books SET title')) {
+      this.rows = this.rows.map((row) =>
+        row.id === values[4]
+          ? {
+              ...row,
+              title: String(values[0]),
+              author: typeof values[1] === 'string' ? values[1] : null,
+              metadata_json: String(values[2]),
+              updated_at: Number(values[3]),
+            }
+          : row,
+      );
     } else if (query.includes('DELETE FROM books')) {
       if (this.failBookDelete) return Promise.reject(new Error('locked'));
       this.rows = this.rows.filter((row) => row.id !== values[0]);
@@ -204,6 +216,49 @@ describe('SqliteLibraryRepository', () => {
       code: 'BOOK_NOT_FOUND',
     });
     expect(replaceTags).toHaveBeenCalledTimes(1);
+  });
+
+  it('updates details and series in one statement, keeping file metadata', async () => {
+    const database = new MemoryLibraryDatabase();
+    const repository = new SqliteLibraryRepository(
+      () => Promise.resolve(database),
+      () => 99,
+    );
+    const updated = await repository.updateDetails('book-1', {
+      title: ' 新书名 ',
+      author: null,
+      series: { title: '测试系列', index: 2 },
+    });
+    expect(updated).toMatchObject({
+      title: '新书名',
+      author: null,
+      updatedAt: 99,
+      metadata: { title: 'Alpha', series: { title: '测试系列', index: 2 } },
+    });
+    expect(
+      database.executions.filter(({ query }) => query.startsWith('BEGIN')),
+    ).toEqual([]);
+    await expect(
+      repository.updateDetails('book-1', {
+        title: '新书名',
+        author: '作者',
+        series: null,
+      }),
+    ).resolves.toMatchObject({ author: '作者', metadata: { series: null } });
+    await expect(
+      repository.updateDetails('book-1', {
+        title: ' ',
+        author: null,
+        series: null,
+      }),
+    ).rejects.toThrow();
+    await expect(
+      repository.updateDetails('missing', {
+        title: 'x',
+        author: null,
+        series: null,
+      }),
+    ).rejects.toMatchObject({ code: 'BOOK_NOT_FOUND' });
   });
 
   it('deletes the book transactionally and rolls back on failure', async () => {
