@@ -8,6 +8,7 @@ mod backup;
 mod bangumi;
 mod catalog;
 mod library;
+mod native_request;
 mod opds;
 mod syosetu;
 mod transactions;

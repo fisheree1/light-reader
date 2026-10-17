@@ -9,18 +9,16 @@
 //! Requests are strictly one at a time and spaced here, natively, so the
 //! frontend cannot exceed the site's crawl delay (robots.txt asks for 1 s).
 
-use std::{
-    sync::Mutex,
-    time::{Duration, Instant},
-};
+use std::time::Duration;
+#[cfg(test)]
+use std::time::Instant;
 
-use futures_util::{
-    future::{AbortHandle, Abortable},
-    StreamExt,
-};
+use futures_util::StreamExt;
 use reqwest::{redirect::Policy, Client, Url};
 use serde::Serialize;
 use tauri::{State, WebviewWindow};
+
+use crate::native_request::{require_main, Pacer, SingleRequest};
 
 const API: &str = "https://api.syosetu.com/novelapi/api/";
 const PAGES: &str = "https://ncode.syosetu.com";
@@ -36,16 +34,18 @@ pub struct SyosetuResponse {
     text: String,
 }
 
-#[derive(Default)]
 pub struct SyosetuState {
-    active: Mutex<Option<(String, AbortHandle)>>,
-    // Shared by every request kind: the API and pages are one site.
-    last_finished: tokio::sync::Mutex<Option<Instant>>,
+    requests: SingleRequest,
+    // Shared by every request kind: the API, pages and images are one queue.
+    pacer: Pacer,
 }
 
 impl SyosetuState {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            requests: SingleRequest::default(),
+            pacer: Pacer::new(REQUEST_GAP),
+        }
     }
 }
 
@@ -167,65 +167,58 @@ async fn fetch_bytes(
     limit: usize,
     follow: fn(&Url) -> bool,
 ) -> Result<(Url, Vec<u8>), &'static str> {
-    let mut last = state.last_finished.lock().await;
-    if let Some(finished) = *last {
-        let elapsed = finished.elapsed();
-        if elapsed < REQUEST_GAP {
-            tokio::time::sleep(REQUEST_GAP - elapsed).await;
-        }
-    }
-    let result = async {
-        let client = Client::builder()
-            .redirect(Policy::none())
-            .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(30))
-            .user_agent("LightReader/0.1")
-            .build()
-            .map_err(|_| "SOURCE_INVALID")?;
-        for _ in 0..=MAX_REDIRECTS {
-            let response = client
-                .get(url.clone())
-                .send()
-                .await
-                .map_err(|_| "SOURCE_TIMEOUT")?;
-            if response.status().is_redirection() {
-                let next = response
-                    .headers()
-                    .get("location")
-                    .and_then(|value| value.to_str().ok())
-                    .and_then(|location| url.join(location).ok())
-                    .ok_or("SOURCE_INVALID")?;
-                if !follow(&next) {
-                    return Err("SOURCE_INVALID");
+    state
+        .pacer
+        .run(async {
+            let client = Client::builder()
+                .redirect(Policy::none())
+                .connect_timeout(Duration::from_secs(10))
+                .timeout(Duration::from_secs(30))
+                .user_agent("LightReader/0.1")
+                .build()
+                .map_err(|_| "SOURCE_INVALID")?;
+            for _ in 0..=MAX_REDIRECTS {
+                let response = client
+                    .get(url.clone())
+                    .send()
+                    .await
+                    .map_err(|_| "SOURCE_TIMEOUT")?;
+                if response.status().is_redirection() {
+                    let next = response
+                        .headers()
+                        .get("location")
+                        .and_then(|value| value.to_str().ok())
+                        .and_then(|location| url.join(location).ok())
+                        .ok_or("SOURCE_INVALID")?;
+                    if !follow(&next) {
+                        return Err("SOURCE_INVALID");
+                    }
+                    url = next;
+                    continue;
                 }
-                url = next;
-                continue;
-            }
-            if let Some(code) = refusal(response.status()) {
-                return Err(code);
-            }
-            if response
-                .content_length()
-                .is_some_and(|size| size > limit as u64)
-            {
-                return Err("SOURCE_TOO_LARGE");
-            }
-            let mut bytes = Vec::new();
-            let mut stream = response.bytes_stream();
-            while let Some(chunk) = stream.next().await {
-                let chunk = chunk.map_err(|_| "SOURCE_TIMEOUT")?;
-                if bytes.len() + chunk.len() > limit {
+                if let Some(code) = refusal(response.status()) {
+                    return Err(code);
+                }
+                if response
+                    .content_length()
+                    .is_some_and(|size| size > limit as u64)
+                {
                     return Err("SOURCE_TOO_LARGE");
                 }
-                bytes.extend_from_slice(&chunk);
+                let mut bytes = Vec::new();
+                let mut stream = response.bytes_stream();
+                while let Some(chunk) = stream.next().await {
+                    let chunk = chunk.map_err(|_| "SOURCE_TIMEOUT")?;
+                    if bytes.len() + chunk.len() > limit {
+                        return Err("SOURCE_TOO_LARGE");
+                    }
+                    bytes.extend_from_slice(&chunk);
+                }
+                return Ok((url, bytes));
             }
-            return Ok((url, bytes));
-        }
-        Err("SOURCE_INVALID")
-    }
-    .await;
-    *last = Some(Instant::now());
-    result
+            Err("SOURCE_INVALID")
+        })
+        .await
 }
 
 fn no_redirects(_: &Url) -> bool {
@@ -241,41 +234,6 @@ async fn fetch(state: &SyosetuState, url: Url) -> Result<SyosetuResponse, &'stat
     })
 }
 
-fn main_only(window: &WebviewWindow) -> Result<(), String> {
-    if window.label() == "main" {
-        Ok(())
-    } else {
-        Err("SOURCE_UNAVAILABLE".into())
-    }
-}
-
-async fn run<T>(
-    state: &SyosetuState,
-    request_id: String,
-    work: impl std::future::Future<Output = Result<T, &'static str>>,
-) -> Result<T, String> {
-    if request_id.is_empty() || request_id.len() > 80 {
-        return Err("SOURCE_INVALID".into());
-    }
-    let registration = {
-        let mut active = state.active.lock().unwrap();
-        if active.is_some() {
-            return Err("SOURCE_BUSY".into());
-        }
-        let (handle, registration) = AbortHandle::new_pair();
-        *active = Some((request_id.clone(), handle));
-        registration
-    };
-    let result = Abortable::new(work, registration).await;
-    let mut active = state.active.lock().unwrap();
-    if active.as_ref().is_some_and(|(id, _)| id == &request_id) {
-        active.take();
-    }
-    result
-        .map_err(|_| "SOURCE_CANCELLED".to_string())?
-        .map_err(str::to_string)
-}
-
 #[tauri::command]
 pub async fn syosetu_search(
     window: WebviewWindow,
@@ -284,9 +242,9 @@ pub async fn syosetu_search(
     query: String,
     page: u32,
 ) -> Result<SyosetuResponse, String> {
-    main_only(&window)?;
+    require_main(&window, "SOURCE_UNAVAILABLE")?;
     let url = search_url(&query, page)?;
-    run(&state, request_id, fetch(&state, url)).await
+    state.requests.run(&request_id, fetch(&state, url)).await
 }
 
 #[tauri::command]
@@ -296,9 +254,9 @@ pub async fn syosetu_page(
     request_id: String,
     path: String,
 ) -> Result<SyosetuResponse, String> {
-    main_only(&window)?;
+    require_main(&window, "SOURCE_UNAVAILABLE")?;
     let url = page_url(&path)?;
-    run(&state, request_id, fetch(&state, url)).await
+    state.requests.run(&request_id, fetch(&state, url)).await
 }
 
 #[tauri::command]
@@ -308,17 +266,18 @@ pub async fn syosetu_image(
     request_id: String,
     url: String,
 ) -> Result<tauri::ipc::Response, String> {
-    main_only(&window)?;
+    require_main(&window, "SOURCE_UNAVAILABLE")?;
     if url.len() > 300 {
         return Err("SOURCE_IMAGE_FAILED".into());
     }
     let url = image_url(&url)?;
-    let (_, bytes) = run(
-        &state,
-        request_id,
-        fetch_bytes(&state, url, MAX_IMAGE, image_redirect),
-    )
-    .await?;
+    let (_, bytes) = state
+        .requests
+        .run(
+            &request_id,
+            fetch_bytes(&state, url, MAX_IMAGE, image_redirect),
+        )
+        .await?;
     Ok(tauri::ipc::Response::new(bytes))
 }
 
@@ -328,13 +287,8 @@ pub fn syosetu_cancel(
     state: State<'_, SyosetuState>,
     request_id: String,
 ) -> Result<(), String> {
-    main_only(&window)?;
-    let mut active = state.active.lock().unwrap();
-    if active.as_ref().is_some_and(|(id, _)| id == &request_id) {
-        if let Some((_, handle)) = active.take() {
-            handle.abort();
-        }
-    }
+    require_main(&window, "SOURCE_UNAVAILABLE")?;
+    state.requests.cancel(&request_id);
     Ok(())
 }
 

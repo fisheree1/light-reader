@@ -1,5 +1,4 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import { createUuid } from '../../lib/id';
 import {
   pageSnapshotSchema,
   type NovelGateway,
@@ -8,11 +7,10 @@ import {
 } from '../../features/discovery/domain/catalog';
 import {
   DiscoveryError,
-  discoveryErrorKeys,
   throwIfCancelled,
-  type DiscoveryErrorCode,
 } from '../../features/discovery/domain/discovery-error';
 import { sourceUrl } from '../../features/discovery/services/bilinovel-parser';
+import { invokeCancellable, responseBytes } from './cancellable-invoke';
 
 /** Minimum gap after any source request before the next page load. */
 export const PAGE_REQUEST_GAP_MS = 2000;
@@ -42,59 +40,23 @@ export class TauriNovelGateway implements NovelGateway {
     });
   }
 
-  private async request(
+  private request(
     command: string,
     arguments_: Record<string, unknown>,
     signal: AbortSignal,
   ): Promise<unknown> {
-    throwIfCancelled(signal);
-    const requestId = createUuid();
-    let stopWaiting: (error: Error) => void = () => undefined;
-    const stopped = new Promise<never>((_resolve, reject) => {
-      stopWaiting = reject;
-    });
-    const stopNative = () => {
-      void invoke('catalog_cancel', { requestId }).catch(() => undefined);
-    };
-    const cancel = () => {
-      stopNative();
-      stopWaiting(new DOMException('Cancelled', 'AbortError'));
-    };
-    const timer = setTimeout(
-      () => {
-        stopNative();
-        stopWaiting(new DiscoveryError('SOURCE_TIMEOUT'));
+    return invokeCancellable(
+      command,
+      arguments_,
+      {
+        cancelCommand: 'catalog_cancel',
+        timeoutMs: command === 'catalog_read_image' ? 40_000 : 45_000,
+        fallback: 'SOURCE_INVALID',
+        // Source-window failures may wrap the code in other text.
+        match: 'contains',
       },
-      command === 'catalog_read_image' ? 40_000 : 45_000,
+      signal,
     );
-    signal.addEventListener('abort', cancel, { once: true });
-    try {
-      const result: unknown = await Promise.race([
-        invoke(command, {
-          ...arguments_,
-          requestId,
-        }),
-        stopped,
-      ]);
-      throwIfCancelled(signal);
-      return result;
-    } catch (error) {
-      throwIfCancelled(signal);
-      if (error instanceof DiscoveryError) throw error;
-      const message =
-        typeof error === 'string'
-          ? error
-          : error instanceof Error
-            ? error.message
-            : '';
-      const code = (
-        Object.keys(discoveryErrorKeys) as DiscoveryErrorCode[]
-      ).find((value) => message.includes(value));
-      throw new DiscoveryError(code ?? 'SOURCE_INVALID', { cause: error });
-    } finally {
-      clearTimeout(timer);
-      signal.removeEventListener('abort', cancel);
-    }
   }
 
   async readPage(
@@ -128,8 +90,8 @@ export class TauriNovelGateway implements NovelGateway {
     } finally {
       this.lastRequestFinished = Date.now();
     }
-    if (result instanceof ArrayBuffer) return new Uint8Array(result);
-    if (result instanceof Uint8Array) return result;
+    if (result instanceof ArrayBuffer || result instanceof Uint8Array)
+      return responseBytes(result, 'SOURCE_IMAGE_FAILED');
     if (
       Array.isArray(result) &&
       result.length <= 10 * 1024 * 1024 &&

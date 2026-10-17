@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Languages, Search } from 'lucide-react';
 
 import { Button } from '../../../components/ui/button';
 import { useI18n } from '../../../i18n/use-i18n';
 import { toSimplified } from '../domain/chinese-script';
-import { discoveryErrorMessage } from '../domain/discovery-error';
+import { useCancellableAction } from '../hooks/use-cancellable-action';
 import {
   searchNames,
   type BangumiCandidate,
@@ -31,31 +31,7 @@ export function TranslationLookup({
   const [keyword, setKeyword] = useState(initialKeyword ?? '');
   const [candidates, setCandidates] = useState<BangumiCandidate[] | null>(null);
   const [info, setInfo] = useState<TranslationInfo | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const request = useRef<AbortController | null>(null);
-
-  useEffect(
-    () => () => {
-      request.current?.abort();
-    },
-    [],
-  );
-
-  const perform = async (action: (signal: AbortSignal) => Promise<void>) => {
-    request.current?.abort();
-    const controller = new AbortController();
-    request.current = controller;
-    setBusy(true);
-    setError(null);
-    try {
-      await action(controller.signal);
-    } catch (value) {
-      if (!controller.signal.aborted) setError(discoveryErrorMessage(value));
-    } finally {
-      if (request.current === controller) setBusy(false);
-    }
-  };
+  const { busy, error, perform } = useCancellableAction();
 
   const loadDetails = (id: number) =>
     perform(async (signal) => {

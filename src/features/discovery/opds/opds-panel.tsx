@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -23,6 +23,7 @@ import {
   type OpdsEntry,
   type OpdsFeed,
 } from './opds';
+import { useCancellableAction } from '../hooks/use-cancellable-action';
 import { suggestedCatalogs, useOpdsCatalogs } from './opds-catalog-store';
 import type { OpdsService } from './opds-service';
 
@@ -97,42 +98,19 @@ export function OpdsPanel({ services }: { services: OpdsService }) {
   const [root, setRoot] = useState<OpdsFeed | null>(null);
   const [history, setHistory] = useState<string[]>([]);
   const [query, setQuery] = useState('');
-  const [busy, setBusy] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [outcomes, setOutcomes] = useState<Partial<Record<string, Outcome>>>(
     {},
   );
   const [newTitle, setNewTitle] = useState('');
   const [newUrl, setNewUrl] = useState('');
   const [addError, setAddError] = useState<string | null>(null);
-  const request = useRef<AbortController | null>(null);
-  const [queue] = useState(createQueue);
-
-  useEffect(
-    () => () => {
-      request.current?.abort();
+  const { abort, busy, error, perform } = useCancellableAction({
+    onSettled: () => {
+      setDownloading(null);
     },
-    [],
-  );
-
-  const perform = async (action: (signal: AbortSignal) => Promise<void>) => {
-    request.current?.abort();
-    const controller = new AbortController();
-    request.current = controller;
-    setBusy(true);
-    setError(null);
-    try {
-      await action(controller.signal);
-    } catch (value) {
-      if (!controller.signal.aborted) setError(discoveryErrorMessage(value));
-    } finally {
-      if (request.current === controller) {
-        setBusy(false);
-        setDownloading(null);
-      }
-    }
-  };
+  });
+  const [queue] = useState(createQueue);
 
   const show = (next: OpdsFeed, from: OpdsFeed | null) => {
     setHistory((previous) => (from ? [...previous, from.url] : []));
@@ -351,7 +329,7 @@ export function OpdsPanel({ services }: { services: OpdsService }) {
           {downloading ? t('opds.downloading') : t('discovery.loading')}
           <Button
             onClick={() => {
-              request.current?.abort();
+              abort();
             }}
             variant="secondary"
           >

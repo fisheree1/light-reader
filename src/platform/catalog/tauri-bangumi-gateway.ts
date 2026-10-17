@@ -1,13 +1,8 @@
-import { invoke, isTauri } from '@tauri-apps/api/core';
+import { isTauri } from '@tauri-apps/api/core';
 import { z } from 'zod';
 
-import { createUuid } from '../../lib/id';
-import {
-  DiscoveryError,
-  discoveryErrorKeys,
-  throwIfCancelled,
-  type DiscoveryErrorCode,
-} from '../../features/discovery/domain/discovery-error';
+import { DiscoveryError } from '../../features/discovery/domain/discovery-error';
+import { invokeCancellable } from './cancellable-invoke';
 import type { BangumiGateway } from '../../features/discovery/bangumi/bangumi-service';
 
 const responseSchema = z.object({ text: z.string() });
@@ -21,43 +16,18 @@ export class TauriBangumiGateway implements BangumiGateway {
     arguments_: Record<string, unknown>,
     signal: AbortSignal,
   ): Promise<string> {
-    throwIfCancelled(signal);
-    const requestId = createUuid();
-    let stopWaiting: (error: Error) => void = () => undefined;
-    const stopped = new Promise<never>((_resolve, reject) => {
-      stopWaiting = reject;
-    });
-    const stopNative = () => {
-      void invoke('bangumi_cancel', { requestId }).catch(() => undefined);
-    };
-    const cancel = () => {
-      stopNative();
-      stopWaiting(new DOMException('Cancelled', 'AbortError'));
-    };
-    const timer = setTimeout(() => {
-      stopNative();
-      stopWaiting(new DiscoveryError('SOURCE_TIMEOUT'));
-    }, 30_000);
-    signal.addEventListener('abort', cancel, { once: true });
-    try {
-      const result: unknown = await Promise.race([
-        invoke(command, { ...arguments_, requestId }),
-        stopped,
-      ]);
-      throwIfCancelled(signal);
-      return responseSchema.parse(result).text;
-    } catch (error) {
-      throwIfCancelled(signal);
-      if (error instanceof DiscoveryError) throw error;
-      const message = typeof error === 'string' ? error : '';
-      const code = (
-        Object.keys(discoveryErrorKeys) as DiscoveryErrorCode[]
-      ).find((value) => message === value);
-      throw new DiscoveryError(code ?? 'SOURCE_INVALID', { cause: error });
-    } finally {
-      clearTimeout(timer);
-      signal.removeEventListener('abort', cancel);
-    }
+    return responseSchema.parse(
+      await invokeCancellable(
+        command,
+        arguments_,
+        {
+          cancelCommand: 'bangumi_cancel',
+          timeoutMs: 30_000,
+          fallback: 'SOURCE_INVALID',
+        },
+        signal,
+      ),
+    ).text;
   }
 
   search(keyword: string, signal: AbortSignal) {

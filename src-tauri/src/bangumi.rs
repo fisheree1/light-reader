@@ -3,19 +3,17 @@
 //! official Chinese editions. Only two fixed endpoints on api.bgm.tv are
 //! reachable. The API sends no CORS headers, so the Web build cannot use it.
 
-use std::{
-    sync::Mutex,
-    time::{Duration, Instant},
-};
+use std::time::Duration;
+#[cfg(test)]
+use std::time::Instant;
 
-use futures_util::{
-    future::{AbortHandle, Abortable},
-    StreamExt,
-};
+use futures_util::StreamExt;
 use reqwest::{redirect::Policy, Client, Url};
 use serde::Serialize;
 use serde_json::json;
 use tauri::{State, WebviewWindow};
+
+use crate::native_request::{require_main, Pacer, SingleRequest};
 
 const API: &str = "https://api.bgm.tv";
 const MAX_BODY: usize = 2 * 1024 * 1024;
@@ -28,15 +26,17 @@ pub struct BangumiResponse {
     text: String,
 }
 
-#[derive(Default)]
 pub struct BangumiState {
-    active: Mutex<Option<(String, AbortHandle)>>,
-    last_finished: tokio::sync::Mutex<Option<Instant>>,
+    requests: SingleRequest,
+    pacer: Pacer,
 }
 
 impl BangumiState {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            requests: SingleRequest::default(),
+            pacer: Pacer::new(REQUEST_GAP),
+        }
     }
 }
 
@@ -73,95 +73,53 @@ fn refusal(status: reqwest::StatusCode) -> Option<&'static str> {
 }
 
 async fn fetch(state: &BangumiState, request: Request) -> Result<BangumiResponse, &'static str> {
-    let mut last = state.last_finished.lock().await;
-    if let Some(finished) = *last {
-        let elapsed = finished.elapsed();
-        if elapsed < REQUEST_GAP {
-            tokio::time::sleep(REQUEST_GAP - elapsed).await;
-        }
-    }
-    let result = async {
-        let client = Client::builder()
-            .redirect(Policy::none())
-            .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(20))
-            .user_agent(USER_AGENT)
-            .build()
-            .map_err(|_| "SOURCE_INVALID")?;
-        let builder = match request {
-            Request::Search(keyword) => {
-                let url = Url::parse(&format!("{API}/v0/search/subjects?limit=20"))
-                    .map_err(|_| "SOURCE_INVALID")?;
-                client
-                    .post(url)
-                    .json(&json!({ "keyword": keyword, "filter": { "type": [1] } }))
+    state
+        .pacer
+        .run(async {
+            let client = Client::builder()
+                .redirect(Policy::none())
+                .connect_timeout(Duration::from_secs(10))
+                .timeout(Duration::from_secs(20))
+                .user_agent(USER_AGENT)
+                .build()
+                .map_err(|_| "SOURCE_INVALID")?;
+            let builder = match request {
+                Request::Search(keyword) => {
+                    let url = Url::parse(&format!("{API}/v0/search/subjects?limit=20"))
+                        .map_err(|_| "SOURCE_INVALID")?;
+                    client
+                        .post(url)
+                        .json(&json!({ "keyword": keyword, "filter": { "type": [1] } }))
+                }
+                Request::Subject(id) => {
+                    let url = Url::parse(&format!("{API}/v0/subjects/{id}"))
+                        .map_err(|_| "SOURCE_INVALID")?;
+                    client.get(url)
+                }
+            };
+            let response = builder.send().await.map_err(|_| "SOURCE_TIMEOUT")?;
+            if let Some(code) = refusal(response.status()) {
+                return Err(code);
             }
-            Request::Subject(id) => {
-                let url =
-                    Url::parse(&format!("{API}/v0/subjects/{id}")).map_err(|_| "SOURCE_INVALID")?;
-                client.get(url)
-            }
-        };
-        let response = builder.send().await.map_err(|_| "SOURCE_TIMEOUT")?;
-        if let Some(code) = refusal(response.status()) {
-            return Err(code);
-        }
-        if response
-            .content_length()
-            .is_some_and(|size| size > MAX_BODY as u64)
-        {
-            return Err("SOURCE_TOO_LARGE");
-        }
-        let mut bytes = Vec::new();
-        let mut stream = response.bytes_stream();
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|_| "SOURCE_TIMEOUT")?;
-            if bytes.len() + chunk.len() > MAX_BODY {
+            if response
+                .content_length()
+                .is_some_and(|size| size > MAX_BODY as u64)
+            {
                 return Err("SOURCE_TOO_LARGE");
             }
-            bytes.extend_from_slice(&chunk);
-        }
-        let text = String::from_utf8(bytes).map_err(|_| "SOURCE_INVALID")?;
-        Ok(BangumiResponse { text })
-    }
-    .await;
-    *last = Some(Instant::now());
-    result
-}
-
-fn main_only(window: &WebviewWindow) -> Result<(), String> {
-    if window.label() == "main" {
-        Ok(())
-    } else {
-        Err("SOURCE_UNAVAILABLE".into())
-    }
-}
-
-async fn run(
-    state: &BangumiState,
-    request_id: String,
-    request: Request,
-) -> Result<BangumiResponse, String> {
-    if request_id.is_empty() || request_id.len() > 80 {
-        return Err("SOURCE_INVALID".into());
-    }
-    let registration = {
-        let mut active = state.active.lock().unwrap();
-        if active.is_some() {
-            return Err("SOURCE_BUSY".into());
-        }
-        let (handle, registration) = AbortHandle::new_pair();
-        *active = Some((request_id.clone(), handle));
-        registration
-    };
-    let result = Abortable::new(fetch(state, request), registration).await;
-    let mut active = state.active.lock().unwrap();
-    if active.as_ref().is_some_and(|(id, _)| id == &request_id) {
-        active.take();
-    }
-    result
-        .map_err(|_| "SOURCE_CANCELLED".to_string())?
-        .map_err(str::to_string)
+            let mut bytes = Vec::new();
+            let mut stream = response.bytes_stream();
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk.map_err(|_| "SOURCE_TIMEOUT")?;
+                if bytes.len() + chunk.len() > MAX_BODY {
+                    return Err("SOURCE_TOO_LARGE");
+                }
+                bytes.extend_from_slice(&chunk);
+            }
+            let text = String::from_utf8(bytes).map_err(|_| "SOURCE_INVALID")?;
+            Ok(BangumiResponse { text })
+        })
+        .await
 }
 
 #[tauri::command]
@@ -171,9 +129,12 @@ pub async fn bangumi_search(
     request_id: String,
     keyword: String,
 ) -> Result<BangumiResponse, String> {
-    main_only(&window)?;
+    require_main(&window, "SOURCE_UNAVAILABLE")?;
     let keyword = validate_keyword(&keyword)?;
-    run(&state, request_id, Request::Search(keyword)).await
+    state
+        .requests
+        .run(&request_id, fetch(&state, Request::Search(keyword)))
+        .await
 }
 
 #[tauri::command]
@@ -183,9 +144,12 @@ pub async fn bangumi_subject(
     request_id: String,
     id: u64,
 ) -> Result<BangumiResponse, String> {
-    main_only(&window)?;
+    require_main(&window, "SOURCE_UNAVAILABLE")?;
     let id = validate_subject(id)?;
-    run(&state, request_id, Request::Subject(id)).await
+    state
+        .requests
+        .run(&request_id, fetch(&state, Request::Subject(id)))
+        .await
 }
 
 #[tauri::command]
@@ -194,13 +158,8 @@ pub fn bangumi_cancel(
     state: State<'_, BangumiState>,
     request_id: String,
 ) -> Result<(), String> {
-    main_only(&window)?;
-    let mut active = state.active.lock().unwrap();
-    if active.as_ref().is_some_and(|(id, _)| id == &request_id) {
-        if let Some((_, handle)) = active.take() {
-            handle.abort();
-        }
-    }
+    require_main(&window, "SOURCE_UNAVAILABLE")?;
+    state.requests.cancel(&request_id);
     Ok(())
 }
 
