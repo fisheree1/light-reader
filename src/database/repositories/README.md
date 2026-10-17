@@ -21,3 +21,10 @@ database half of deletion. A delete that removes quote blocks updates affected
 note JSON/plain text and deletes the book in one transaction. File staging and
 restoration stay in `BookFileDeletionStorage`; React calls the coordinating
 `LibraryManagementService`, never SQL or Tauri filesystem APIs.
+
+Desktop writes that span several statements (tag replacement, book deletion,
+search and AI chunk index replacement, FTS rebuilds) never send
+`BEGIN`/`COMMIT` through `@tauri-apps/plugin-sql`: the plugin runs each
+`execute` on any connection in its pool, so those statements would not share a
+transaction. The repositories call the Rust commands wrapped in
+`../atomic-writes.ts`, which keep each transaction on one connection.
