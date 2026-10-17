@@ -380,9 +380,15 @@ export class FoliateEbookReader implements EbookReader {
     const detail = (event as CustomEvent<unknown>).detail;
     const locator = mapRelocation(detail);
     if (!locator) return;
-    if (isRecord(detail) && typeof detail.index === 'number') {
-      this.currentSectionIndex = detail.index;
-    }
+    // Foliate reports the section as `section.current` (from its progress
+    // tracker); `index` is kept for renderers that send it directly.
+    const section =
+      isRecord(detail) && isRecord(detail.section)
+        ? detail.section.current
+        : isRecord(detail)
+          ? detail.index
+          : undefined;
+    if (typeof section === 'number') this.currentSectionIndex = section;
     this.currentLocator = locator;
     for (const listener of this.listeners) listener({ ...locator });
   };
