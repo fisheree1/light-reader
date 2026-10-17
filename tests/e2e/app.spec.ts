@@ -442,7 +442,8 @@ test('completes the release user loop through the real Foliate Web engine', asyn
   await page.getByRole('button', { name: '章节内查找' }).click();
   await page.getByLabel('查找内容').fill('LightReader');
   await page.getByRole('button', { name: '查找', exact: true }).click();
-  await expect(page.getByText(/找到 \d+ 处/)).toBeVisible();
+  // At least one match: the search must cover the chapter being read.
+  await expect(page.getByText(/找到 [1-9]\d* 处/)).toBeVisible();
   await page
     .getByRole('region', { name: '章节内查找' })
     .getByRole('button', { name: '关闭章节内查找' })
@@ -456,6 +457,15 @@ test('completes the release user loop through the real Foliate Web engine', asyn
   await expect
     .poll(async () => (await readWebRecords(page, 'readingStates')).length)
     .toBeGreaterThan(0);
+  // Chapter search covers the chapter now open, not the first section.
+  await page.getByRole('button', { name: '章节内查找' }).click();
+  await page.getByLabel('查找内容').fill('到达第二章');
+  await page.getByRole('button', { name: '查找', exact: true }).click();
+  await expect(page.getByText('找到 1 处')).toBeVisible();
+  await page
+    .getByRole('region', { name: '章节内查找' })
+    .getByRole('button', { name: '关闭章节内查找' })
+    .click();
   await page.getByRole('button', { name: '第一章' }).click();
 
   const contentFrame = await findContentFrame(
