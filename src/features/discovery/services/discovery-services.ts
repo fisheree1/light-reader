@@ -4,6 +4,8 @@ import { libraryServices } from '../../library/services/library-services';
 import { BookDiscoveryService } from './book-discovery-service';
 import { createOpdsGateway } from '../../../platform/catalog/tauri-opds-gateway';
 import { OpdsService } from '../opds/opds-service';
+import { createSyosetuGateway } from '../../../platform/catalog/tauri-syosetu-gateway';
+import { SyosetuService } from '../syosetu/syosetu-service';
 
 async function createServices() {
   const gateway =
@@ -29,5 +31,20 @@ async function createOpdsServices() {
   return new OpdsService(gateway, libraryServices.importer);
 }
 
+async function createSyosetuServices() {
+  const gateway =
+    import.meta.env.DEV && import.meta.env.VITE_DISCOVERY_FAKE_SOURCE === 'true'
+      ? new (
+          await import('../../../test/fixtures/syosetu-gateway')
+        ).FixtureSyosetuGateway()
+      : createSyosetuGateway();
+  return new SyosetuService(
+    gateway,
+    libraryServices.importer,
+    new WebCryptoContentHasher(),
+  );
+}
+
 export const discoveryServices = createServices();
+export const syosetuServices = createSyosetuServices();
 export const opdsServices = createOpdsServices();

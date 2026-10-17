@@ -8,6 +8,7 @@ mod backup;
 mod catalog;
 mod library;
 mod opds;
+mod syosetu;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -104,6 +105,7 @@ pub fn run() {
         .manage(ai::OllamaState::new())
         .manage(catalog::CatalogState::new())
         .manage(opds::OpdsState::new())
+        .manage(syosetu::SyosetuState::new())
         .invoke_handler(tauri::generate_handler![
             ai::ai_ollama_status,
             ai::ai_ollama_chat,
@@ -122,7 +124,10 @@ pub fn run() {
             catalog::catalog_read_image,
             opds::opds_read_feed,
             opds::opds_download,
-            opds::opds_cancel
+            opds::opds_cancel,
+            syosetu::syosetu_search,
+            syosetu::syosetu_page,
+            syosetu::syosetu_cancel
         ])
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())

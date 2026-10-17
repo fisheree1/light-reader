@@ -31,6 +31,10 @@ import type { ChineseScript } from './domain/chinese-script';
 import type { TranslationMethod, VolumeKind } from './domain/edition';
 import type { MessageKey } from '../../i18n/i18n';
 import { OpdsPanel } from './opds/opds-panel';
+import { SyosetuPanel } from './syosetu/syosetu-panel';
+import type { SyosetuService } from './syosetu/syosetu-service';
+import { ncodePattern } from './syosetu/syosetu';
+import { ReportSummary } from './components/report-summary';
 import {
   followedSeries,
   ownedVolumeIndex,
@@ -109,60 +113,7 @@ interface Outcome {
   report?: AcquisitionReport;
 }
 
-function ReportSummary({ report }: { report: AcquisitionReport }) {
-  const { t } = useI18n();
-  const [copied, setCopied] = useState(false);
-  const { errors, warnings } = report.validation;
-  return (
-    <div className="text-muted-foreground mt-1 grid gap-1 text-xs">
-      <p>
-        {t('discovery.reportSummary', {
-          built: report.builtChapters,
-          expected: report.expectedChapters,
-          pages: report.pagesFetched,
-          embedded: report.images.embedded,
-          images: report.images.total,
-        })}
-        {' · '}
-        <span className={errors.length ? 'text-destructive' : undefined}>
-          {errors.length
-            ? t('discovery.reportInvalid', { count: errors.length })
-            : t('discovery.reportValid')}
-        </span>
-        {warnings.length
-          ? ` · ${t('discovery.reportWarnings', { count: warnings.length })}`
-          : null}
-      </p>
-      {report.shortChapters.length ? (
-        <p>
-          {t('discovery.reportShort', {
-            titles: report.shortChapters.join('、'),
-          })}
-        </p>
-      ) : null}
-      <div>
-        <Button
-          variant="ghost"
-          className="h-7 px-2 text-xs"
-          onClick={() => {
-            void navigator.clipboard
-              .writeText(JSON.stringify(report, null, 2))
-              .then(() => {
-                setCopied(true);
-              })
-              .catch(() => {
-                setCopied(false);
-              });
-          }}
-        >
-          {copied ? t('discovery.reportCopied') : t('discovery.copyReport')}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-type DiscoveryTab = 'novels' | 'opds';
+type DiscoveryTab = 'novels' | 'syosetu' | 'opds';
 
 function DiscoveryTabs({
   onChange,
@@ -174,6 +125,7 @@ function DiscoveryTabs({
   const { t } = useI18n();
   const tabs: [DiscoveryTab, MessageKey][] = [
     ['novels', 'opds.tabNovels'],
+    ['syosetu', 'syosetu.tab'],
     ['opds', 'opds.tabOpds'],
   ];
   return (
@@ -212,19 +164,55 @@ export function DiscoveryPage({
   library,
   opds,
   services,
+  syosetu,
 }: {
   library?: OwnedBooks;
   opds?: OpdsService;
   services: BookDiscoveryService;
+  syosetu?: SyosetuService;
 }) {
   const { t } = useI18n();
-  const [tab, setTab] = useState<DiscoveryTab>('novels');
-  const tabs = opds ? <DiscoveryTabs onChange={setTab} tab={tab} /> : null;
+  const [params] = useSearchParams();
+  // A shelf link to a なろう work opens that tab with its table of contents.
+  const novelParam = params.get('novel') ?? '';
+  const linkedNcode =
+    syosetu &&
+    params.get('source') === 'syosetu' &&
+    ncodePattern.test(novelParam)
+      ? novelParam
+      : undefined;
+  const [tab, setTab] = useState<DiscoveryTab>(
+    linkedNcode ? 'syosetu' : 'novels',
+  );
+  // Switch tabs for a new link during render, not in an effect.
+  const [seenLink, setSeenLink] = useState(linkedNcode);
+  if (seenLink !== linkedNcode) {
+    setSeenLink(linkedNcode);
+    if (linkedNcode) setTab('syosetu');
+  }
+  const tabs =
+    opds || syosetu ? <DiscoveryTabs onChange={setTab} tab={tab} /> : null;
   return (
     <>
       <div hidden={tab !== 'novels'}>
         <NovelDiscovery library={library} services={services} tabs={tabs} />
       </div>
+      {syosetu && tab === 'syosetu' ? (
+        <div>
+          <header className="mb-6">
+            <h1 className="text-2xl font-semibold">{t('discovery.title')}</h1>
+            <p className="text-muted-foreground mt-1 text-sm">
+              {t('syosetu.description')}
+            </p>
+          </header>
+          {tabs}
+          <SyosetuPanel
+            initialNcode={linkedNcode}
+            library={library}
+            services={syosetu}
+          />
+        </div>
+      ) : null}
       {opds && tab === 'opds' ? (
         <div>
           <header className="mb-6">
@@ -269,7 +257,14 @@ function NovelDiscovery({
   const [allowMissingImages, setAllowMissingImages] = useState(false);
   const [owned, setOwned] = useState<OwnedVolume[]>([]);
   const ownedIndex = useMemo(() => ownedVolumeIndex(owned), [owned]);
-  const followed = useMemo(() => followedSeries(owned), [owned]);
+  const followed = useMemo(
+    () =>
+      followedSeries(owned).flatMap((work) => {
+        const novelSource = sources.find((item) => item === work.source);
+        return novelSource ? [{ ...work, source: novelSource }] : [];
+      }),
+    [owned],
+  );
   const [params] = useSearchParams();
   const request = useRef<AbortController | null>(null);
   const mounted = useRef(true);

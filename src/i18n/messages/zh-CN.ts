@@ -822,6 +822,33 @@ export const zhCN = {
     errorNoFormat:
       '这本书没有可导入的格式（EPUB、AZW3、MOBI、FB2、PDF、CBZ）。',
   },
+  syosetu: {
+    tab: 'なろう（日文原作）',
+    description:
+      '搜索「小説家になろう」上作者免费公开的日文网络小说，按部或每 100 话保存为日文 EPUB。',
+    unavailable: 'なろう 下载需要桌面版。',
+    query: '作品名、作者或关键词（日文）',
+    placeholder: '例：本好き',
+    search: '搜索なろう',
+    notice:
+      '使用官方 API 搜索；目录与正文每次请求间隔至少 2 秒，遇到限流会停止。不包含 R18 站点，暂不下载插图。请仅供个人阅读。',
+    readingToc: '正在读取目录 {completed}/{total} 页',
+    toc: '目录',
+    truncated: '目录超过 3000 话，只读取了前 3000 话。',
+    vertical: '竖排（縦書き）',
+    episodes: '{count} 话',
+    total: '共 {count} 部作品，按评价排序',
+    short: '短篇',
+    ended: '完结 · {count} 话',
+    ongoing: '连载中 · {count} 话',
+    openToc: '查看目录',
+    followedDescription: '保存过的なろう作品。检查更新会重新读取该作品的目录。',
+    followedVolumes: '书架中 {count} 部分',
+    checkUpdates: '检查更新',
+    initial: '搜索日文网络小说',
+    initialDescription:
+      '许多日本轻小说最初在这里连载。输入日文书名或作者开始搜索。',
+  },
 };
 
 type DeepStringRecord<T> = {

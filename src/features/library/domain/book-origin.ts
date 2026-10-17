@@ -1,8 +1,9 @@
 import { z } from 'zod';
 
 export const bookOriginSchema = z.object({
-  source: z.enum(['bilinovel', 'linovelib']),
-  novelId: z.string().regex(/^\d{1,10}$/),
+  source: z.enum(['bilinovel', 'linovelib', 'syosetu']),
+  // Numeric IDs for the light-novel sites; an ncode such as n4830bu for なろう.
+  novelId: z.string().regex(/^(?:\d{1,10}|n\d{4}[a-z]{1,3})$/),
   volumeId: z.string().regex(/^\d{1,10}$/),
   url: z.url().max(2048),
   revision: z.string().regex(/^[a-f0-9]{64}$/),

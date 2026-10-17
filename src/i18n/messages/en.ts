@@ -925,4 +925,33 @@ export const en: Messages = {
     errorNoFormat:
       'This book has no importable format (EPUB, AZW3, MOBI, FB2, PDF, CBZ).',
   },
+  syosetu: {
+    tab: 'Syosetu (Japanese)',
+    description:
+      'Search Japanese web novels published free by their authors on Shōsetsuka ni Narō, saved as Japanese EPUBs per part or per 100 episodes.',
+    unavailable: 'Syosetu downloads need the desktop app.',
+    query: 'Title, author or keyword (Japanese)',
+    placeholder: 'e.g. 本好き',
+    search: 'Search Syosetu',
+    notice:
+      "Searches use the official API; page requests are at least 2 seconds apart and stop on rate limiting. The R18 site isn't included and illustrations aren't downloaded yet. For personal reading only.",
+    readingToc: 'Reading contents page {completed}/{total}',
+    toc: 'Contents',
+    truncated:
+      'The contents exceed 3000 episodes; only the first 3000 were read.',
+    vertical: 'Vertical text (縦書き)',
+    episodes: '{count} episodes',
+    total: '{count} works, sorted by rating',
+    short: 'Short story',
+    ended: 'Finished · {count} episodes',
+    ongoing: 'Ongoing · {count} episodes',
+    openToc: 'View contents',
+    followedDescription:
+      "なろう works you've saved. Checking for updates reads that work's contents again.",
+    followedVolumes: '{count} parts on your shelf',
+    checkUpdates: 'Check for updates',
+    initial: 'Search Japanese web novels',
+    initialDescription:
+      'Many Japanese light novels were first serialized here. Enter a Japanese title or author to start.',
+  },
 };

@@ -57,6 +57,9 @@ Recorded raises:
 - 2026-10-17, total gzip 985000 → 995000 and raw 3165000 → 3195000: OPDS
   catalogs (Atom/OpenSearch parser, service, and the catalog panel), loaded
   only with `/discover`; the initial load is unchanged.
+- 2026-10-17, total raw 3195000 → 3215000: the なろう source (API and page
+  parser, service, and panel), loaded only with `/discover`; the initial load
+  grows by about 1.2 KiB of Chinese interface strings.
 
 `pnpm build:verify` (also part of `bundle:check` and CI) checks what size
 budgets cannot see: no emitted chunk may import a path on the build machine
