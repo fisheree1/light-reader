@@ -83,10 +83,6 @@ class MemoryLibraryDatabase implements SqlDatabase {
             }
           : row,
       );
-    } else if (query.includes('DELETE FROM book_tags')) {
-      this.tags = this.tags.filter((tag) => tag.book_id !== values[0]);
-    } else if (query.includes('INSERT INTO book_tags')) {
-      this.tags.push({ book_id: String(values[0]), tag: String(values[1]) });
     } else if (query.includes('DELETE FROM books')) {
       if (this.failBookDelete) return Promise.reject(new Error('locked'));
       this.rows = this.rows.filter((row) => row.id !== values[0]);
@@ -170,9 +166,18 @@ describe('SqliteLibraryRepository', () => {
 
   it('persists favorites and normalized tags', async () => {
     const database = new MemoryLibraryDatabase();
+    const replaceTags = vi.fn((bookId: string, tags: string[]) => {
+      database.tags = [
+        ...database.tags.filter((tag) => tag.book_id !== bookId),
+        ...tags.map((tag) => ({ book_id: bookId, tag })),
+      ];
+      return Promise.resolve();
+    });
     const repository = new SqliteLibraryRepository(
       () => Promise.resolve(database),
       () => 100,
+      vi.fn(),
+      replaceTags,
     );
 
     await expect(repository.setFavorite('book-1', true)).resolves.toMatchObject(
@@ -181,9 +186,36 @@ describe('SqliteLibraryRepository', () => {
     await expect(
       repository.replaceTags('book-1', [' 技术 ', '技术', '待读']),
     ).resolves.toMatchObject({ tags: ['技术', '待读'] });
-    expect(database.executions.map((item) => item.query.trim())).toEqual(
-      expect.arrayContaining(['BEGIN IMMEDIATE', 'COMMIT']),
+    expect(replaceTags).toHaveBeenCalledWith('book-1', ['技术', '待读'], 100);
+    // The pooled plugin connection must not carry statement-by-statement
+    // transactions; the whole replacement is one Rust command.
+    expect(
+      database.executions.some((item) =>
+        /BEGIN|COMMIT|ROLLBACK|book_tags/u.test(item.query),
+      ),
+    ).toBe(false);
+  });
+
+  it('keeps tags unchanged and reports BOOK_UPDATE_FAILED when the replacement fails', async () => {
+    const database = new MemoryLibraryDatabase();
+    const replaceTags = vi.fn(() =>
+      Promise.reject(new Error('database is locked')),
     );
+    const repository = new SqliteLibraryRepository(
+      () => Promise.resolve(database),
+      () => 100,
+      vi.fn(),
+      replaceTags,
+    );
+
+    await expect(
+      repository.replaceTags('book-1', ['新标签']),
+    ).rejects.toMatchObject({ code: 'BOOK_UPDATE_FAILED' });
+    expect(database.tags).toContainEqual({ book_id: 'book-1', tag: '技术' });
+    await expect(repository.replaceTags(' ', ['x'])).rejects.toMatchObject({
+      code: 'BOOK_NOT_FOUND',
+    });
+    expect(replaceTags).toHaveBeenCalledTimes(1);
   });
 
   it('updates details and series in one statement, keeping file metadata', async () => {
