@@ -1,11 +1,8 @@
-import { invoke } from '@tauri-apps/api/core';
-
 import { bookMetadataSchema } from '../../features/library/domain/book';
 import {
   bookDetailsSchema,
   bookListOptionsSchema,
   FINISHED_PROGRESS,
-  bookTagSchema,
   normalizeBookTags,
   noteReferenceUpdateSchema,
   type BookDetails,
@@ -15,6 +12,12 @@ import {
 } from '../../features/library/domain/library';
 import { extractPlainText } from '../../features/notes/domain/note';
 import { AppError, isAppError } from '../../lib/app-error';
+import {
+  deleteBookAtomically,
+  replaceTagsAtomically,
+  type AtomicBookDelete,
+  type AtomicTagReplace,
+} from '../atomic-writes';
 import { getDatabase, type SqlDatabase } from '../client';
 import {
   bookTagRecordSchema,
@@ -25,21 +28,6 @@ import {
 import type { LibraryRepository } from './library-repository';
 
 type DatabaseProvider = () => Promise<SqlDatabase>;
-
-interface AtomicNoteReferenceUpdate {
-  contentJson: string;
-  id: string;
-  plainText: string;
-  updatedAt: number;
-}
-
-type AtomicBookDelete = (
-  bookId: string,
-  noteUpdates: AtomicNoteReferenceUpdate[],
-) => Promise<void>;
-
-const deleteBookAtomically: AtomicBookDelete = (bookId, noteUpdates) =>
-  invoke('delete_library_book', { bookId, noteUpdates });
 
 const bookColumns = `b.id, b.title, b.author, b.format, b.file_path,
   b.file_hash, b.cover_path, b.metadata_json, b.file_size, b.created_at,
@@ -75,15 +63,18 @@ export class SqliteLibraryRepository implements LibraryRepository {
   private readonly databaseProvider: DatabaseProvider;
   private readonly now: () => number;
   private readonly atomicBookDelete: AtomicBookDelete;
+  private readonly atomicTagReplace: AtomicTagReplace;
 
   constructor(
     databaseProvider: DatabaseProvider = getDatabase,
     now: () => number = Date.now,
     atomicBookDelete: AtomicBookDelete = deleteBookAtomically,
+    atomicTagReplace: AtomicTagReplace = replaceTagsAtomically,
   ) {
     this.databaseProvider = databaseProvider;
     this.now = now;
     this.atomicBookDelete = atomicBookDelete;
+    this.atomicTagReplace = atomicTagReplace;
   }
 
   async list(value: BookListOptions): Promise<LibraryBook[]> {
@@ -149,22 +140,7 @@ export class SqliteLibraryRepository implements LibraryRepository {
     const tags = normalizeBookTags(values);
     try {
       const database = await this.databaseProvider();
-      await this.transaction(database, async () => {
-        await database.execute('DELETE FROM book_tags WHERE book_id = $1', [
-          id,
-        ]);
-        for (const tag of tags) {
-          await database.execute(
-            `INSERT INTO book_tags (book_id, tag, created_at)
-             VALUES ($1, $2, $3)`,
-            [id, bookTagSchema.parse(tag), this.now()],
-          );
-        }
-        await database.execute(
-          'UPDATE books SET updated_at = $1 WHERE id = $2',
-          [this.now(), id],
-        );
-      });
+      await this.atomicTagReplace(id, tags, this.now());
       return await this.requireBook(database, id);
     } catch (error) {
       if (isAppError(error)) throw error;
@@ -264,19 +240,5 @@ export class SqliteLibraryRepository implements LibraryRepository {
     return rows.map((row) =>
       mapLibraryBookRecord(row, tagsByBook.get(row.id) ?? []),
     );
-  }
-
-  private async transaction(
-    database: SqlDatabase,
-    action: () => Promise<void>,
-  ): Promise<void> {
-    await database.execute('BEGIN IMMEDIATE');
-    try {
-      await action();
-      await database.execute('COMMIT');
-    } catch (error) {
-      await database.execute('ROLLBACK').catch(() => undefined);
-      throw error;
-    }
   }
 }
