@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Search } from 'lucide-react';
 
@@ -16,10 +16,10 @@ import {
 import {
   followedSeries,
   ownedVolumeIndex,
-  ownedVolumes,
   volumeKey,
-  type OwnedVolume,
 } from '../domain/followed-series';
+import { useCancellableAction } from '../hooks/use-cancellable-action';
+import { useOwnedVolumes } from '../hooks/use-owned-volumes';
 import { EpubValidationError } from '../domain/acquisition-report';
 import type { SyosetuSearchResult, SyosetuToc } from './syosetu';
 import type { SyosetuService } from './syosetu-service';
@@ -53,68 +53,26 @@ export function SyosetuPanel({
   const [toc, setToc] = useState<SyosetuToc | null>(null);
   const [selection, setSelection] = useState<Set<string>>(new Set());
   const [vertical, setVertical] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [progress, setProgress] = useState<AcquisitionProgress | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [outcomes, setOutcomes] = useState<Outcome[]>([]);
-  const [owned, setOwned] = useState<OwnedVolume[]>([]);
-  const request = useRef<AbortController | null>(null);
-  const mounted = useRef(true);
-
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-      request.current?.abort();
-    };
-  }, []);
-
-  const refreshOwned = useCallback(async () => {
-    if (!library) return;
-    try {
-      const books = await library.list({
-        query: '',
-        sort: 'added',
-        favoritesOnly: false,
-        status: 'all',
-      });
-      if (mounted.current)
-        setOwned(
-          ownedVolumes(books).filter((volume) => volume.source === 'syosetu'),
-        );
-    } catch {
-      // Marking owned volumes is a convenience; the panel works without it.
-    }
-  }, [library]);
-  useEffect(() => {
-    void refreshOwned();
-  }, [refreshOwned]);
+  const { aborted, abort, busy, error, mounted, perform, setError } =
+    useCancellableAction({
+      onStart: () => {
+        setProgress(null);
+        setStatus(null);
+      },
+      onSettled: () => {
+        setProgress(null);
+        setStatus(null);
+      },
+    });
+  const { owned, refresh: refreshOwned } = useOwnedVolumes(library, [
+    'syosetu',
+  ]);
 
   const ownedIndex = useMemo(() => ownedVolumeIndex(owned), [owned]);
   const followed = useMemo(() => followedSeries(owned), [owned]);
-
-  const perform = async (action: (signal: AbortSignal) => Promise<void>) => {
-    request.current?.abort();
-    const controller = new AbortController();
-    request.current = controller;
-    setBusy(true);
-    setError(null);
-    setProgress(null);
-    setStatus(null);
-    try {
-      await action(controller.signal);
-    } catch (value) {
-      if (!controller.signal.aborted && mounted.current)
-        setError(discoveryErrorMessage(value));
-    } finally {
-      if (request.current === controller && mounted.current) {
-        setBusy(false);
-        setProgress(null);
-        setStatus(null);
-      }
-    }
-  };
 
   const search = (text: string, page: number) =>
     perform(async (signal) => {
@@ -186,7 +144,7 @@ export function SyosetuPanel({
             return next;
           });
         } catch (value) {
-          if (request.current?.signal.aborted) return;
+          if (aborted()) return;
           if (mounted.current)
             setOutcomes((previous) => [
               ...previous.filter((item) => item.volumeId !== volume.id),
@@ -273,7 +231,7 @@ export function SyosetuPanel({
             className="mt-3"
             disabled={progress?.stage === 'importing'}
             onClick={() => {
-              request.current?.abort();
+              abort();
             }}
             variant="secondary"
           >

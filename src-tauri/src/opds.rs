@@ -16,7 +16,7 @@ use reqwest::{redirect::Policy, Client, Url};
 use serde::{Deserialize, Serialize};
 use tauri::{State, WebviewWindow};
 
-use crate::catalog::public_ip;
+use crate::{catalog::public_ip, native_request::require_main};
 
 const MAX_FEED: usize = 5 * 1024 * 1024;
 const MAX_IMAGE: usize = 5 * 1024 * 1024;
@@ -204,11 +204,7 @@ async fn fetch(
 }
 
 fn main_only(window: &WebviewWindow) -> Result<(), String> {
-    if window.label() == "main" {
-        Ok(())
-    } else {
-        Err("SOURCE_UNAVAILABLE".into())
-    }
+    require_main(window, "SOURCE_UNAVAILABLE")
 }
 
 fn parse_request(request_id: &str, catalog: &str, url: &str) -> Result<(Url, Url), String> {

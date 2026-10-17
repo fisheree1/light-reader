@@ -6,13 +6,12 @@ use std::{
 };
 
 use base64::{engine::general_purpose::STANDARD, Engine};
-use futures_util::{
-    future::{AbortHandle, Abortable},
-    StreamExt,
-};
+use futures_util::StreamExt;
 use reqwest::{redirect::Policy, Client, Url};
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+
+use crate::native_request::{require_main, SingleRequest};
 
 const SOURCE_WINDOW: &str = "novel-source";
 const MAX_SNAPSHOT: usize = 3 * 1024 * 1024;
@@ -120,14 +119,14 @@ struct Pending {
 
 pub struct CatalogState {
     pending: Mutex<Option<Pending>>,
-    image: Mutex<Option<(String, AbortHandle)>>,
+    image: SingleRequest,
 }
 
 impl CatalogState {
     pub fn new() -> Self {
         Self {
             pending: Mutex::new(None),
-            image: Mutex::new(None),
+            image: SingleRequest::default(),
         }
     }
     fn finish(&self, id: &str, result: Result<PageSnapshot, String>) -> bool {
@@ -224,10 +223,7 @@ impl CatalogState {
 }
 
 fn main_only(window: &WebviewWindow) -> Result<(), String> {
-    if window.label() != "main" {
-        return Err("SOURCE_ACCESS_DENIED".into());
-    }
-    Ok(())
+    require_main(window, "SOURCE_ACCESS_DENIED")
 }
 
 fn navigation_script(target: &Url, request_id: &str) -> String {
@@ -470,12 +466,7 @@ pub fn catalog_cancel(
     main_only(&window)?;
     let cancelled_page = state.finish(&request_id, Err("SOURCE_CANCELLED".into()));
     cancel_source_script(window.app_handle(), &request_id, cancelled_page);
-    let mut image = state.image.lock().unwrap();
-    if image.as_ref().is_some_and(|(id, _)| id == &request_id) {
-        if let Some((_, abort)) = image.take() {
-            abort.abort();
-        }
-    }
+    state.image.cancel(&request_id);
     Ok(())
 }
 
@@ -634,29 +625,16 @@ pub async fn catalog_read_image(
     if !allowed_image(source, &url) {
         return Err("SOURCE_IMAGE_FAILED".into());
     }
-    let registration = {
-        let mut image = state.image.lock().unwrap();
-        if image.is_some() {
-            return Err("SOURCE_BUSY".into());
-        }
-        let (handle, registration) = AbortHandle::new_pair();
-        *image = Some((request_id.clone(), handle));
-        registration
-    };
     let bounded_download = async {
         tokio::time::timeout(Duration::from_secs(35), download_image(source, url))
             .await
             .unwrap_or(Err("SOURCE_IMAGE_FAILED"))
     };
-    let result = Abortable::new(bounded_download, registration).await;
-    let mut image = state.image.lock().unwrap();
-    if image.as_ref().is_some_and(|(id, _)| id == &request_id) {
-        image.take();
-    }
-    result
-        .map_err(|_| "SOURCE_CANCELLED".to_string())?
+    state
+        .image
+        .run(&request_id, bounded_download)
+        .await
         .map(tauri::ipc::Response::new)
-        .map_err(str::to_string)
 }
 
 #[cfg(test)]
