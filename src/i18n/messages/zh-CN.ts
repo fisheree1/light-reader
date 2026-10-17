@@ -849,6 +849,28 @@ export const zhCN = {
     initialDescription:
       '许多日本轻小说最初在这里连载。输入日文书名或作者开始搜索。',
   },
+  bangumi: {
+    title: '按原名查找中文译本',
+    description:
+      '用日文原名、中文名或简称在 Bangumi 查找作品的中文译名、别名和官方中文版，再用这些译名搜索书源。',
+    unavailable: '译名查找需要桌面版。',
+    keyword: '作品名',
+    placeholder: '例：負けヒロインが多すぎる',
+    lookUp: '查找译名',
+    empty: 'Bangumi 中没有找到这部轻小说。',
+    candidates: '匹配的作品',
+    series: '系列',
+    details: '《{title}》的中文信息',
+    official: '官方中文版',
+    noOfficial: 'Bangumi 未记录官方中文版。',
+    buyOfficial: '官方中文版请通过正规书店购买，以支持作者与译者。',
+    translators: '译者：{names}',
+    names: '中文译名与别名',
+    noNames: '没有记录中文译名。',
+    attribution: '数据来自 Bangumi 番组计划：{url}',
+    searchSources: '用 {count} 个译名搜索书源',
+    findTranslation: '查找中文译本',
+  },
 };
 
 type DeepStringRecord<T> = {

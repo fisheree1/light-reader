@@ -5,6 +5,7 @@ use tauri_plugin_sql::{Migration, MigrationKind};
 
 mod ai;
 mod backup;
+mod bangumi;
 mod catalog;
 mod library;
 mod opds;
@@ -107,6 +108,7 @@ pub fn run() {
         .manage(catalog::CatalogState::new())
         .manage(opds::OpdsState::new())
         .manage(syosetu::SyosetuState::new())
+        .manage(bangumi::BangumiState::new())
         .invoke_handler(tauri::generate_handler![
             ai::ai_ollama_status,
             ai::ai_ollama_chat,
@@ -133,7 +135,10 @@ pub fn run() {
             syosetu::syosetu_search,
             syosetu::syosetu_page,
             syosetu::syosetu_image,
-            syosetu::syosetu_cancel
+            syosetu::syosetu_cancel,
+            bangumi::bangumi_search,
+            bangumi::bangumi_subject,
+            bangumi::bangumi_cancel
         ])
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())

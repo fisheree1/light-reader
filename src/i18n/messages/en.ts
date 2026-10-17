@@ -954,4 +954,27 @@ export const en: Messages = {
     initialDescription:
       'Many Japanese light novels were first serialized here. Enter a Japanese title or author to start.',
   },
+  bangumi: {
+    title: 'Find Chinese translations by title',
+    description:
+      "Look up a work's Chinese titles, aliases and official Chinese editions on Bangumi by its Japanese, Chinese or short title, then search the sources with those titles.",
+    unavailable: 'Title lookup needs the desktop app.',
+    keyword: 'Work title',
+    placeholder: 'e.g. 負けヒロインが多すぎる',
+    lookUp: 'Look up titles',
+    empty: 'Bangumi has no light novel with this title.',
+    candidates: 'Matching works',
+    series: 'Series',
+    details: 'Chinese details for {title}',
+    official: 'Official Chinese editions',
+    noOfficial: 'Bangumi lists no official Chinese edition.',
+    buyOfficial:
+      'Please buy official Chinese editions from legitimate stores to support the author and translators.',
+    translators: 'Translator: {names}',
+    names: 'Chinese titles and aliases',
+    noNames: 'No Chinese titles recorded.',
+    attribution: 'Data from Bangumi: {url}',
+    searchSources: 'Search sources with {count} titles',
+    findTranslation: 'Find Chinese translations',
+  },
 };

@@ -60,6 +60,10 @@ Recorded raises:
 - 2026-10-17, total raw 3195000 → 3215000: the なろう source (API and page
   parser, service, and panel), loaded only with `/discover`; the initial load
   grows by about 1.2 KiB of Chinese interface strings.
+- 2026-10-17, total raw 3215000 → 3235000 and gzip 995000 → 1005000: the
+  Bangumi translation lookup (parser, service, and panel), loaded only with
+  `/discover`; the initial load grows by about 0.8 KiB of Chinese interface
+  strings.
 
 `pnpm build:verify` (also part of `bundle:check` and CI) checks what size
 budgets cannot see: no emitted chunk may import a path on the build machine

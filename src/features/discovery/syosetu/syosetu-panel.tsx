@@ -336,6 +336,18 @@ export function SyosetuPanel({
           </Button>
           <h2 className="mt-4 text-xl font-semibold">{toc.title}</h2>
           <p className="text-muted-foreground text-sm">{toc.author}</p>
+          <Button
+            className="mt-2"
+            onClick={() => {
+              void navigate(
+                `/discover?${new URLSearchParams({ lookup: toc.title }).toString()}`,
+              );
+            }}
+            size="sm"
+            variant="secondary"
+          >
+            {t('bangumi.findTranslation')}
+          </Button>
           {toc.summary ? (
             <p className="text-muted-foreground mt-2 line-clamp-4 text-sm">
               {toc.summary}

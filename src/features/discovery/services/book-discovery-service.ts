@@ -210,6 +210,47 @@ export class BookDiscoveryService {
     return { groups: groupBySeries(found), failures };
   }
 
+  /**
+   * Searches every source with each of a work's titles (for example the
+   * Chinese titles Bangumi lists), merging the results. A refusal stops the
+   * remaining titles; a source failing for every title is reported once.
+   */
+  async searchByNames(
+    sources: readonly NovelSource[],
+    names: readonly string[],
+    signal: AbortSignal,
+  ): Promise<MultiSourceSearchResult> {
+    const found: SourcedNovel[] = [];
+    const failures = new Map<NovelSource, SourceSearchFailure>();
+    const succeeded = new Set<NovelSource>();
+    for (const name of names) {
+      throwIfCancelled(signal);
+      let result: MultiSourceSearchResult;
+      try {
+        result = await this.searchSources(sources, name, signal);
+      } catch (error) {
+        throwIfCancelled(signal);
+        for (const source of sources) failures.set(source, { source, error });
+        if (isSourceRefusal(error)) break;
+        continue;
+      }
+      found.push(...result.groups.flatMap((group) => group.entries));
+      for (const failure of result.failures)
+        failures.set(failure.source, failure);
+      for (const source of sources)
+        if (!result.failures.some((failure) => failure.source === source))
+          succeeded.add(source);
+      if (result.failures.some((failure) => isSourceRefusal(failure.error)))
+        break;
+    }
+    const remaining = [...failures.values()].filter(
+      (failure) => !succeeded.has(failure.source),
+    );
+    if (!found.length && remaining.length === sources.length && remaining[0])
+      throw remaining[0].error;
+    return { groups: groupBySeries(found), failures: remaining };
+  }
+
   async catalogue(source: NovelSource, id: string, signal: AbortSignal) {
     if (!/^\d{1,10}$/.test(id)) throw new DiscoveryError('SOURCE_INVALID');
     return this.fromSource(async () => {
