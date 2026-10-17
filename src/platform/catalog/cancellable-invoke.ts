@@ -101,3 +101,19 @@ export function responseBytes(
   if (result instanceof Uint8Array) return result;
   throw new DiscoveryError(failure);
 }
+
+/**
+ * Runs requests one after another, so a search made while a download runs
+ * waits its turn instead of hitting the native one-request limit.
+ */
+export function createRequestLane() {
+  let tail: Promise<unknown> = Promise.resolve();
+  return <T>(task: () => Promise<T>): Promise<T> => {
+    const run = tail.then(task, task);
+    tail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  };
+}

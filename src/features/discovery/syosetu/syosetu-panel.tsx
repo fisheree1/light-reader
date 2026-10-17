@@ -6,32 +6,17 @@ import { Button } from '../../../components/ui/button';
 import { EmptyState } from '../../../components/common/empty-state';
 import { useI18n } from '../../../i18n/use-i18n';
 import type { LibraryManagement } from '../../library/services/library-management-service';
-import { ReportSummary } from '../components/report-summary';
-import type { AcquisitionReport } from '../domain/acquisition-report';
-import type { AcquisitionProgress } from '../domain/catalog';
-import {
-  discoveryErrorMessage,
-  isSourceRefusal,
-} from '../domain/discovery-error';
 import {
   followedSeries,
   ownedVolumeIndex,
   volumeKey,
 } from '../domain/followed-series';
+import { DownloadList } from '../downloads/download-list';
+import { enqueueDownloads, useDownloads } from '../downloads/download-queue';
 import { useCancellableAction } from '../hooks/use-cancellable-action';
 import { useOwnedVolumes } from '../hooks/use-owned-volumes';
-import { EpubValidationError } from '../domain/acquisition-report';
 import type { SyosetuSearchResult, SyosetuToc } from './syosetu';
 import type { SyosetuService } from './syosetu-service';
-
-interface Outcome {
-  volumeId: string;
-  title: string;
-  status: 'created' | 'duplicate' | 'failed';
-  bookId?: string;
-  message?: string;
-  report?: AcquisitionReport;
-}
 
 export function SyosetuPanel({
   initialNcode,
@@ -54,22 +39,24 @@ export function SyosetuPanel({
   const [selection, setSelection] = useState<Set<string>>(new Set());
   const [vertical, setVertical] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
-  const [progress, setProgress] = useState<AcquisitionProgress | null>(null);
-  const [outcomes, setOutcomes] = useState<Outcome[]>([]);
-  const { aborted, abort, busy, error, mounted, perform, setError } =
-    useCancellableAction({
-      onStart: () => {
-        setProgress(null);
-        setStatus(null);
-      },
-      onSettled: () => {
-        setProgress(null);
-        setStatus(null);
-      },
-    });
-  const { owned, refresh: refreshOwned } = useOwnedVolumes(library, [
-    'syosetu',
-  ]);
+  const { abort, busy, error, mounted, perform } = useCancellableAction({
+    onStart: () => {
+      setStatus(null);
+    },
+    onSettled: () => {
+      setStatus(null);
+    },
+  });
+  // Volumes finished downloading: owned marks refresh when this changes.
+  const saved = useDownloads(
+    (state) =>
+      state.jobs.filter(
+        (job) =>
+          job.group.startsWith('syosetu:') &&
+          (job.status === 'created' || job.status === 'duplicate'),
+      ).length,
+  );
+  const { owned } = useOwnedVolumes(library, ['syosetu'], saved);
 
   const ownedIndex = useMemo(() => ownedVolumeIndex(owned), [owned]);
   const followed = useMemo(() => followedSeries(owned), [owned]);
@@ -92,7 +79,6 @@ export function SyosetuPanel({
       if (signal.aborted || !mounted.current) return;
       setToc(loaded);
       setSelection(new Set());
-      setOutcomes([]);
     });
 
   useEffect(() => {
@@ -107,65 +93,30 @@ export function SyosetuPanel({
     ? toc.volumes.filter((volume) => !ownedFor(volume.id))
     : [];
 
-  const acquire = () =>
-    perform(async (signal) => {
-      if (!toc) return;
-      for (const volume of toc.volumes.filter((item) =>
-        selection.has(item.id),
-      )) {
-        if (signal.aborted) return;
-        setStatus(volume.title);
-        try {
-          const result = await services.acquire(
-            {
-              toc,
-              volume,
-              vertical,
-              onProgress: (value) => {
-                if (mounted.current) setProgress(value);
-              },
-            },
-            signal,
-          );
-          if (!mounted.current) return;
-          setOutcomes((previous) => [
-            ...previous.filter((item) => item.volumeId !== volume.id),
-            {
-              volumeId: volume.id,
-              title: volume.title,
-              status: result.status,
-              bookId: result.book.id,
-              report: result.report,
-            },
-          ]);
-          setSelection((previous) => {
-            const next = new Set(previous);
-            next.delete(volume.id);
-            return next;
-          });
-        } catch (value) {
-          if (aborted()) return;
-          if (mounted.current)
-            setOutcomes((previous) => [
-              ...previous.filter((item) => item.volumeId !== volume.id),
-              {
-                volumeId: volume.id,
-                title: volume.title,
-                status: 'failed',
-                message: discoveryErrorMessage(value),
-                report:
-                  value instanceof EpubValidationError
-                    ? value.report
-                    : undefined,
-              },
-            ]);
-          if (isSourceRefusal(value)) {
-            if (mounted.current) setError(t('discovery.stoppedAfterBlock'));
-            return;
-          }
-        }
-      }
-    }).then(refreshOwned);
+  /**
+   * Queues the selected parts. They download one at a time in the background
+   * and keep going when this page is left.
+   */
+  const acquire = () => {
+    if (!toc) return;
+    const work = toc;
+    const asVertical = vertical;
+    enqueueDownloads(
+      work.volumes
+        .filter((volume) => selection.has(volume.id))
+        .map((volume) => ({
+          group: `syosetu:${work.ncode}`,
+          volumeId: volume.id,
+          title: `${work.title} ${volume.title}`,
+          run: (signal, onProgress) =>
+            services.acquire(
+              { toc: work, volume, vertical: asVertical, onProgress },
+              signal,
+            ),
+        })),
+    );
+    setSelection(new Set());
+  };
 
   return (
     <div className="grid gap-5">
@@ -221,15 +172,8 @@ export function SyosetuPanel({
           className="bg-surface rounded-lg border p-4 text-sm"
         >
           <p className="font-medium">{status ?? t('discovery.loading')}</p>
-          {progress ? (
-            <p className="text-muted-foreground mt-1">
-              {t(`discovery.${progress.stage}`)} · {progress.completed}/
-              {progress.total}
-            </p>
-          ) : null}
           <Button
             className="mt-3"
-            disabled={progress?.stage === 'importing'}
             onClick={() => {
               abort();
             }}
@@ -240,44 +184,7 @@ export function SyosetuPanel({
         </section>
       ) : null}
 
-      {outcomes.length ? (
-        <ul aria-label={t('discovery.outcomes')} className="grid gap-2">
-          {outcomes.map((outcome) => (
-            <li
-              className="bg-surface flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4 text-sm"
-              key={outcome.volumeId}
-            >
-              <div>
-                <p className="font-medium">{outcome.title}</p>
-                <p
-                  className={
-                    outcome.status === 'failed'
-                      ? 'text-destructive'
-                      : 'text-muted-foreground'
-                  }
-                >
-                  {outcome.message ?? t(`discovery.${outcome.status}`)}
-                </p>
-                {outcome.report ? (
-                  <ReportSummary report={outcome.report} />
-                ) : null}
-              </div>
-              {outcome.bookId ? (
-                <Button
-                  onClick={() => {
-                    void navigate(
-                      `/reader/${encodeURIComponent(outcome.bookId ?? '')}`,
-                    );
-                  }}
-                  variant="secondary"
-                >
-                  {t('discovery.read')}
-                </Button>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      <DownloadList prefix="syosetu:" />
 
       {toc ? (
         <section aria-label={t('syosetu.toc')}>
@@ -349,7 +256,7 @@ export function SyosetuPanel({
                   busy || !selection.size || !services.gateway.available
                 }
                 onClick={() => {
-                  void acquire();
+                  acquire();
                 }}
               >
                 {t('discovery.acquire', { count: selection.size })}

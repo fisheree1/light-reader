@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -10,6 +10,7 @@ import {
   type AcquisitionReport,
 } from './domain/acquisition-report';
 import { DiscoveryError } from './domain/discovery-error';
+import { resetDownloads } from './downloads/download-queue';
 import type { BookDiscoveryService } from './services/book-discovery-service';
 
 const chapter = { id: '1', title: '第一章', path: '/novel/1/1.html' };
@@ -72,12 +73,12 @@ function renderPage(
     current: vi.fn(),
     acquire,
   } as unknown as BookDiscoveryService;
-  render(
+  const view = render(
     <MemoryRouter>
       <DiscoveryPage services={services} />
     </MemoryRouter>,
   );
-  return { loadCatalogue };
+  return { loadCatalogue, unmount: view.unmount };
 }
 
 async function selectAllVolumesAndAcquire() {
@@ -92,6 +93,10 @@ async function selectAllVolumesAndAcquire() {
     );
   await user.click(screen.getByRole('button', { name: '获取所选 3 卷' }));
 }
+
+beforeEach(() => {
+  resetDownloads();
+});
 
 describe('DiscoveryPage acquisition', () => {
   it('stops the remaining volumes when the source refuses a request', async () => {
@@ -115,7 +120,12 @@ describe('DiscoveryPage acquisition', () => {
     const outcomes = screen.getByRole('list', { name: '获取结果' });
     expect(within(outcomes).getByText(/第一卷/)).toBeVisible();
     expect(within(outcomes).getByText(/书源提示请求过于频繁/)).toBeVisible();
-    expect(within(outcomes).queryByText(/第三卷/)).not.toBeInTheDocument();
+    // The queued third volume is cancelled with the reason, never started.
+    expect(
+      within(
+        within(outcomes).getByText('第三卷').closest('li') as HTMLElement,
+      ).getByText('书源拒绝或限制了访问，剩余卷册已停止获取。'),
+    ).toBeVisible();
   });
 
   it('continues with the next volume after an ordinary failure', async () => {
@@ -133,8 +143,48 @@ describe('DiscoveryPage acquisition', () => {
     await selectAllVolumesAndAcquire();
 
     const outcomes = await screen.findByRole('list', { name: '获取结果' });
-    await within(outcomes).findByText(/第三卷/);
-    expect(acquire).toHaveBeenCalledTimes(3);
+    await waitFor(() => {
+      expect(acquire).toHaveBeenCalledTimes(3);
+    });
+    const third = within(outcomes).getByText('第三卷').closest('li');
+    expect(
+      await within(third as HTMLElement).findByText('已加入书架'),
+    ).toBeVisible();
+  });
+
+  it('keeps downloading after the page is left and shows progress on return', async () => {
+    let finish: () => void = () => undefined;
+    const acquire = vi.fn<BookDiscoveryService['acquire']>(
+      (input) =>
+        new Promise((resolve) => {
+          input.onProgress({ stage: 'fetching', completed: 1, total: 2 });
+          finish = () => {
+            resolve({
+              status: 'created',
+              book: createTestBook(),
+              missingImages: 0,
+              report,
+            });
+          };
+        }),
+    );
+    const { unmount } = renderPage(acquire);
+    await selectAllVolumesAndAcquire();
+    expect(await screen.findByText('获取章节 · 1/2')).toBeVisible();
+    unmount();
+    // Leaving the page does not cancel: the first volume completes.
+    finish();
+    renderPage(acquire);
+    const outcomes = await screen.findByRole('list', { name: '获取结果' });
+    expect(
+      await within(
+        within(outcomes).getByText('第一卷').closest('li') as HTMLElement,
+      ).findByText('已加入书架'),
+    ).toBeVisible();
+    // The other two queued volumes run after it.
+    await waitFor(() => {
+      expect(acquire).toHaveBeenCalledTimes(2);
+    });
   });
 });
 
@@ -222,14 +272,16 @@ describe('DiscoveryPage acceptance report', () => {
     expect(
       within(outcomes).getAllByText(/验收：1\/1 章 · 2 页 · 图片 1\/1/),
     ).toHaveLength(3);
+    // A failed structure check opens its details; passing ones stay folded.
     expect(within(outcomes).getByText('结构校验发现 1 个错误')).toBeVisible();
     expect(within(outcomes).getByText(/未通过结构校验/)).toBeVisible();
-    expect(
-      within(outcomes).getAllByText('疑似过短章节：第一章')[0],
-    ).toBeVisible();
+    const short = within(outcomes).getAllByText('疑似过短章节：第一章')[0];
+    expect(short).not.toBeVisible();
 
     // user-event installs its own clipboard; spy on the one it installed.
     const user = userEvent.setup();
+    await user.click(within(outcomes).getAllByText('验收详情')[0]);
+    expect(short).toBeVisible();
     const writeText = vi.spyOn(navigator.clipboard, 'writeText');
     await user.click(
       within(outcomes).getAllByRole('button', { name: '复制验收报告' })[1],
@@ -264,7 +316,10 @@ describe('DiscoveryPage followed series', () => {
     const loadCatalogue = vi.fn().mockResolvedValue(catalogue);
     const services = {
       gateway: { available: true },
-      searchSources: vi.fn(),
+      searchSources: vi.fn().mockResolvedValue({
+        groups: [{ key: 'k', title: entry.title, entries: [entry] }],
+        failures: [],
+      }),
       catalogue: loadCatalogue,
       current: vi.fn(),
       acquire: vi.fn(),
@@ -317,6 +372,16 @@ describe('DiscoveryPage followed series', () => {
       within(volumes).getByRole('checkbox', { name: /第一卷/ }),
     ).not.toBeChecked();
     expect(screen.getByRole('button', { name: '获取所选 2 卷' })).toBeEnabled();
+  });
+
+  it('says in search results which works already have volumes on the shelf', async () => {
+    const user = userEvent.setup();
+    renderFollowed();
+    await screen.findByRole('region', { name: '我的系列' });
+    await user.type(screen.getByPlaceholderText('输入作品名或作者'), '测试');
+    await user.click(screen.getByRole('button', { name: '搜索书源' }));
+    const results = await screen.findByRole('region', { name: '搜索结果' });
+    expect(within(results).getByText('书架中已有 1 卷')).toBeVisible();
   });
 
   it('opens a work straight from a shelf link', async () => {

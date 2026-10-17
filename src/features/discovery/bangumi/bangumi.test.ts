@@ -8,23 +8,23 @@ import {
 
 describe('Bangumi parsing', () => {
   it('keeps light-novel series, dropping their volumes, comics and adult entries', () => {
-    expect(parseBangumiSearch(JSON.stringify(bangumiFixture.search))).toEqual([
-      {
-        id: 1001,
-        name: 'テストのライトノベル！',
-        nameCn: '测试轻小说',
-        series: true,
-        author: 'テスト作者',
-        label: 'テスト文庫',
-        date: '2020-01-01',
-      },
-    ]);
+    const found = parseBangumiSearch(JSON.stringify(bangumiFixture.search));
+    expect(found.map((item) => item.id)).toEqual([1001, 1005]);
+    expect(found[0]).toEqual({
+      id: 1001,
+      name: 'テストのライトノベル！',
+      nameCn: '测试轻小说',
+      series: true,
+      author: 'テスト作者',
+      label: 'テスト文庫',
+      date: '2020-01-01',
+    });
     // Without its series entry, a volume is still offered.
     expect(
       parseBangumiSearch(
         JSON.stringify({ data: bangumiFixture.search.data.slice(1) }),
       ).map((item) => item.id),
-    ).toEqual([1002]);
+    ).toEqual([1005, 1002]);
     for (const text of ['<html>', '{"data":"x"}'])
       expect(() => parseBangumiSearch(text)).toThrow(
         expect.objectContaining({ code: 'SOURCE_INVALID' }),

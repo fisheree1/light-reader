@@ -134,6 +134,21 @@ describe('EPUB structural validation', () => {
     ).toEqual(['container-invalid']);
   });
 
+  it('opens at the story: chapters first, source page last, text landmark', async () => {
+    const files = unzipSync(await build());
+    const opf = text(files['EPUB/package.opf']);
+    expect(
+      [...opf.matchAll(/<itemref idref="([^"]+)"/g)].map((match) => match[1]),
+    ).toEqual(['c0', 'source']);
+    const nav = text(files['EPUB/nav.xhtml']);
+    expect(nav.indexOf('chapter-1.xhtml')).toBeLessThan(
+      nav.indexOf('source.xhtml'),
+    );
+    expect(nav).toContain(
+      '<a epub:type="bodymatter" href="chapter-1.xhtml">正文</a>',
+    );
+  });
+
   it('resolves hrefs inside the archive only', () => {
     expect(resolveHref('EPUB/a/b.xhtml', '../images/%E5%9B%BE.png')).toBe(
       'EPUB/images/图.png',

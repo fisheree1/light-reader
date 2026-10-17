@@ -61,6 +61,13 @@ export const bangumiFixture = {
         platform: '漫画',
       },
       { ...series, id: 1004, name: '成人向けテスト', nsfw: true },
+      {
+        ...series,
+        id: 1005,
+        name: '別のテスト作品',
+        name_cn: '另一部测试作品',
+        infobox: [],
+      },
     ],
   },
 };
@@ -80,8 +87,17 @@ export class FixtureBangumiGateway implements BangumiGateway {
 
   subject(id: number, signal: AbortSignal) {
     throwIfCancelled(signal);
-    return id === 1001
-      ? Promise.resolve(JSON.stringify(series))
-      : Promise.reject(new DiscoveryError('OPDS_NOT_FOUND'));
+    if (id === 1001) return Promise.resolve(JSON.stringify(series));
+    if (id === 1005)
+      return Promise.resolve(
+        JSON.stringify({
+          ...series,
+          id: 1005,
+          name: '別のテスト作品',
+          name_cn: '另一部测试作品',
+          infobox: [],
+        }),
+      );
+    return Promise.reject(new DiscoveryError('OPDS_NOT_FOUND'));
   }
 }

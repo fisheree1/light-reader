@@ -6,32 +6,25 @@ import { Button } from '../../components/ui/button';
 import { EmptyState } from '../../components/common/empty-state';
 import { useI18n } from '../../i18n/use-i18n';
 import type { BangumiService } from './bangumi/bangumi-service';
-import { TranslationLookup } from './bangumi/translation-lookup';
-import { ReportSummary } from './components/report-summary';
+import {
+  TranslationLookup,
+  type LookupRequest,
+} from './bangumi/translation-lookup';
 import {
   isSelectable,
   methodKeys,
   volumeBadges,
 } from './components/volume-labels';
-import {
-  EpubValidationError,
-  type AcquisitionReport,
-} from './domain/acquisition-report';
-import type {
-  AcquisitionProgress,
-  NovelCatalogue,
-  NovelSource,
-} from './domain/catalog';
-import {
-  discoveryErrorMessage,
-  isSourceRefusal,
-} from './domain/discovery-error';
+import type { NovelCatalogue, NovelSource } from './domain/catalog';
+import { discoveryErrorMessage } from './domain/discovery-error';
 import {
   followedSeries,
   ownedVolumeIndex,
   volumeKey,
 } from './domain/followed-series';
 import { useCancellableAction } from './hooks/use-cancellable-action';
+import { DownloadList } from './downloads/download-list';
+import { enqueueDownloads, useDownloads } from './downloads/download-queue';
 import { useOwnedVolumes, type OwnedBooks } from './hooks/use-owned-volumes';
 import {
   groupBySeries,
@@ -48,16 +41,6 @@ const sourceNames: Record<NovelSource, string> = {
   bilinovel: 'Bilinovel',
   linovelib: 'Linovelib',
 };
-
-interface Outcome {
-  volumeId: string;
-  title: string;
-  status: 'created' | 'duplicate' | 'failed';
-  bookId?: string;
-  message?: string;
-  missingImages?: number;
-  report?: AcquisitionReport;
-}
 
 export function NovelDiscovery({
   bangumi,
@@ -76,29 +59,55 @@ export function NovelDiscovery({
   const navigate = useNavigate();
   const [scope, setScope] = useState<SearchScope>('bilinovel');
   const [source, setSource] = useState<NovelSource>('bilinovel');
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(lookupKeyword ?? '');
+  // Each search also looks the title up on Bangumi (desktop only).
+  const [lookup, setLookup] = useState<LookupRequest | null>(
+    lookupKeyword ? { text: lookupKeyword, id: 0 } : null,
+  );
+  // A link from a なろう work fills in its title and looks it up only:
+  // searching the sources with a Japanese title rarely finds anything.
+  const [seenKeyword, setSeenKeyword] = useState(lookupKeyword);
+  if (seenKeyword !== lookupKeyword) {
+    setSeenKeyword(lookupKeyword);
+    if (lookupKeyword) {
+      setQuery(lookupKeyword);
+      setLookup((previous) => ({
+        text: lookupKeyword,
+        id: (previous?.id ?? 0) + 1,
+      }));
+    }
+  }
   const [searchedQuery, setSearchedQuery] = useState('');
   const [groups, setGroups] = useState<SeriesCandidate[]>([]);
   const [failures, setFailures] = useState<SourceSearchFailure[]>([]);
   const [searched, setSearched] = useState(false);
   const [catalogue, setCatalogue] = useState<NovelCatalogue | null>(null);
   const [selection, setSelection] = useState<Set<string>>(new Set());
-  const [progress, setProgress] = useState<AcquisitionProgress | null>(null);
-  const [activeVolume, setActiveVolume] = useState('');
-  const { aborted, abort, busy, error, mounted, perform, setError } =
-    useCancellableAction({
-      onStart: () => {
-        setProgress(null);
-      },
-      onSettled: () => {
-        setProgress(null);
-        setActiveVolume('');
-      },
-    });
-  const [outcomes, setOutcomes] = useState<Outcome[]>([]);
+  const { abort, busy, error, mounted, perform, setError } =
+    useCancellableAction();
   const [allowMissingImages, setAllowMissingImages] = useState(false);
-  const { owned, refresh: refreshOwned } = useOwnedVolumes(library);
+  // Volumes finished downloading: owned marks refresh when this changes.
+  const saved = useDownloads(
+    (state) =>
+      state.jobs.filter(
+        (job) =>
+          job.group.startsWith('novel:') &&
+          (job.status === 'created' || job.status === 'duplicate'),
+      ).length,
+  );
+  const { owned } = useOwnedVolumes(library, undefined, saved);
   const ownedIndex = useMemo(() => ownedVolumeIndex(owned), [owned]);
+  /** Volumes on the shelf per source work, for hints in search results. */
+  const ownedWorks = useMemo(
+    () =>
+      new Map(
+        followedSeries(owned).map((work) => [
+          `${work.source}:${work.novelId}`,
+          work.volumes,
+        ]),
+      ),
+    [owned],
+  );
   const followed = useMemo(
     () =>
       followedSeries(owned).flatMap((work) => {
@@ -117,7 +126,6 @@ export function NovelDiscovery({
     setFailures(failed);
     setSearched(true);
     setCatalogue(null);
-    setOutcomes([]);
     setSelection(new Set());
   };
   /** Searches both sources with a work's Chinese titles from Bangumi. */
@@ -129,9 +137,10 @@ export function NovelDiscovery({
       setSearchedQuery(names[0] ?? '');
       showResults(found.groups, found.failures);
     });
-  const search = () =>
-    perform(async (signal) => {
-      const typed = query.trim();
+  const search = () => {
+    const typed = query.trim();
+    setLookup((previous) => ({ text: typed, id: (previous?.id ?? 0) + 1 }));
+    return perform(async (signal) => {
       const found = await services.searchSources(
         scope === 'all' ? sources : [scope],
         typed,
@@ -141,6 +150,7 @@ export function NovelDiscovery({
       setSearchedQuery(typed);
       showResults(found.groups, found.failures);
     });
+  };
   /** Searches one failed source again and adds its results to the list. */
   const retrySource = (failed: NovelSource) =>
     perform(async (signal) => {
@@ -165,71 +175,38 @@ export function NovelDiscovery({
       setSource(from);
       setCatalogue(result);
       setSelection(new Set());
-      setOutcomes([]);
     });
-  const acquire = () =>
-    perform(async (signal) => {
-      if (!catalogue) return;
-      for (const volume of catalogue.volumes.filter((item) =>
-        selection.has(item.id),
-      )) {
-        if (signal.aborted) return;
-        setActiveVolume(volume.title);
-        try {
-          const result = await services.acquire(
-            {
-              source,
-              catalogue,
-              volume,
-              allowMissingImages,
-              onProgress: (value) => {
-                if (mounted.current) setProgress(value);
-              },
-            },
-            signal,
-          );
-          if (mounted.current) {
-            setOutcomes((previous) => [
-              ...previous.filter((item) => item.volumeId !== volume.id),
+  /**
+   * Queues the selected volumes. They download one at a time in the
+   * background and keep going when this page is left.
+   */
+  const acquire = () => {
+    if (!catalogue) return;
+    const from = source;
+    const work = catalogue;
+    const missingAllowed = allowMissingImages;
+    enqueueDownloads(
+      work.volumes
+        .filter((volume) => selection.has(volume.id))
+        .map((volume) => ({
+          group: `novel:${from}:${work.id}`,
+          volumeId: volume.id,
+          title: volume.title,
+          run: (signal, onProgress) =>
+            services.acquire(
               {
-                volumeId: volume.id,
-                title: volume.title,
-                status: result.status,
-                bookId: result.book.id,
-                missingImages: result.missingImages,
-                report: result.report,
+                source: from,
+                catalogue: work,
+                volume,
+                allowMissingImages: missingAllowed,
+                onProgress,
               },
-            ]);
-            setSelection((previous) => {
-              const next = new Set(previous);
-              next.delete(volume.id);
-              return next;
-            });
-          }
-        } catch (value) {
-          if (aborted()) return;
-          if (mounted.current)
-            setOutcomes((previous) => [
-              ...previous.filter((item) => item.volumeId !== volume.id),
-              {
-                volumeId: volume.id,
-                title: volume.title,
-                status: 'failed',
-                message: discoveryErrorMessage(value),
-                report:
-                  value instanceof EpubValidationError
-                    ? value.report
-                    : undefined,
-              },
-            ]);
-          // The source refused or throttled us: do not start the next volume.
-          if (isSourceRefusal(value)) {
-            if (mounted.current) setError(t('discovery.stoppedAfterBlock'));
-            return;
-          }
-        }
-      }
-    }).then(refreshOwned);
+              signal,
+            ),
+        })),
+    );
+    setSelection(new Set());
+  };
 
   // `?source=…&novel=…` (from the shelf or "我的系列") opens that work's
   // volumes directly: one catalogue request, made because the user asked.
@@ -238,10 +215,15 @@ export function NovelDiscovery({
     const novel = params.get('novel') ?? '';
     if (!from || !/^\d{1,10}$/.test(novel) || !services.gateway.available)
       return;
-    setScope(from);
-    void loadCatalogue(from, novel);
-    // Runs again only for a new link (or StrictMode's remount, whose first
-    // request was cancelled); the loader itself changes every render.
+    // Started after the render commits; a quick remount cancels it.
+    const timer = setTimeout(() => {
+      setScope(from);
+      void loadCatalogue(from, novel);
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+    };
+    // Runs again only for a new link; the loader changes every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
 
@@ -305,16 +287,6 @@ export function NovelDiscovery({
         </div>
       </header>
       {tabs}
-      {bangumi ? (
-        <TranslationLookup
-          disabled={busy || !services.gateway.available}
-          initialKeyword={lookupKeyword}
-          onSearch={(names) => {
-            void searchTranslations(names);
-          }}
-          services={bangumi}
-        />
-      ) : null}
       {!services.gateway.available ? (
         <p role="status" className="bg-muted mb-5 rounded-lg p-4 text-sm">
           {t('discovery.unavailable')}
@@ -343,7 +315,6 @@ export function NovelDiscovery({
               setFailures([]);
               setSearched(false);
               setSelection(new Set());
-              setOutcomes([]);
             }}
           >
             <option value="bilinovel">Bilinovel</option>
@@ -376,6 +347,16 @@ export function NovelDiscovery({
       <p className="text-muted-foreground mb-5 text-xs">
         {t('discovery.sourceNotice')}
       </p>
+      {bangumi ? (
+        <TranslationLookup
+          disabled={busy || !services.gateway.available}
+          onSearch={(names) => {
+            void searchTranslations(names);
+          }}
+          request={lookup}
+          services={bangumi}
+        />
+      ) : null}
       {error ? (
         <p
           role="alert"
@@ -390,19 +371,10 @@ export function NovelDiscovery({
           role="status"
           className="bg-surface mb-5 rounded-lg border p-4 text-sm"
         >
-          <p className="font-medium">
-            {activeVolume || t('discovery.loading')}
-          </p>
-          {progress ? (
-            <p className="text-muted-foreground mt-1">
-              {t(`discovery.${progress.stage}`)} · {progress.completed}/
-              {progress.total}
-            </p>
-          ) : null}
+          <p className="font-medium">{t('discovery.loading')}</p>
           <Button
             variant="secondary"
             className="mt-3"
-            disabled={progress?.stage === 'importing'}
             onClick={() => {
               abort();
             }}
@@ -411,51 +383,7 @@ export function NovelDiscovery({
           </Button>
         </section>
       ) : null}
-      {outcomes.length ? (
-        <ul aria-label={t('discovery.outcomes')} className="mb-5 grid gap-2">
-          {outcomes.map((outcome) => (
-            <li
-              key={outcome.volumeId}
-              className="bg-surface flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4 text-sm"
-            >
-              <div>
-                <p className="font-medium">{outcome.title}</p>
-                <p
-                  className={
-                    outcome.status === 'failed'
-                      ? 'text-destructive'
-                      : 'text-muted-foreground'
-                  }
-                >
-                  {outcome.message ?? t(`discovery.${outcome.status}`)}
-                </p>
-                {outcome.missingImages ? (
-                  <p>
-                    {t('discovery.missingImages', {
-                      count: outcome.missingImages,
-                    })}
-                  </p>
-                ) : null}
-                {outcome.report ? (
-                  <ReportSummary report={outcome.report} />
-                ) : null}
-              </div>
-              {outcome.bookId ? (
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    void navigate(
-                      `/reader/${encodeURIComponent(outcome.bookId ?? '')}`,
-                    );
-                  }}
-                >
-                  {t('discovery.read')}
-                </Button>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      <DownloadList prefix="novel:" />
       {catalogue ? (
         <section aria-label={t('discovery.volumes')}>
           <Button
@@ -514,7 +442,7 @@ export function NovelDiscovery({
             <Button
               disabled={busy || !selection.size || !services.gateway.available}
               onClick={() => {
-                void acquire();
+                acquire();
               }}
             >
               {t('discovery.acquire', { count: selection.size })}
@@ -645,6 +573,21 @@ export function NovelDiscovery({
                   {multiSource ? (
                     <p className="text-muted-foreground mb-3 text-xs">
                       {t('discovery.sameTitleNote')}
+                    </p>
+                  ) : null}
+                  {group.entries.some((entry) =>
+                    ownedWorks.has(`${entry.source}:${entry.id}`),
+                  ) ? (
+                    <p className="text-primary mb-3 text-xs font-medium">
+                      {t('discovery.resultOwned', {
+                        count: group.entries.reduce(
+                          (sum, entry) =>
+                            sum +
+                            (ownedWorks.get(`${entry.source}:${entry.id}`) ??
+                              0),
+                          0,
+                        ),
+                      })}
                     </p>
                   ) : null}
                   <div className="flex flex-wrap gap-2">

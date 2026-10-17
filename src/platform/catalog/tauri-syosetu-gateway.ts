@@ -2,7 +2,11 @@ import { isTauri } from '@tauri-apps/api/core';
 import { z } from 'zod';
 
 import { DiscoveryError } from '../../features/discovery/domain/discovery-error';
-import { invokeCancellable, responseBytes } from './cancellable-invoke';
+import {
+  createRequestLane,
+  invokeCancellable,
+  responseBytes,
+} from './cancellable-invoke';
 import type { SyosetuGateway } from '../../features/discovery/syosetu/syosetu-service';
 
 const responseSchema = z.object({ url: z.url(), text: z.string() });
@@ -11,22 +15,27 @@ const responseSchema = z.object({ url: z.url(), text: z.string() });
 export class TauriSyosetuGateway implements SyosetuGateway {
   readonly available = true;
 
+  // Downloads and searches share the native one-request queue.
+  private readonly lane = createRequestLane();
+
   private invoke(
     command: 'syosetu_search' | 'syosetu_page' | 'syosetu_image',
     arguments_: Record<string, unknown>,
     signal: AbortSignal,
   ): Promise<unknown> {
-    return invokeCancellable(
-      command,
-      arguments_,
-      {
-        cancelCommand: 'syosetu_cancel',
-        // Up to 2 s of native spacing plus 30 s per request; an illustration
-        // may take three redirects.
-        timeoutMs: command === 'syosetu_image' ? 130_000 : 40_000,
-        fallback: 'SOURCE_INVALID',
-      },
-      signal,
+    return this.lane(() =>
+      invokeCancellable(
+        command,
+        arguments_,
+        {
+          cancelCommand: 'syosetu_cancel',
+          // Up to 2 s of native spacing plus 30 s per request; an illustration
+          // may take three redirects.
+          timeoutMs: command === 'syosetu_image' ? 130_000 : 40_000,
+          fallback: 'SOURCE_INVALID',
+        },
+        signal,
+      ),
     );
   }
 
