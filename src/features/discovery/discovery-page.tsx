@@ -31,6 +31,8 @@ import type { ChineseScript } from './domain/chinese-script';
 import type { TranslationMethod, VolumeKind } from './domain/edition';
 import type { MessageKey } from '../../i18n/i18n';
 import { OpdsPanel } from './opds/opds-panel';
+import { TranslationLookup } from './bangumi/translation-lookup';
+import type { BangumiService } from './bangumi/bangumi-service';
 import { SyosetuPanel } from './syosetu/syosetu-panel';
 import type { SyosetuService } from './syosetu/syosetu-service';
 import { ncodePattern } from './syosetu/syosetu';
@@ -161,11 +163,13 @@ function DiscoveryTabs({
  * tab keeps its own state while the page stays open.
  */
 export function DiscoveryPage({
+  bangumi,
   library,
   opds,
   services,
   syosetu,
 }: {
+  bangumi?: BangumiService;
   library?: OwnedBooks;
   opds?: OpdsService;
   services: BookDiscoveryService;
@@ -184,18 +188,29 @@ export function DiscoveryPage({
   const [tab, setTab] = useState<DiscoveryTab>(
     linkedNcode ? 'syosetu' : 'novels',
   );
+  // `?lookup=…` (from a なろう work) looks up its Chinese translations.
+  const lookup = params.get('lookup')?.trim().slice(0, 100) ?? '';
+  const lookupKeyword = bangumi && lookup ? lookup : undefined;
   // Switch tabs for a new link during render, not in an effect.
-  const [seenLink, setSeenLink] = useState(linkedNcode);
-  if (seenLink !== linkedNcode) {
-    setSeenLink(linkedNcode);
+  const linkKey = `${linkedNcode ?? ''}|${lookupKeyword ?? ''}`;
+  const [seenLink, setSeenLink] = useState(linkKey);
+  if (seenLink !== linkKey) {
+    setSeenLink(linkKey);
     if (linkedNcode) setTab('syosetu');
+    else if (lookupKeyword) setTab('novels');
   }
   const tabs =
     opds || syosetu ? <DiscoveryTabs onChange={setTab} tab={tab} /> : null;
   return (
     <>
       <div hidden={tab !== 'novels'}>
-        <NovelDiscovery library={library} services={services} tabs={tabs} />
+        <NovelDiscovery
+          bangumi={bangumi}
+          library={library}
+          lookupKeyword={lookupKeyword}
+          services={services}
+          tabs={tabs}
+        />
       </div>
       {syosetu && tab === 'syosetu' ? (
         <div>
@@ -230,11 +245,15 @@ export function DiscoveryPage({
 }
 
 function NovelDiscovery({
+  bangumi,
   library,
+  lookupKeyword,
   services,
   tabs,
 }: {
+  bangumi?: BangumiService;
   library?: OwnedBooks;
+  lookupKeyword?: string;
   services: BookDiscoveryService;
   tabs: ReactNode;
 }) {
@@ -325,6 +344,15 @@ function NovelDiscovery({
     setOutcomes([]);
     setSelection(new Set());
   };
+  /** Searches both sources with a work's Chinese titles from Bangumi. */
+  const searchTranslations = (names: string[]) =>
+    perform(async (signal) => {
+      setScope('all');
+      const found = await services.searchByNames(sources, names, signal);
+      if (signal.aborted || !mounted.current) return;
+      setSearchedQuery(names[0] ?? '');
+      showResults(found.groups, found.failures);
+    });
   const search = () =>
     perform(async (signal) => {
       const typed = query.trim();
@@ -501,6 +529,16 @@ function NovelDiscovery({
         </div>
       </header>
       {tabs}
+      {bangumi ? (
+        <TranslationLookup
+          disabled={busy || !services.gateway.available}
+          initialKeyword={lookupKeyword}
+          onSearch={(names) => {
+            void searchTranslations(names);
+          }}
+          services={bangumi}
+        />
+      ) : null}
       {!services.gateway.available ? (
         <p role="status" className="bg-muted mb-5 rounded-lg p-4 text-sm">
           {t('discovery.unavailable')}

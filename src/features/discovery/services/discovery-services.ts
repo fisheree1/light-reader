@@ -6,6 +6,8 @@ import { createOpdsGateway } from '../../../platform/catalog/tauri-opds-gateway'
 import { OpdsService } from '../opds/opds-service';
 import { createSyosetuGateway } from '../../../platform/catalog/tauri-syosetu-gateway';
 import { SyosetuService } from '../syosetu/syosetu-service';
+import { createBangumiGateway } from '../../../platform/catalog/tauri-bangumi-gateway';
+import { BangumiService } from '../bangumi/bangumi-service';
 
 async function createServices() {
   const gateway =
@@ -45,6 +47,17 @@ async function createSyosetuServices() {
   );
 }
 
+async function createBangumiServices() {
+  const gateway =
+    import.meta.env.DEV && import.meta.env.VITE_DISCOVERY_FAKE_SOURCE === 'true'
+      ? new (
+          await import('../../../test/fixtures/bangumi-gateway')
+        ).FixtureBangumiGateway()
+      : createBangumiGateway();
+  return new BangumiService(gateway);
+}
+
 export const discoveryServices = createServices();
+export const bangumiServices = createBangumiServices();
 export const syosetuServices = createSyosetuServices();
 export const opdsServices = createOpdsServices();

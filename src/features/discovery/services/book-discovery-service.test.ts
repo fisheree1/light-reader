@@ -371,6 +371,55 @@ describe('novel acquisition', () => {
     expect(importBytes).toHaveBeenCalledTimes(1);
   });
 
+  describe('search by several titles', () => {
+    it('merges results across titles and keeps a source failing every time', async () => {
+      const { gateway, service } = setup();
+      const signal = new AbortController().signal;
+      const read = gateway.readPage.bind(gateway);
+      const pages = vi
+        .spyOn(gateway, 'readPage')
+        .mockImplementation((source, request, requestSignal) =>
+          source === 'linovelib'
+            ? Promise.reject(new DiscoveryError('SOURCE_INVALID'))
+            : read(source, request, requestSignal),
+        );
+      const result = await service.searchByNames(
+        ['bilinovel', 'linovelib'],
+        ['测试轻小说', '另一个译名'],
+        signal,
+      );
+      expect(
+        pages.mock.calls
+          .filter(([, request]) => request.kind === 'search')
+          .map(([source, request]) => [
+            source,
+            request.kind === 'search' ? request.query : '',
+          ]),
+      ).toEqual([
+        ['bilinovel', '测试轻小说'],
+        ['linovelib', '测试轻小说'],
+        ['bilinovel', '另一个译名'],
+        ['linovelib', '另一个译名'],
+      ]);
+      expect(result.groups).toHaveLength(1);
+      expect(result.failures.map((failure) => failure.source)).toEqual([
+        'linovelib',
+      ]);
+    });
+
+    it('stops at a refusal and fails when no title found anything', async () => {
+      const { gateway, service } = setup();
+      const signal = new AbortController().signal;
+      const pages = vi
+        .spyOn(gateway, 'readPage')
+        .mockRejectedValue(new DiscoveryError('SOURCE_RATE_LIMITED'));
+      await expect(
+        service.searchByNames(['bilinovel'], ['甲', '乙'], signal),
+      ).rejects.toMatchObject({ code: 'SOURCE_RATE_LIMITED' });
+      expect(pages).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('multi-source search', () => {
     it('tries the other script only when the typed spelling finds nothing', async () => {
       const { gateway, service } = setup();

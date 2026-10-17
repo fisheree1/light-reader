@@ -205,3 +205,38 @@ test('saves a なろう part as a Japanese EPUB and finds it from the shelf', as
     .click();
   await expect(page).toHaveURL(/\/reader\//);
 });
+
+test('finds a work by its Japanese title and searches its Chinese titles', async ({
+  page,
+}) => {
+  await page.goto('/discover');
+  await page
+    .getByRole('searchbox', { name: '作品名' })
+    .fill('テストのライトノベル');
+  await page.getByRole('button', { name: '查找译名' }).click();
+  const details = page.getByRole('article', {
+    name: '《测试轻小说》的中文信息',
+  });
+  await expect(details).toContainText('测试出版社');
+  await details.getByRole('button', { name: '用 2 个译名搜索书源' }).click();
+  // Both sources were searched; the same work is grouped across them.
+  await expect(
+    page.getByRole('combobox', { name: '书源', exact: true }),
+  ).toHaveValue('all');
+  await expect(page.getByText(/未合并/)).toBeVisible();
+
+  // From a なろう work, the lookup opens prefilled on the light-novel tab.
+  await page.getByRole('tab', { name: 'なろう（日文原作）' }).click();
+  await page.getByRole('searchbox').last().fill('テスト');
+  await page.getByRole('button', { name: '搜索なろう' }).click();
+  await page.getByRole('button', { name: '查看目录' }).click();
+  await page.getByRole('button', { name: '查找中文译本' }).click();
+  await expect(page.getByRole('tab', { name: '轻小说网站' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(page.getByRole('searchbox', { name: '作品名' })).toHaveValue(
+    'テスト用の長編',
+  );
+  await expect(page.getByRole('article')).toBeVisible();
+});

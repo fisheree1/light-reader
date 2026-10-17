@@ -22,6 +22,7 @@
 ## 在线书源
 
 - [`online-book-discovery-implementation-plan.md`](online-book-discovery-implementation-plan.md)：已实现的搜索、选卷、EPUB 生成和共享导入，以及真实书源的验收状态与限制。
+- [`bangumi-translations.md`](bangumi-translations.md)：按原名经 Bangumi 查找中文译名、官方中文版，并用译名搜索书源。
 - [`syosetu-source.md`](syosetu-source.md)：小説家になろう（日文网络小说）的搜索、分卷、日文/竖排 EPUB 与访问礼貌。
 - [`opds-catalogs.md`](opds-catalogs.md)：OPDS 书库的浏览、搜索、下载入库，以及原生请求的来源与地址限制。
 - [`online-book-discovery-design.md`](online-book-discovery-design.md)：初始完整设计与 GitHub 参考；扩展提案不代表全部已实现。
