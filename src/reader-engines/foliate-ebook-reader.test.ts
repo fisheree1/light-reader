@@ -179,10 +179,12 @@ describe('FoliateEbookReader', () => {
   it('searches the current chapter and clears renderer highlights', async () => {
     const { reader, view } = createReader();
     await reader.open(new ArrayBuffer(1));
+    // The shape Foliate's view emits: no `index`, the section in `section`.
     view.dispatchEvent(
       new CustomEvent('relocate', {
         detail: {
-          index: 0,
+          fraction: 0.5,
+          section: { current: 2, total: 3 },
           tocItem: { href: 'one.xhtml' },
         },
       }),
@@ -199,7 +201,7 @@ describe('FoliateEbookReader', () => {
         },
       },
     ]);
-    expect(view.search).toHaveBeenCalledWith({ index: 0, query: '关键词' });
+    expect(view.search).toHaveBeenCalledWith({ index: 2, query: '关键词' });
     reader.clearSearch();
     expect(view.clearSearch).toHaveBeenCalledOnce();
   });
