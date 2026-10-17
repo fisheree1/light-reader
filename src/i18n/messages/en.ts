@@ -934,7 +934,7 @@ export const en: Messages = {
     placeholder: 'e.g. 本好き',
     search: 'Search Syosetu',
     notice:
-      "Searches use the official API; page requests are at least 2 seconds apart and stop on rate limiting. The R18 site isn't included and illustrations aren't downloaded yet. For personal reading only.",
+      "Searches use the official API; page and illustration requests are at least 2 seconds apart and stop on rate limiting. The R18 site isn't included. For personal reading only.",
     readingToc: 'Reading contents page {completed}/{total}',
     toc: 'Contents',
     truncated:

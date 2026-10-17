@@ -2,6 +2,10 @@
 //! search, and public table-of-contents and episode pages. Only two hosts and
 //! fixed path shapes are reachable; the R18 site is out of scope.
 //!
+//! Episode illustrations (挿絵) are hosted on みてみん: only its fixed image
+//! address shape and the `img{N}.mitemin.net` hosts it redirects to are
+//! reachable.
+//!
 //! Requests are strictly one at a time and spaced here, natively, so the
 //! frontend cannot exceed the site's crawl delay (robots.txt asks for 1 s).
 
@@ -21,6 +25,8 @@ use tauri::{State, WebviewWindow};
 const API: &str = "https://api.syosetu.com/novelapi/api/";
 const PAGES: &str = "https://ncode.syosetu.com";
 const MAX_BODY: usize = 3 * 1024 * 1024;
+const MAX_IMAGE: usize = 10 * 1024 * 1024;
+const MAX_REDIRECTS: usize = 3;
 const REQUEST_GAP: Duration = Duration::from_secs(2);
 const PAGE_SIZE: u32 = 20;
 
@@ -99,6 +105,52 @@ fn search_url(query: &str, page: u32) -> Result<Url, &'static str> {
     Ok(url)
 }
 
+fn digits(value: &str, max: usize) -> bool {
+    !value.is_empty() && value.len() <= max && value.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+fn plain_https(url: &Url) -> bool {
+    url.scheme() == "https"
+        && url.port_or_known_default() == Some(443)
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.query().is_none()
+        && url.fragment().is_none()
+}
+
+/// `https://{user}.mitemin.net/userpageimage/viewimagebig/icode/i{id}/`, the
+/// address episode pages embed for an illustration.
+fn image_url(raw: &str) -> Result<Url, &'static str> {
+    let url = Url::parse(raw).map_err(|_| "SOURCE_IMAGE_FAILED")?;
+    let user_host = url
+        .host_str()
+        .and_then(|host| host.strip_suffix(".mitemin.net"))
+        .is_some_and(|user| digits(user, 10));
+    let icode = url
+        .path()
+        .strip_prefix("/userpageimage/viewimagebig/icode/i")
+        .and_then(|rest| rest.strip_suffix('/'))
+        .is_some_and(|id| digits(id, 12));
+    if plain_https(&url) && user_host && icode {
+        Ok(url)
+    } else {
+        Err("SOURCE_IMAGE_FAILED")
+    }
+}
+
+/// Where みてみん redirects an illustration: an `img{N}` host and an image file.
+fn image_redirect(url: &Url) -> bool {
+    plain_https(url)
+        && url
+            .host_str()
+            .and_then(|host| host.strip_suffix(".mitemin.net"))
+            .and_then(|name| name.strip_prefix("img"))
+            .is_some_and(|number| digits(number, 2))
+        && [".jpg", ".jpeg", ".png", ".gif", ".webp"]
+            .iter()
+            .any(|extension| url.path().to_ascii_lowercase().ends_with(extension))
+}
+
 fn refusal(status: reqwest::StatusCode) -> Option<&'static str> {
     match status.as_u16() {
         403 => Some("SOURCE_ACCESS_DENIED"),
@@ -108,7 +160,13 @@ fn refusal(status: reqwest::StatusCode) -> Option<&'static str> {
     }
 }
 
-async fn fetch(state: &SyosetuState, url: Url) -> Result<SyosetuResponse, &'static str> {
+/// One paced request: redirects only where `follow` allows, bounded body.
+async fn fetch_bytes(
+    state: &SyosetuState,
+    mut url: Url,
+    limit: usize,
+    follow: fn(&Url) -> bool,
+) -> Result<(Url, Vec<u8>), &'static str> {
     let mut last = state.last_finished.lock().await;
     if let Some(finished) = *last {
         let elapsed = finished.elapsed();
@@ -117,44 +175,70 @@ async fn fetch(state: &SyosetuState, url: Url) -> Result<SyosetuResponse, &'stat
         }
     }
     let result = async {
-        let response = Client::builder()
+        let client = Client::builder()
             .redirect(Policy::none())
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(30))
             .user_agent("LightReader/0.1")
             .build()
-            .map_err(|_| "SOURCE_INVALID")?
-            .get(url.clone())
-            .send()
-            .await
-            .map_err(|_| "SOURCE_TIMEOUT")?;
-        if let Some(code) = refusal(response.status()) {
-            return Err(code);
-        }
-        if response
-            .content_length()
-            .is_some_and(|size| size > MAX_BODY as u64)
-        {
-            return Err("SOURCE_TOO_LARGE");
-        }
-        let mut bytes = Vec::new();
-        let mut stream = response.bytes_stream();
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|_| "SOURCE_TIMEOUT")?;
-            if bytes.len() + chunk.len() > MAX_BODY {
+            .map_err(|_| "SOURCE_INVALID")?;
+        for _ in 0..=MAX_REDIRECTS {
+            let response = client
+                .get(url.clone())
+                .send()
+                .await
+                .map_err(|_| "SOURCE_TIMEOUT")?;
+            if response.status().is_redirection() {
+                let next = response
+                    .headers()
+                    .get("location")
+                    .and_then(|value| value.to_str().ok())
+                    .and_then(|location| url.join(location).ok())
+                    .ok_or("SOURCE_INVALID")?;
+                if !follow(&next) {
+                    return Err("SOURCE_INVALID");
+                }
+                url = next;
+                continue;
+            }
+            if let Some(code) = refusal(response.status()) {
+                return Err(code);
+            }
+            if response
+                .content_length()
+                .is_some_and(|size| size > limit as u64)
+            {
                 return Err("SOURCE_TOO_LARGE");
             }
-            bytes.extend_from_slice(&chunk);
+            let mut bytes = Vec::new();
+            let mut stream = response.bytes_stream();
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk.map_err(|_| "SOURCE_TIMEOUT")?;
+                if bytes.len() + chunk.len() > limit {
+                    return Err("SOURCE_TOO_LARGE");
+                }
+                bytes.extend_from_slice(&chunk);
+            }
+            return Ok((url, bytes));
         }
-        let text = String::from_utf8(bytes).map_err(|_| "SOURCE_INVALID")?;
-        Ok(SyosetuResponse {
-            url: url.to_string(),
-            text,
-        })
+        Err("SOURCE_INVALID")
     }
     .await;
     *last = Some(Instant::now());
     result
+}
+
+fn no_redirects(_: &Url) -> bool {
+    false
+}
+
+async fn fetch(state: &SyosetuState, url: Url) -> Result<SyosetuResponse, &'static str> {
+    let (url, bytes) = fetch_bytes(state, url, MAX_BODY, no_redirects).await?;
+    let text = String::from_utf8(bytes).map_err(|_| "SOURCE_INVALID")?;
+    Ok(SyosetuResponse {
+        url: url.to_string(),
+        text,
+    })
 }
 
 fn main_only(window: &WebviewWindow) -> Result<(), String> {
@@ -165,11 +249,11 @@ fn main_only(window: &WebviewWindow) -> Result<(), String> {
     }
 }
 
-async fn run(
+async fn run<T>(
     state: &SyosetuState,
     request_id: String,
-    url: Url,
-) -> Result<SyosetuResponse, String> {
+    work: impl std::future::Future<Output = Result<T, &'static str>>,
+) -> Result<T, String> {
     if request_id.is_empty() || request_id.len() > 80 {
         return Err("SOURCE_INVALID".into());
     }
@@ -182,7 +266,7 @@ async fn run(
         *active = Some((request_id.clone(), handle));
         registration
     };
-    let result = Abortable::new(fetch(state, url), registration).await;
+    let result = Abortable::new(work, registration).await;
     let mut active = state.active.lock().unwrap();
     if active.as_ref().is_some_and(|(id, _)| id == &request_id) {
         active.take();
@@ -202,7 +286,7 @@ pub async fn syosetu_search(
 ) -> Result<SyosetuResponse, String> {
     main_only(&window)?;
     let url = search_url(&query, page)?;
-    run(&state, request_id, url).await
+    run(&state, request_id, fetch(&state, url)).await
 }
 
 #[tauri::command]
@@ -214,7 +298,28 @@ pub async fn syosetu_page(
 ) -> Result<SyosetuResponse, String> {
     main_only(&window)?;
     let url = page_url(&path)?;
-    run(&state, request_id, url).await
+    run(&state, request_id, fetch(&state, url)).await
+}
+
+#[tauri::command]
+pub async fn syosetu_image(
+    window: WebviewWindow,
+    state: State<'_, SyosetuState>,
+    request_id: String,
+    url: String,
+) -> Result<tauri::ipc::Response, String> {
+    main_only(&window)?;
+    if url.len() > 300 {
+        return Err("SOURCE_IMAGE_FAILED".into());
+    }
+    let url = image_url(&url)?;
+    let (_, bytes) = run(
+        &state,
+        request_id,
+        fetch_bytes(&state, url, MAX_IMAGE, image_redirect),
+    )
+    .await?;
+    Ok(tauri::ipc::Response::new(bytes))
 }
 
 #[tauri::command]
@@ -279,7 +384,8 @@ mod tests {
     }
 
     /// Live check against the real site, run by hand:
-    /// `cargo test syosetu_live -- --ignored`. Two spaced requests.
+    /// `cargo test syosetu_live -- --ignored`. Four spaced requests (an
+    /// illustration takes one redirect).
     #[tokio::test]
     #[ignore]
     async fn syosetu_live_smoke() {
@@ -297,6 +403,46 @@ mod tests {
         assert!(started.elapsed() >= Duration::from_millis(1900));
         for marker in ["p-novel__title", "p-eplist__sublist", "/n4830bu/1/"] {
             assert!(toc.text.contains(marker), "missing {marker}");
+        }
+        let (final_url, image) = fetch_bytes(
+            &state,
+            image_url("https://47160.mitemin.net/userpageimage/viewimagebig/icode/i966187/")
+                .unwrap(),
+            MAX_IMAGE,
+            image_redirect,
+        )
+        .await
+        .unwrap();
+        assert!(final_url.host_str().unwrap().starts_with("img"));
+        assert_eq!(&image[..3], &[0xff, 0xd8, 0xff]);
+    }
+
+    #[test]
+    fn accepts_only_mitemin_illustrations_and_their_image_hosts() {
+        let embedded = "https://47160.mitemin.net/userpageimage/viewimagebig/icode/i966187/";
+        assert!(image_url(embedded).is_ok());
+        for raw in [
+            "http://47160.mitemin.net/userpageimage/viewimagebig/icode/i966187/",
+            "https://47160.mitemin.net:8443/userpageimage/viewimagebig/icode/i966187/",
+            "https://evil.mitemin.net/userpageimage/viewimagebig/icode/i966187/",
+            "https://47160.mitemin.net.evil.example/userpageimage/viewimagebig/icode/i966187/",
+            "https://47160.mitemin.net/i966187/",
+            "https://47160.mitemin.net/userpageimage/viewimagebig/icode/i966187/?x=1",
+            "https://u:p@47160.mitemin.net/userpageimage/viewimagebig/icode/i966187/",
+            "https://img1.mitemin.net/a.jpg",
+        ] {
+            assert!(image_url(raw).is_err(), "{raw}");
+        }
+        let target = Url::parse("https://img1.mitemin.net/2h/9p/abc_19n.jpg.580.jpg").unwrap();
+        assert!(image_redirect(&target));
+        for raw in [
+            "https://img1.mitemin.net/a.html",
+            "https://img123.mitemin.net/a.jpg",
+            "https://static.mitemin.net/a.jpg",
+            "https://img1.example.org/a.jpg",
+            "http://img1.mitemin.net/a.jpg",
+        ] {
+            assert!(!image_redirect(&Url::parse(raw).unwrap()), "{raw}");
         }
     }
 

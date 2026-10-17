@@ -47,7 +47,9 @@ export interface SyosetuToc {
 
 export interface SyosetuEpisodeContent {
   title: string;
+  /** Illustrations appear as `<img src="image:{index}" />` into `images`. */
   html: string;
+  images: string[];
 }
 
 export const VOLUME_EPISODES = 100;

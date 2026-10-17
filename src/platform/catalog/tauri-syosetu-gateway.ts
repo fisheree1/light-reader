@@ -16,11 +16,11 @@ const responseSchema = z.object({ url: z.url(), text: z.string() });
 export class TauriSyosetuGateway implements SyosetuGateway {
   readonly available = true;
 
-  private async request(
-    command: 'syosetu_search' | 'syosetu_page',
+  private async invokeCancellable(
+    command: 'syosetu_search' | 'syosetu_page' | 'syosetu_image',
     arguments_: Record<string, unknown>,
     signal: AbortSignal,
-  ): Promise<string> {
+  ): Promise<unknown> {
     throwIfCancelled(signal);
     const requestId = createUuid();
     let stopWaiting: (error: Error) => void = () => undefined;
@@ -34,11 +34,15 @@ export class TauriSyosetuGateway implements SyosetuGateway {
       stopNative();
       stopWaiting(new DOMException('Cancelled', 'AbortError'));
     };
-    // Up to 2 s of native spacing plus the 30 s request limit.
-    const timer = setTimeout(() => {
-      stopNative();
-      stopWaiting(new DiscoveryError('SOURCE_TIMEOUT'));
-    }, 40_000);
+    // Up to 2 s of native spacing plus 30 s per request; an illustration
+    // may take three redirects.
+    const timer = setTimeout(
+      () => {
+        stopNative();
+        stopWaiting(new DiscoveryError('SOURCE_TIMEOUT'));
+      },
+      command === 'syosetu_image' ? 130_000 : 40_000,
+    );
     signal.addEventListener('abort', cancel, { once: true });
     try {
       const result: unknown = await Promise.race([
@@ -46,7 +50,7 @@ export class TauriSyosetuGateway implements SyosetuGateway {
         stopped,
       ]);
       throwIfCancelled(signal);
-      return responseSchema.parse(result).text;
+      return result;
     } catch (error) {
       throwIfCancelled(signal);
       if (error instanceof DiscoveryError) throw error;
@@ -61,12 +65,33 @@ export class TauriSyosetuGateway implements SyosetuGateway {
     }
   }
 
+  private async text(
+    command: 'syosetu_search' | 'syosetu_page',
+    arguments_: Record<string, unknown>,
+    signal: AbortSignal,
+  ): Promise<string> {
+    return responseSchema.parse(
+      await this.invokeCancellable(command, arguments_, signal),
+    ).text;
+  }
+
   search(query: string, page: number, signal: AbortSignal) {
-    return this.request('syosetu_search', { query, page }, signal);
+    return this.text('syosetu_search', { query, page }, signal);
   }
 
   page(path: string, signal: AbortSignal) {
-    return this.request('syosetu_page', { path }, signal);
+    return this.text('syosetu_page', { path }, signal);
+  }
+
+  async image(url: string, signal: AbortSignal): Promise<Uint8Array> {
+    const result = await this.invokeCancellable(
+      'syosetu_image',
+      { url },
+      signal,
+    );
+    if (result instanceof ArrayBuffer) return new Uint8Array(result);
+    if (result instanceof Uint8Array) return result;
+    throw new DiscoveryError('SOURCE_IMAGE_FAILED');
   }
 }
 
@@ -76,6 +101,9 @@ export class UnavailableSyosetuGateway implements SyosetuGateway {
     return Promise.reject(new DiscoveryError('SOURCE_UNAVAILABLE'));
   }
   page(): Promise<string> {
+    return Promise.reject(new DiscoveryError('SOURCE_UNAVAILABLE'));
+  }
+  image(): Promise<Uint8Array> {
     return Promise.reject(new DiscoveryError('SOURCE_UNAVAILABLE'));
   }
 }

@@ -5,10 +5,19 @@ import {
   shortChapters,
   textLength,
   type AcquisitionReport,
+  type ChapterReport,
 } from '../domain/acquisition-report';
 import type { AcquisitionProgress } from '../domain/catalog';
-import { DiscoveryError, throwIfCancelled } from '../domain/discovery-error';
-import { buildNovelEpub } from '../services/epub-builder-service';
+import {
+  DiscoveryError,
+  isSourceRefusal,
+  throwIfCancelled,
+} from '../domain/discovery-error';
+import {
+  buildNovelEpub,
+  detectImage,
+  type EpubImage,
+} from '../services/epub-builder-service';
 import { validateEpub } from '../services/epub-validator';
 import { RATE_LIMIT_COOLDOWN_MS } from '../services/book-discovery-service';
 import {
@@ -35,10 +44,15 @@ export interface SyosetuGateway {
   search(query: string, page: number, signal: AbortSignal): Promise<string>;
   /** A table-of-contents or episode page, by path. */
   page(path: string, signal: AbortSignal): Promise<string>;
+  /** An illustration (みてみん) embedded in an episode. */
+  image(url: string, signal: AbortSignal): Promise<Uint8Array>;
 }
 
-/** Episodes kept for a retry, across all volumes, in this session. */
+/** Episodes and illustrations kept for a retry in this session. */
 const CACHED_EPISODES = 1000;
+const CACHED_IMAGES = 200;
+const MAX_VOLUME_IMAGES = 250;
+const MISSING_ILLUSTRATION = '<p>［挿絵：取得できませんでした］</p>';
 
 export class SyosetuService {
   readonly gateway: SyosetuGateway;
@@ -47,6 +61,7 @@ export class SyosetuService {
   private readonly now: () => number;
   private coolingDownUntil = 0;
   private readonly episodes = new Map<string, SyosetuEpisodeContent>();
+  private readonly images = new Map<string, Uint8Array>();
 
   constructor(
     gateway: SyosetuGateway,
@@ -157,7 +172,44 @@ export class SyosetuService {
     if (!this.importer.importBytes)
       throw new DiscoveryError('SOURCE_UNAVAILABLE');
     if (!volume.episodes.length) throw new DiscoveryError('SOURCE_INCOMPLETE');
-    const chapters: SyosetuEpisodeContent[] = [];
+    const chapters: { title: string; html: string }[] = [];
+    const images: EpubImage[] = [];
+    const imagePaths = new Map<string, string | null>();
+    const chapterReports: ChapterReport[] = [];
+    let missingImages = 0;
+    const loadImage = async (url: string): Promise<string | null> => {
+      if (imagePaths.has(url)) return imagePaths.get(url) ?? null;
+      if (imagePaths.size >= MAX_VOLUME_IMAGES)
+        throw new DiscoveryError('SOURCE_TOO_LARGE');
+      imagePaths.set(url, null);
+      try {
+        let bytes = this.images.get(url);
+        if (!bytes) {
+          bytes = await this.fromSite(() => this.gateway.image(url, signal));
+          throwIfCancelled(signal);
+          this.images.set(url, bytes);
+          if (this.images.size > CACHED_IMAGES) {
+            const oldest = this.images.keys().next().value;
+            if (oldest !== undefined) this.images.delete(oldest);
+          }
+        }
+        const format = detectImage(bytes);
+        const path = `images/${String(images.length)}.${format.extension}`;
+        images.push({ path, mediaType: format.mediaType, bytes });
+        imagePaths.set(url, path);
+        return path;
+      } catch (error) {
+        throwIfCancelled(signal);
+        // A refusal stops the volume; continuing would keep hitting the site.
+        if (
+          isSourceRefusal(error) ||
+          (error instanceof DiscoveryError && error.code === 'SOURCE_TOO_LARGE')
+        )
+          throw error;
+        missingImages += 1;
+        return null;
+      }
+    };
     for (const [index, episode] of volume.episodes.entries()) {
       throwIfCancelled(signal);
       onProgress({
@@ -166,15 +218,39 @@ export class SyosetuService {
         total: volume.episodes.length,
       });
       const content = await this.episode(toc.ncode, episode.number, signal);
-      chapters.push({
+      const paths: (string | null)[] = [];
+      for (const [imageIndex, url] of content.images.entries()) {
+        onProgress({
+          stage: 'images',
+          completed: imageIndex,
+          total: content.images.length,
+        });
+        paths.push(await loadImage(url));
+      }
+      const html = content.html.replace(
+        /<img src="image:(\d+)" alt="([^"]*)" \/>/g,
+        (_match, indexText: string, alt: string) => {
+          const path = paths[Number(indexText)];
+          return path
+            ? `<img src="${path}" alt="${alt}" />`
+            : MISSING_ILLUSTRATION;
+        },
+      );
+      chapters.push({ title: content.title || episode.title, html });
+      chapterReports.push({
         title: content.title || episode.title,
-        html: content.html,
+        pages: 1,
+        characters: textLength(html),
+        images: content.images.length,
       });
     }
     throwIfCancelled(signal);
     onProgress({ stage: 'building', completed: 0, total: 1 });
+    const imageHashes: string[] = [];
+    for (const image of images)
+      imageHashes.push(await this.hasher.sha256(image.bytes));
     const revision = await this.hasher.sha256(
-      new TextEncoder().encode(JSON.stringify(chapters)),
+      new TextEncoder().encode(JSON.stringify({ chapters, imageHashes })),
     );
     const position = toc.volumes.findIndex((item) => item.id === volume.id) + 1;
     const title =
@@ -200,19 +276,13 @@ export class SyosetuService {
         vertical: input.vertical,
         series: { title: toc.title, index: position },
         chapters,
-        images: [],
+        images,
         coverPath: null,
-        missingImages: 0,
+        missingImages,
       },
       signal,
     );
     throwIfCancelled(signal);
-    const chapterReports = chapters.map((chapter) => ({
-      title: chapter.title,
-      pages: 1,
-      characters: textLength(chapter.html),
-      images: 0,
-    }));
     const report: AcquisitionReport = {
       source: 'syosetu',
       novelId: toc.ncode,
@@ -221,7 +291,11 @@ export class SyosetuService {
       expectedChapters: volume.episodes.length,
       builtChapters: chapters.length,
       pagesFetched: chapters.length,
-      images: { total: 0, embedded: 0, missing: 0 },
+      images: {
+        total: imagePaths.size,
+        embedded: images.length,
+        missing: missingImages,
+      },
       epubBytes: bytes.byteLength,
       chapters: chapterReports,
       shortChapters: shortChapters(chapterReports),
@@ -237,6 +311,7 @@ export class SyosetuService {
     );
     for (const episode of volume.episodes)
       this.episodes.delete(episodePath(toc.ncode, episode.number));
-    return { ...result, report };
+    for (const url of imagePaths.keys()) this.images.delete(url);
+    return { ...result, missingImages, report };
   }
 }

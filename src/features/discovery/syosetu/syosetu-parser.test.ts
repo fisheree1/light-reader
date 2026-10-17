@@ -99,7 +99,7 @@ describe('なろう parsing', () => {
     ).toBe('<p>本文</p>');
   });
 
-  it('keeps ruby, blank lines and author notes, and drops scripts and images', () => {
+  it('keeps ruby, blank lines, author notes and みてみん illustrations, dropping scripts', () => {
     const episode = parseEpisode(syosetuFixture.episodePage(1), 'n0001aa', 1);
     expect(episode.title).toBe('テスト第1話');
     expect(episode.html).toBe(
@@ -107,8 +107,13 @@ describe('なろう parsing', () => {
         '<p>　<ruby>漢字<rp>（</rp><rt>かんじ</rt><rp>）</rp></ruby>のテスト本文、第1話。</p>' +
         '<p class="blank"><br /></p>' +
         '<p>　［挿絵］続き。</p>' +
+        '<p><img src="image:0" alt="挿絵" /></p>' +
         '<div class="afterword"><p>後書きです。</p></div>',
     );
+    // Only the みてみん address shape becomes a downloadable illustration.
+    expect(episode.images).toEqual([
+      'https://47160.mitemin.net/userpageimage/viewimagebig/icode/i901/',
+    ]);
     expect(() =>
       parseEpisode(syosetuFixture.episodePage(2), 'n0001aa', 3),
     ).toThrow(expect.objectContaining({ code: 'SOURCE_INVALID' }));

@@ -109,4 +109,36 @@ describe('SyosetuService', () => {
     // Episodes 1 and 2 came from the first attempt.
     expect(page.mock.calls.map(([path]) => path)).toEqual(['/n0001aa/3/']);
   });
+
+  it('embeds illustrations, marks missing ones and stops on refusal', async () => {
+    const { gateway, importBytes, service } = setup();
+    const toc = await service.toc('n0001aa', signal);
+    const input = {
+      toc,
+      volume: toc.volumes[0],
+      vertical: false,
+      onProgress: vi.fn(),
+    };
+    const { missingImages, report } = await service.acquire(input, signal);
+    expect(missingImages).toBe(1);
+    expect(report.images).toEqual({ total: 3, embedded: 2, missing: 1 });
+    expect(report.chapters.map((chapter) => chapter.images)).toEqual([1, 1, 1]);
+    const files = unzipSync(importBytes.mock.calls[0][1]);
+    expect(
+      Object.keys(files).filter((name) => name.startsWith('EPUB/images/')),
+    ).toEqual(['EPUB/images/0.png', 'EPUB/images/1.png']);
+    expect(strFromU8(files['EPUB/chapter-1.xhtml'])).toContain(
+      '<img src="images/0.png" alt="挿絵" />',
+    );
+    expect(strFromU8(files['EPUB/chapter-3.xhtml'])).toContain(
+      '［挿絵：取得できませんでした］',
+    );
+
+    vi.spyOn(gateway, 'image').mockRejectedValue(
+      new DiscoveryError('SOURCE_ACCESS_DENIED'),
+    );
+    await expect(service.acquire(input, signal)).rejects.toMatchObject({
+      code: 'SOURCE_ACCESS_DENIED',
+    });
+  });
 });

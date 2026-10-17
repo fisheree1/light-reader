@@ -3,6 +3,7 @@ import {
   throwIfCancelled,
 } from '../../features/discovery/domain/discovery-error';
 import type { SyosetuGateway } from '../../features/discovery/syosetu/syosetu-service';
+import { fixtureImage } from './novel-gateway';
 
 /** Original markup in the shape of なろう pages; no third-party text. */
 const tocPage = (page: number) => `<html><body>
@@ -36,6 +37,7 @@ ${number === 1 ? '<div class="js-novel-text p-novel__text p-novel__text--preface
 <p id="L1">\u3000<ruby>漢字<rp>（</rp><rt>かんじ</rt><rp>）</rp></ruby>のテスト本文、第${String(number)}話。</p>
 <p id="L2"><br /></p>
 <p id="L3">\u3000<img src="//1.mitemin.net/i/a.jpg" alt="挿絵" /><script>alert(1)</script>続き。</p>
+<p id="L4"><a href="//47160.mitemin.net/i${String(900 + number)}/" target="_blank"><img src="//47160.mitemin.net/userpageimage/viewimagebig/icode/i${String(900 + number)}/" alt="挿絵(By みてみん)" border="0" /></a></p>
 </div>
 <div class="js-novel-text p-novel__text p-novel__text--afterword"><p id="La1">後書きです。</p></div>
 </div></body></html>`;
@@ -70,6 +72,14 @@ export class FixtureSyosetuGateway implements SyosetuGateway {
         ? JSON.stringify([{ allcount: 0 }])
         : syosetuFixture.search,
     );
+  }
+
+  image(url: string, signal: AbortSignal) {
+    throwIfCancelled(signal);
+    // Episode 3's illustration is missing, to exercise that path.
+    return url.endsWith('/i903/')
+      ? Promise.reject(new DiscoveryError('SOURCE_IMAGE_FAILED'))
+      : Promise.resolve(fixtureImage());
   }
 
   page(path: string, signal: AbortSignal) {

@@ -127,6 +127,7 @@ pub fn run() {
             opds::opds_cancel,
             syosetu::syosetu_search,
             syosetu::syosetu_page,
+            syosetu::syosetu_image,
             syosetu::syosetu_cancel
         ])
         .plugin(tauri_plugin_dialog::init())

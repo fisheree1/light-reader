@@ -191,15 +191,46 @@ export function groupVolumes(
 
 const kept = new Set(['ruby', 'rb', 'rt', 'rp', 'em', 'strong', 'b', 'i']);
 
-function clean(node: Node, budget: { nodes: number }): string {
+/** The みてみん address episode pages embed for an illustration. */
+const illustrationPattern =
+  /^https:\/\/\d{1,10}\.mitemin\.net\/userpageimage\/viewimagebig\/icode\/i\d{1,12}\/$/;
+const MAX_EPISODE_IMAGES = 50;
+
+interface CleanContext {
+  nodes: number;
+  images: string[];
+}
+
+/** An absolute address for a (possibly protocol-relative) image source. */
+function imageAddress(source: string): string | null {
+  try {
+    // Pages embed protocol-relative addresses (`//47160.mitemin.net/…`).
+    return new URL(source, 'https://ncode.syosetu.com/').href;
+  } catch {
+    return null;
+  }
+}
+
+function illustration(element: Element, context: CleanContext): string {
+  const url = imageAddress(element.getAttribute('src') ?? '');
+  if (!url || !illustrationPattern.test(url)) return '［挿絵］';
+  let index = context.images.indexOf(url);
+  if (index < 0) {
+    if (context.images.length >= MAX_EPISODE_IMAGES) return '［挿絵］';
+    index = context.images.length;
+    context.images.push(url);
+  }
+  return `<img src="image:${String(index)}" alt="挿絵" />`;
+}
+
+function clean(node: Node, budget: CleanContext): string {
   if (++budget.nodes > 50_000) throw new DiscoveryError('SOURCE_TOO_LARGE');
   if (node.nodeType === Node.TEXT_NODE)
     return escapeXml(node.textContent ?? '');
   if (!(node instanceof Element)) return '';
   const tag = node.tagName.toLowerCase();
   if (tag === 'script' || tag === 'style') return '';
-  // Illustrations are not fetched yet; keep their place in the text.
-  if (tag === 'img') return '［挿絵］';
+  if (tag === 'img') return illustration(node, budget);
   if (tag === 'br') return '<br />';
   const inner = Array.from(node.childNodes)
     .map((child) => clean(child, budget))
@@ -207,7 +238,7 @@ function clean(node: Node, budget: { nodes: number }): string {
   return kept.has(tag) ? `<${tag}>${inner}</${tag}>` : inner;
 }
 
-function paragraphs(block: Element, budget: { nodes: number }): string {
+function paragraphs(block: Element, budget: CleanContext): string {
   return Array.from(block.querySelectorAll(':scope > p'))
     .map((paragraph) => {
       const inner = clean(paragraph, budget);
@@ -235,7 +266,7 @@ export function parseEpisode(
     if (position && Number(position[1]) !== number)
       throw new DiscoveryError('SOURCE_INVALID');
   }
-  const budget = { nodes: 0 };
+  const budget: CleanContext = { nodes: 0, images: [] };
   const blocks = Array.from(body.querySelectorAll(':scope > .js-novel-text'));
   const main = blocks.find(
     (block) =>
@@ -261,5 +292,6 @@ export function parseEpisode(
       text(document.querySelector('.p-novel__title')).slice(0, 300) ||
       `${ncode} #${String(number)}`,
     html: result,
+    images: budget.images,
   };
 }
