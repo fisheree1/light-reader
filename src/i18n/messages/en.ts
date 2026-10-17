@@ -865,4 +865,53 @@ export const en: Messages = {
     sources: 'Verifiable sources',
     untitledPlace: 'Untitled location',
   },
+  opds: {
+    tabs: 'Source type',
+    tabNovels: 'Light-novel sites',
+    tabOpds: 'OPDS catalogs',
+    description:
+      'Browse and search OPDS catalogs (such as your own Calibre-Web, Kavita or Komga, or public-domain catalogs) and add their ebooks to your shelf.',
+    unavailable: 'OPDS downloads need the desktop app.',
+    catalogs: 'OPDS catalogs',
+    catalog: 'Catalog',
+    noCatalogs: 'No catalogs yet',
+    remove: 'Remove catalog',
+    name: 'Name',
+    namePlaceholder: 'My library',
+    address: 'OPDS address',
+    add: 'Add catalog',
+    addInvalid:
+      "Enter a valid http(s) address that isn't already added, without a username or password in it.",
+    suggested: 'Suggested:',
+    notice:
+      "Only add catalogs you're allowed to use. A catalog's own address may be on your local network; links it points to on other sites must be public HTTPS addresses. Catalogs that need a login aren't supported yet. The list is saved on this device and isn't part of backups.",
+    home: 'Catalog home',
+    searchLabel: 'Search {catalog}',
+    searchPlaceholder: 'Title or author',
+    search: 'Search catalog',
+    downloading: 'Downloading and importing…',
+    acquire: 'Download {format} to shelf',
+    noFormat: 'No importable format',
+    empty: 'Nothing here',
+    emptyDescription: 'Try another search, or go back a level.',
+    initial: 'Add an OPDS catalog',
+    initialDescription:
+      "Enter a catalog's OPDS address, or use a suggested public-domain catalog above.",
+    previous: 'Previous',
+    next: 'Next',
+    errorInvalidUrl:
+      "Address not allowed: only the catalog's own address, or HTTPS links to public sites.",
+    errorUnreachable:
+      "Can't reach the catalog. Check the address and network, then try again.",
+    errorNotFeed:
+      "This address didn't return an OPDS catalog (it may be a login page or a web page).",
+    errorUnsupported:
+      "OPDS 2.0 (JSON) catalogs aren't supported yet; use the catalog's OPDS 1.x address.",
+    errorAuthRequired: "This catalog needs a login, which isn't supported yet.",
+    errorNotFound: "The catalog doesn't have this page or file.",
+    errorTooLarge: 'The file is too large; the download stopped.',
+    errorNoSearch: "This catalog doesn't support search.",
+    errorNoFormat:
+      'This book has no importable format (EPUB, AZW3, MOBI, FB2, PDF, CBZ).',
+  },
 };

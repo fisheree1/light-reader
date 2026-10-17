@@ -14,6 +14,15 @@ export const discoveryErrorKeys = {
   SOURCE_RATE_LIMITED: 'discovery.errorRateLimited',
   SOURCE_COOLING_DOWN: 'discovery.errorCoolingDown',
   SOURCE_BUILD_INVALID: 'discovery.errorBuildInvalid',
+  OPDS_INVALID_URL: 'opds.errorInvalidUrl',
+  OPDS_UNREACHABLE: 'opds.errorUnreachable',
+  OPDS_NOT_FEED: 'opds.errorNotFeed',
+  OPDS_UNSUPPORTED: 'opds.errorUnsupported',
+  OPDS_AUTH_REQUIRED: 'opds.errorAuthRequired',
+  OPDS_NOT_FOUND: 'opds.errorNotFound',
+  OPDS_TOO_LARGE: 'opds.errorTooLarge',
+  OPDS_NO_SEARCH: 'opds.errorNoSearch',
+  OPDS_NO_FORMAT: 'opds.errorNoFormat',
 } as const satisfies Record<string, MessageKey>;
 
 export type DiscoveryErrorCode = keyof typeof discoveryErrorKeys;
