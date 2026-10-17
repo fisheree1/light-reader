@@ -152,3 +152,30 @@ test('adds an OPDS catalog, browses it and imports a book', async ({
   ).toHaveValue(/.+/);
   await expect(page.getByRole('button', { name: /最新书籍/ })).toBeVisible();
 });
+
+test('follows a fetched series and marks volumes already on the shelf', async ({
+  page,
+}) => {
+  await page.goto('/discover');
+  await page
+    .getByRole('searchbox', { name: '书名、别名或作者' })
+    .fill('测试轻小说');
+  await page.getByRole('button', { name: '搜索书源' }).click();
+  await page.getByRole('button', { name: '查看卷册' }).click();
+  await page.getByRole('checkbox', { name: /测试轻小说 第一卷/ }).check();
+  await page.getByRole('button', { name: '获取所选 1 卷' }).click();
+  await expect(page.getByText('已加入书架', { exact: true })).toBeVisible();
+  // The volume list updates as soon as the volume is on the shelf.
+  await expect(page.getByText('书架中已有', { exact: true })).toBeVisible();
+
+  await page.goto('/discover');
+  const followed = page.getByRole('region', { name: '我的系列' });
+  await expect(followed).toContainText('测试轻小说');
+  await followed.getByRole('button', { name: '检查新卷' }).click();
+  await expect(page.getByText(/书架中已有 1 卷/)).toBeVisible();
+  await expect(page.getByText('书架中已有', { exact: true })).toBeVisible();
+
+  // A deep link from the shelf opens the same volume list directly.
+  await page.goto('/discover?source=bilinovel&novel=1');
+  await expect(page.getByText(/书架中已有 1 卷/)).toBeVisible();
+});

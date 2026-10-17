@@ -238,3 +238,104 @@ describe('DiscoveryPage acceptance report', () => {
     expect(await within(outcomes).findByText('已复制')).toBeVisible();
   });
 });
+
+describe('DiscoveryPage followed series', () => {
+  const ownedBook = (id: string, volumeId: string, createdAt: number) => ({
+    ...createTestBook({ id, title: `测试轻小说 第一卷`, createdAt }),
+    favorite: false,
+    tags: [],
+    lastReadAt: null,
+    progress: null,
+    metadata: {
+      ...createTestBook().metadata,
+      series: { title: '测试轻小说', index: 1 },
+      origin: {
+        source: 'bilinovel' as const,
+        novelId: '1',
+        volumeId,
+        url: 'https://www.bilinovel.com/novel/1/vol_10.html',
+        revision: 'a'.repeat(64),
+        translators: [],
+      },
+    },
+  });
+
+  function renderFollowed(initialEntry = '/discover') {
+    const loadCatalogue = vi.fn().mockResolvedValue(catalogue);
+    const services = {
+      gateway: { available: true },
+      searchSources: vi.fn(),
+      catalogue: loadCatalogue,
+      current: vi.fn(),
+      acquire: vi.fn(),
+    } as unknown as BookDiscoveryService;
+    const list = vi
+      .fn()
+      .mockResolvedValue([
+        ownedBook('old', '10', 1),
+        ownedBook('new', '10', 5),
+      ]);
+    render(
+      <MemoryRouter initialEntries={[initialEntry]}>
+        <DiscoveryPage library={{ list }} services={services} />
+      </MemoryRouter>,
+    );
+    return { loadCatalogue };
+  }
+
+  it('lists fetched works and marks owned volumes when checking for new ones', async () => {
+    const user = userEvent.setup();
+    const { loadCatalogue } = renderFollowed();
+
+    const followed = await screen.findByRole('region', { name: '我的系列' });
+    expect(within(followed).getByText('Bilinovel · 书架中 1 卷')).toBeVisible();
+    await user.click(
+      within(followed).getByRole('button', { name: '检查新卷' }),
+    );
+    expect(loadCatalogue).toHaveBeenCalledWith(
+      'bilinovel',
+      '1',
+      expect.any(AbortSignal),
+    );
+
+    const volumes = await screen.findByRole('region', { name: '卷册选择' });
+    expect(
+      within(volumes).getByText('书架中已有 1 卷，可获取的新卷 2 卷。'),
+    ).toBeVisible();
+    // Owned volumes stay selectable, to fetch a revised copy on purpose.
+    expect(
+      within(volumes).getByRole('checkbox', { name: /第一卷/ }),
+    ).toBeEnabled();
+    expect(within(volumes).getByText('书架中已有')).toBeVisible();
+    await user.click(
+      within(volumes).getByRole('button', { name: '选择全部未收藏的卷（2）' }),
+    );
+    expect(
+      within(volumes).getByRole('checkbox', { name: /第二卷/ }),
+    ).toBeChecked();
+    expect(
+      within(volumes).getByRole('checkbox', { name: /第一卷/ }),
+    ).not.toBeChecked();
+    expect(screen.getByRole('button', { name: '获取所选 2 卷' })).toBeEnabled();
+  });
+
+  it('opens a work straight from a shelf link', async () => {
+    const { loadCatalogue } = renderFollowed(
+      '/discover?source=linovelib&novel=1',
+    );
+    await screen.findByRole('region', { name: '卷册选择' });
+    expect(loadCatalogue).toHaveBeenCalledWith(
+      'linovelib',
+      '1',
+      expect.any(AbortSignal),
+    );
+  });
+
+  it('ignores malformed links', async () => {
+    const { loadCatalogue } = renderFollowed(
+      '/discover?source=evil&novel=../1',
+    );
+    await screen.findByRole('region', { name: '我的系列' });
+    expect(loadCatalogue).not.toHaveBeenCalled();
+  });
+});

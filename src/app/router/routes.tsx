@@ -1,6 +1,7 @@
 import { Navigate, type RouteObject } from 'react-router-dom';
 
 import { LibraryPage } from '../../features/library/library-page';
+import { libraryServices } from '../../features/library/services/library-services';
 import { AppLayout } from '../layout/app-layout';
 import { RouteLoadingFallback } from './route-loading-fallback';
 
@@ -26,7 +27,13 @@ export const routes: RouteObject[] = [
           ]);
           return {
             Component: function DiscoveryRoute() {
-              return <DiscoveryPage opds={opds} services={services} />;
+              return (
+                <DiscoveryPage
+                  library={libraryServices.management}
+                  opds={opds}
+                  services={services}
+                />
+              );
             },
           };
         },

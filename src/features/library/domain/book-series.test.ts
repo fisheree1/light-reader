@@ -1,5 +1,6 @@
 import {
   continueVolume,
+  seriesUpdateLink,
   groupBySeries,
   parseSeriesIndex,
   seriesKey,
@@ -111,5 +112,17 @@ describe('continueVolume', () => {
     expect(continueVolume(books)).toBe(books[2]);
     const allDone = [at(10, 1), at(50, 0.985)];
     expect(continueVolume(allDone)).toBe(allDone[1]);
+  });
+});
+
+describe('seriesUpdateLink', () => {
+  it('links to the source work of the first fetched volume', () => {
+    expect(
+      seriesUpdateLink([
+        book('a', 'x'),
+        book('b', 'y', { origin: origin('42', '7') }),
+      ]),
+    ).toBe('/discover?source=bilinovel&novel=42');
+    expect(seriesUpdateLink([book('a', 'x')])).toBeNull();
   });
 });
