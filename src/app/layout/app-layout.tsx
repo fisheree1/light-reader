@@ -18,6 +18,10 @@ import { cn } from '../../lib/cn';
 import type { MessageKey } from '../../i18n/i18n';
 import { useI18n } from '../../i18n/use-i18n';
 import { useAppStore } from '../../stores/app-store';
+import {
+  isActive,
+  useDownloads,
+} from '../../features/discovery/downloads/download-queue';
 
 const navigationItems = [
   { icon: BookOpen, labelKey: 'app.navLibrary', to: '/library' },
@@ -41,6 +45,10 @@ export function AppLayout() {
   const theme = useAppStore((state) => state.theme);
   const setTheme = useAppStore((state) => state.setTheme);
   const toggleNavigation = useAppStore((state) => state.toggleNavigation);
+  // Downloads keep running on other pages; the entry shows how many remain.
+  const activeDownloads = useDownloads(
+    (state) => state.jobs.filter(isActive).length,
+  );
 
   return (
     <div className="bg-background text-foreground flex h-screen overflow-hidden">
@@ -100,6 +108,21 @@ export function AppLayout() {
               >
                 <Icon aria-hidden="true" size={18} />
                 {isNavigationExpanded ? <span>{label}</span> : null}
+                {to === '/discover' && activeDownloads ? (
+                  <span
+                    className="bg-primary text-primary-foreground ml-auto min-w-5 rounded-full px-1.5 text-center text-xs leading-5"
+                    title={t('discovery.downloadsActive', {
+                      count: activeDownloads,
+                    })}
+                  >
+                    <span aria-hidden="true">{activeDownloads}</span>
+                    <span className="sr-only">
+                      {t('discovery.downloadsActive', {
+                        count: activeDownloads,
+                      })}
+                    </span>
+                  </span>
+                ) : null}
               </NavLink>
             );
           })}

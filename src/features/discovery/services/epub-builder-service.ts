@@ -127,8 +127,9 @@ export async function buildNovelEpub(
     '<item id="style" href="style.css" media-type="text/css"/>',
     '<item id="source" href="source.xhtml" media-type="application/xhtml+xml"/>',
   ];
-  const spine = ['<itemref idref="source"/>'];
-  const nav = ['<li><a href="source.xhtml">来源信息</a></li>'];
+  // The story comes first; the source page closes the book, like a colophon.
+  const spine: string[] = [];
+  const nav: string[] = [];
   input.chapters.forEach((chapter, index) => {
     const path = `chapter-${String(index + 1)}.xhtml`;
     add(
@@ -144,6 +145,8 @@ export async function buildNovelEpub(
     spine.push(`<itemref idref="c${String(index)}"/>`);
     nav.push(`<li><a href="${path}">${escapeXml(chapter.title)}</a></li>`);
   });
+  spine.push('<itemref idref="source"/>');
+  nav.push('<li><a href="source.xhtml">来源信息</a></li>');
   input.images.forEach((image, index) => {
     add(`EPUB/${image.path}`, image.bytes, 0);
     manifest.push(
@@ -154,7 +157,9 @@ export async function buildNovelEpub(
     'EPUB/nav.xhtml',
     xhtml(
       '目录',
-      `<nav epub:type="toc" id="toc"><h1>目录</h1><ol>${nav.join('')}</ol></nav>`,
+      `<nav epub:type="toc" id="toc"><h1>目录</h1><ol>${nav.join('')}</ol></nav>` +
+        // Readers open a new book at the start of the text.
+        '<nav epub:type="landmarks" id="landmarks" hidden="hidden"><ol><li><a epub:type="bodymatter" href="chapter-1.xhtml">正文</a></li></ol></nav>',
     ),
   );
   // EPUB 3 marks translators with a MARC relator refinement.

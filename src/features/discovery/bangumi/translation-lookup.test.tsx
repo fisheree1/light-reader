@@ -1,28 +1,41 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { FixtureBangumiGateway } from '../../../test/fixtures/bangumi-gateway';
 import { BangumiService } from './bangumi-service';
-import { TranslationLookup } from './translation-lookup';
+import { TranslationLookup, type LookupRequest } from './translation-lookup';
+
+function renderLookup(request: LookupRequest | null, onSearch = vi.fn()) {
+  const services = new BangumiService(new FixtureBangumiGateway());
+  const view = render(
+    <TranslationLookup
+      disabled={false}
+      onSearch={onSearch}
+      request={request}
+      services={services}
+    />,
+  );
+  return {
+    ...view,
+    rerenderWith: (next: LookupRequest | null) => {
+      view.rerender(
+        <TranslationLookup
+          disabled={false}
+          onSearch={onSearch}
+          request={next}
+          services={services}
+        />,
+      );
+    },
+  };
+}
 
 describe('TranslationLookup', () => {
-  it('shows official editions and searches the sources with Chinese titles', async () => {
+  it('opens the best match with its editions and searches its Chinese titles', async () => {
     const user = userEvent.setup();
     const onSearch = vi.fn();
-    render(
-      <TranslationLookup
-        disabled={false}
-        onSearch={onSearch}
-        services={new BangumiService(new FixtureBangumiGateway())}
-      />,
-    );
-    await user.type(
-      screen.getByRole('searchbox', { name: '作品名' }),
-      'テスト',
-    );
-    await user.click(screen.getByRole('button', { name: '查找译名' }));
+    renderLookup({ text: 'テスト', id: 1 }, onSearch);
 
-    // A single match opens directly.
     const details = await screen.findByRole('article', {
       name: '《测试轻小说》的中文信息',
     });
@@ -38,34 +51,30 @@ describe('TranslationLookup', () => {
       within(details).getByRole('button', { name: '用 2 个译名搜索书源' }),
     );
     expect(onSearch).toHaveBeenCalledWith(['测试轻小说', '另一个译名']);
+
+    // The other matches stay one click away.
+    await user.click(
+      screen.getByRole('button', { name: '不是这部？（还有 1 个匹配）' }),
+    );
+    await user.click(screen.getByRole('button', { name: /另一部测试作品/ }));
+    expect(
+      await screen.findByRole('article', {
+        name: '《另一部测试作品》的中文信息',
+      }),
+    ).toBeVisible();
   });
 
-  it('looks up a linked title and reports missing works', async () => {
-    const user = userEvent.setup();
-    const { rerender } = render(
-      <TranslationLookup
-        disabled={false}
-        initialKeyword="テストのライトノベル"
-        onSearch={vi.fn()}
-        services={new BangumiService(new FixtureBangumiGateway())}
-      />,
-    );
-    expect(await screen.findByRole('article')).toBeVisible();
-    expect(screen.getByRole('searchbox')).toHaveValue('テストのライトノベル');
-
-    rerender(
-      <TranslationLookup
-        disabled={false}
-        initialKeyword="无结果"
-        onSearch={vi.fn()}
-        services={new BangumiService(new FixtureBangumiGateway())}
-      />,
-    );
-    expect(
-      await screen.findByText('Bangumi 中没有找到这部轻小说。'),
-    ).toBeVisible();
-    expect(screen.queryByRole('article')).not.toBeInTheDocument();
-    await user.clear(screen.getByRole('searchbox'));
-    expect(screen.getByRole('button', { name: '查找译名' })).toBeDisabled();
+  it('shows nothing before a search or when Bangumi knows no such work', async () => {
+    const search = vi.spyOn(FixtureBangumiGateway.prototype, 'search');
+    const { container, rerenderWith } = renderLookup(null);
+    expect(container).toBeEmptyDOMElement();
+    rerenderWith({ text: '无结果', id: 1 });
+    await waitFor(() => {
+      expect(search).toHaveBeenCalledWith('无结果', expect.any(AbortSignal));
+    });
+    await waitFor(() => {
+      expect(container).toBeEmptyDOMElement();
+    });
+    search.mockRestore();
   });
 });

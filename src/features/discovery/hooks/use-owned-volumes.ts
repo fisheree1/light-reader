@@ -9,12 +9,14 @@ export type OwnedBooks = Pick<LibraryManagement, 'list'>;
 
 /**
  * Shelf books fetched from online sources (optionally only `sources`), read
- * on mount and again on `refresh`. Failures leave the list as it was: marking
+ * on mount, whenever `refreshKey` changes (for example a finished download)
+ * and on `refresh`. Failures leave the list as it was: marking
  * owned volumes is a convenience, never required.
  */
 export function useOwnedVolumes(
   library: OwnedBooks | undefined,
   sources?: readonly BookOrigin['source'][],
+  refreshKey = 0,
 ) {
   const [owned, setOwned] = useState<OwnedVolume[]>([]);
   const sourceKey = sources?.join('|') ?? '';
@@ -47,7 +49,7 @@ export function useOwnedVolumes(
     return () => {
       clearTimeout(timer);
     };
-  }, [refresh]);
+  }, [refresh, refreshKey]);
 
   return { owned, refresh };
 }

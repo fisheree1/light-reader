@@ -6,6 +6,7 @@ import { WebCryptoContentHasher } from '../../../platform/crypto/content-hasher'
 import { FixtureSyosetuGateway } from '../../../test/fixtures/syosetu-gateway';
 import { createTestBook } from '../../../test/fixtures/web-records';
 import type { BookImporter } from '../../library/services/book-import-service';
+import { resetDownloads } from '../downloads/download-queue';
 import { SyosetuPanel } from './syosetu-panel';
 import { SyosetuService } from './syosetu-service';
 
@@ -32,6 +33,10 @@ function owned() {
 }
 
 describe('SyosetuPanel', () => {
+  beforeEach(() => {
+    resetDownloads();
+  });
+
   it('searches, marks owned parts and saves new ones', async () => {
     const user = userEvent.setup();
     const importBytes = vi
@@ -77,6 +82,8 @@ describe('SyosetuPanel', () => {
 
     const outcomes = await screen.findByRole('list', { name: '获取结果' });
     expect(await within(outcomes).findByText('已加入书架')).toBeVisible();
+    expect(within(outcomes).getByText(/结构校验通过/)).not.toBeVisible();
+    await user.click(within(outcomes).getByText('验收详情'));
     expect(within(outcomes).getByText(/结构校验通过/)).toBeVisible();
     expect(importBytes.mock.calls[0]?.[2]).toMatchObject({
       source: 'syosetu',

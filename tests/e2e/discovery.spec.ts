@@ -210,10 +210,11 @@ test('finds a work by its Japanese title and searches its Chinese titles', async
   page,
 }) => {
   await page.goto('/discover');
+  // One search box: the sources and Bangumi are searched together.
   await page
-    .getByRole('searchbox', { name: '作品名' })
+    .getByRole('searchbox', { name: '书名、别名或作者' })
     .fill('テストのライトノベル');
-  await page.getByRole('button', { name: '查找译名' }).click();
+  await page.getByRole('button', { name: '搜索书源' }).click();
   const details = page.getByRole('article', {
     name: '《测试轻小说》的中文信息',
   });
@@ -225,7 +226,7 @@ test('finds a work by its Japanese title and searches its Chinese titles', async
   ).toHaveValue('all');
   await expect(page.getByText(/未合并/)).toBeVisible();
 
-  // From a なろう work, the lookup opens prefilled on the light-novel tab.
+  // From a なろう work, the light-novel tab opens with its title looked up.
   await page.getByRole('tab', { name: 'なろう（日文原作）' }).click();
   await page.getByRole('searchbox').last().fill('テスト');
   await page.getByRole('button', { name: '搜索なろう' }).click();
@@ -235,8 +236,8 @@ test('finds a work by its Japanese title and searches its Chinese titles', async
     'aria-selected',
     'true',
   );
-  await expect(page.getByRole('searchbox', { name: '作品名' })).toHaveValue(
-    'テスト用の長編',
-  );
+  await expect(
+    page.getByRole('searchbox', { name: '书名、别名或作者' }),
+  ).toHaveValue('テスト用の長編');
   await expect(page.getByRole('article')).toBeVisible();
 });

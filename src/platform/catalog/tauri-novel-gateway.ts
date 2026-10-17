@@ -10,7 +10,11 @@ import {
   throwIfCancelled,
 } from '../../features/discovery/domain/discovery-error';
 import { sourceUrl } from '../../features/discovery/services/bilinovel-parser';
-import { invokeCancellable, responseBytes } from './cancellable-invoke';
+import {
+  createRequestLane,
+  invokeCancellable,
+  responseBytes,
+} from './cancellable-invoke';
 
 /** Minimum gap after any source request before the next page load. */
 export const PAGE_REQUEST_GAP_MS = 2000;
@@ -59,7 +63,22 @@ export class TauriNovelGateway implements NovelGateway {
     );
   }
 
-  async readPage(
+  // Downloads and searches share the one native source window.
+  private readonly lane = createRequestLane();
+
+  readPage(source: NovelSource, request: PageRequest, signal: AbortSignal) {
+    return this.lane(() => this.readPageNow(source, request, signal));
+  }
+
+  readImage(
+    source: NovelSource,
+    url: string,
+    signal: AbortSignal,
+  ): Promise<Uint8Array> {
+    return this.lane(() => this.readImageNow(source, url, signal));
+  }
+
+  private async readPageNow(
     source: NovelSource,
     request: PageRequest,
     signal: AbortSignal,
@@ -74,7 +93,7 @@ export class TauriNovelGateway implements NovelGateway {
     }
   }
 
-  async readImage(
+  private async readImageNow(
     source: NovelSource,
     url: string,
     signal: AbortSignal,

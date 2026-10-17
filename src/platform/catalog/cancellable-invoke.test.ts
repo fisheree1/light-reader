@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
 import {
+  createRequestLane,
   invokeCancellable,
   nativeErrorCode,
   responseBytes,
@@ -97,5 +98,36 @@ describe('cancellable native invoke', () => {
     expect(() => responseBytes([1], 'SOURCE_IMAGE_FAILED')).toThrow(
       expect.objectContaining({ code: 'SOURCE_IMAGE_FAILED' }),
     );
+  });
+
+  it('runs lane tasks one after another, even after a failure', async () => {
+    const lane = createRequestLane();
+    const events: string[] = [];
+    let release: () => void = () => undefined;
+    const first = lane(
+      () =>
+        new Promise<void>((resolve) => {
+          events.push('first start');
+          release = () => {
+            events.push('first end');
+            resolve();
+          };
+        }),
+    );
+    const failing = lane(() => {
+      events.push('second');
+      return Promise.reject(new Error('x'));
+    });
+    const third = lane(() => {
+      events.push('third');
+      return Promise.resolve(3);
+    });
+    await Promise.resolve();
+    expect(events).toEqual(['first start']);
+    release();
+    await first;
+    await expect(failing).rejects.toThrow('x');
+    await expect(third).resolves.toBe(3);
+    expect(events).toEqual(['first start', 'first end', 'second', 'third']);
   });
 });
