@@ -109,10 +109,16 @@ export class SyosetuService {
     onProgress: (completed: number, total: number) => void = () => undefined,
   ): Promise<SyosetuToc> {
     if (!ncodePattern.test(ncode)) throw new DiscoveryError('SOURCE_INVALID');
-    const first = parseTocPage(
-      await this.fromSite(() => this.gateway.page(`/${ncode}/`, signal)),
-      ncode,
+    const firstHtml = await this.fromSite(() =>
+      this.gateway.page(`/${ncode}/`, signal),
     );
+    const first = parseTocPage(firstHtml, ncode);
+    // A short story's text is on this page: keep it instead of fetching again.
+    if (first.short)
+      this.episodes.set(
+        episodePath(ncode, 0),
+        parseEpisode(firstHtml, ncode, 0),
+      );
     const pages = Math.min(first.lastPage, MAX_TOC_PAGES);
     const items: TocItem[] = [...first.items];
     onProgress(1, pages);

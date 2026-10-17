@@ -164,29 +164,32 @@ export function groupVolumes(
     }
     current.episodes.push({ number: item.number, title: item.title });
   }
-  return sections
-    .filter((section) => section.episodes.length)
-    .flatMap((section) => {
-      const parts: SyosetuEpisode[][] = [];
-      for (
-        let start = 0;
-        start < section.episodes.length;
-        start += VOLUME_EPISODES
-      )
-        parts.push(section.episodes.slice(start, start + VOLUME_EPISODES));
-      return parts.map((episodes) => ({
-        id: String(episodes[0]?.number ?? 0),
-        title:
-          episodes.length === 1 && episodes[0]?.number === 0
-            ? workTitle
-            : section.title
-              ? parts.length > 1
-                ? `${section.title}（${rangeTitle(episodes)}）`
-                : section.title
-              : rangeTitle(episodes),
-        episodes,
-      }));
-    });
+  const filled = sections.filter((section) => section.episodes.length);
+  const volumes = filled.flatMap((section) => {
+    const parts: SyosetuEpisode[][] = [];
+    for (
+      let start = 0;
+      start < section.episodes.length;
+      start += VOLUME_EPISODES
+    )
+      parts.push(section.episodes.slice(start, start + VOLUME_EPISODES));
+    return parts.map((episodes) => ({
+      id: String(episodes[0]?.number ?? 0),
+      title:
+        episodes.length === 1 && episodes[0]?.number === 0
+          ? workTitle
+          : section.title
+            ? parts.length > 1
+              ? `${section.title}（${rangeTitle(episodes)}）`
+              : section.title
+            : rangeTitle(episodes),
+      episodes,
+    }));
+  });
+  // A short work without sections is one volume named after the work.
+  if (volumes.length === 1 && filled[0]?.title === null)
+    volumes[0].title = workTitle;
+  return volumes;
 }
 
 const kept = new Set(['ruby', 'rb', 'rt', 'rp', 'em', 'strong', 'b', 'i']);

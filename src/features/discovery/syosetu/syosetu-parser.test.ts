@@ -81,6 +81,27 @@ describe('なろう parsing', () => {
     ]);
   });
 
+  it('names a short work without sections after the work', () => {
+    expect(
+      groupVolumes(
+        [
+          { kind: 'episode', number: 1, title: '一' },
+          { kind: 'episode', number: 2, title: '二' },
+        ],
+        '短い連載',
+      ),
+    ).toEqual([
+      {
+        id: '1',
+        title: '短い連載',
+        episodes: [
+          { number: 1, title: '一' },
+          { number: 2, title: '二' },
+        ],
+      },
+    ]);
+  });
+
   it('reads a short story from its work page', () => {
     const page = parseTocPage(
       '<h1 class="p-novel__title">短編</h1><div class="p-novel__body"><div class="js-novel-text p-novel__text"><p>本文</p></div></div>',

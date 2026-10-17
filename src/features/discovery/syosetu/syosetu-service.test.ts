@@ -141,4 +141,20 @@ describe('SyosetuService', () => {
       code: 'SOURCE_ACCESS_DENIED',
     });
   });
+
+  it('reads a short story with a single request', async () => {
+    const { gateway, importBytes, service } = setup();
+    const page = vi
+      .spyOn(gateway, 'page')
+      .mockResolvedValue(
+        '<h1 class="p-novel__title">短編</h1><div class="p-novel__body"><div class="js-novel-text p-novel__text"><p>本文です。</p></div></div>',
+      );
+    const toc = await service.toc('n0002bb', signal);
+    await service.acquire(
+      { toc, volume: toc.volumes[0], vertical: false, onProgress: vi.fn() },
+      signal,
+    );
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(importBytes.mock.calls[0]?.[0]).toBe('短編.epub');
+  });
 });
