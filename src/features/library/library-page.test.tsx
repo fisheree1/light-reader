@@ -539,3 +539,37 @@ describe('LibraryPage reading progress', () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe('LibraryPage fetched series', () => {
+  it('links a fetched series to checking its source for new volumes', async () => {
+    const fetched = (id: string, volumeId: string, index: number) =>
+      createBook({
+        id,
+        title: `网络系列 第${String(index)}卷`,
+        filePath: `light-reader/books/${id}/book.epub`,
+        metadata: {
+          ...createBook().metadata,
+          series: { title: '网络系列', index },
+          origin: {
+            source: 'linovelib',
+            novelId: '9',
+            volumeId,
+            url: 'https://www.linovelib.com/novel/9.html',
+            revision: 'c'.repeat(64),
+            translators: [],
+          },
+        },
+      });
+    renderLibrary(
+      createServices({
+        initialBooks: [fetched('f1', '90', 1), fetched('f2', '91', 2)],
+      }),
+    );
+    const series = await screen.findByRole('region', {
+      name: '系列《网络系列》',
+    });
+    expect(
+      within(series).getByRole('link', { name: '检查新卷' }),
+    ).toHaveAttribute('href', '/discover?source=linovelib&novel=9');
+  });
+});

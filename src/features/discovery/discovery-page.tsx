@@ -1,5 +1,12 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Globe, Search } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { EmptyState } from '../../components/common/empty-state';
@@ -24,6 +31,17 @@ import type { ChineseScript } from './domain/chinese-script';
 import type { TranslationMethod, VolumeKind } from './domain/edition';
 import type { MessageKey } from '../../i18n/i18n';
 import { OpdsPanel } from './opds/opds-panel';
+import {
+  followedSeries,
+  ownedVolumeIndex,
+  ownedVolumes,
+  volumeKey,
+  type OwnedVolume,
+} from './domain/followed-series';
+import type { LibraryManagement } from '../library/services/library-management-service';
+
+/** The shelf, read to mark volumes already fetched. */
+type OwnedBooks = Pick<LibraryManagement, 'list'>;
 import type { OpdsService } from './opds/opds-service';
 import {
   EpubValidationError,
@@ -57,6 +75,15 @@ const scriptKeys: Partial<Record<ChineseScript, MessageKey>> = {
   hant: 'discovery.scriptHant',
   mixed: 'discovery.scriptMixed',
 };
+
+/** A complete novel volume the app can fetch. */
+function isSelectable(volume: NovelVolume): boolean {
+  return (
+    volume.unavailableChapters === 0 &&
+    volume.chapters.length > 0 &&
+    volume.contentKind === 'novel'
+  );
+}
 
 /** Short labels for a volume's kind, edition and script, when known. */
 function volumeBadges(
@@ -182,9 +209,11 @@ function DiscoveryTabs({
  * tab keeps its own state while the page stays open.
  */
 export function DiscoveryPage({
+  library,
   opds,
   services,
 }: {
+  library?: OwnedBooks;
   opds?: OpdsService;
   services: BookDiscoveryService;
 }) {
@@ -194,7 +223,7 @@ export function DiscoveryPage({
   return (
     <>
       <div hidden={tab !== 'novels'}>
-        <NovelDiscovery services={services} tabs={tabs} />
+        <NovelDiscovery library={library} services={services} tabs={tabs} />
       </div>
       {opds && tab === 'opds' ? (
         <div>
@@ -213,9 +242,11 @@ export function DiscoveryPage({
 }
 
 function NovelDiscovery({
+  library,
   services,
   tabs,
 }: {
+  library?: OwnedBooks;
   services: BookDiscoveryService;
   tabs: ReactNode;
 }) {
@@ -236,6 +267,10 @@ function NovelDiscovery({
   const [error, setError] = useState<string | null>(null);
   const [outcomes, setOutcomes] = useState<Outcome[]>([]);
   const [allowMissingImages, setAllowMissingImages] = useState(false);
+  const [owned, setOwned] = useState<OwnedVolume[]>([]);
+  const ownedIndex = useMemo(() => ownedVolumeIndex(owned), [owned]);
+  const followed = useMemo(() => followedSeries(owned), [owned]);
+  const [params] = useSearchParams();
   const request = useRef<AbortController | null>(null);
   const mounted = useRef(true);
   useEffect(() => {
@@ -245,6 +280,24 @@ function NovelDiscovery({
       request.current?.abort();
     };
   }, []);
+
+  const refreshOwned = useCallback(async () => {
+    if (!library) return;
+    try {
+      const books = await library.list({
+        query: '',
+        sort: 'added',
+        favoritesOnly: false,
+        status: 'all',
+      });
+      if (mounted.current) setOwned(ownedVolumes(books));
+    } catch {
+      // Marking owned volumes is a convenience; the page works without it.
+    }
+  }, [library]);
+  useEffect(() => {
+    void refreshOwned();
+  }, [refreshOwned]);
 
   const perform = async (action: (signal: AbortSignal) => Promise<void>) => {
     request.current?.abort();
@@ -377,7 +430,34 @@ function NovelDiscovery({
           }
         }
       }
-    });
+    }).then(refreshOwned);
+
+  // `?source=…&novel=…` (from the shelf or "我的系列") opens that work's
+  // volumes directly: one catalogue request, made because the user asked.
+  useEffect(() => {
+    const from = sources.find((item) => item === params.get('source'));
+    const novel = params.get('novel') ?? '';
+    if (!from || !/^\d{1,10}$/.test(novel) || !services.gateway.available)
+      return;
+    setScope(from);
+    void loadCatalogue(from, novel);
+    // Runs again only for a new link (or StrictMode's remount, whose first
+    // request was cancelled); the loader itself changes every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params]);
+
+  const ownedFor = (volumeId: string) =>
+    catalogue
+      ? ownedIndex.get(volumeKey(source, catalogue.id, volumeId))
+      : undefined;
+  const newVolumes = catalogue
+    ? catalogue.volumes.filter(
+        (volume) => isSelectable(volume) && !ownedFor(volume.id),
+      )
+    : [];
+  const ownedCount = catalogue
+    ? catalogue.volumes.filter((volume) => ownedFor(volume.id)).length
+    : 0;
 
   return (
     <div>
@@ -593,6 +673,14 @@ function NovelDiscovery({
               method: t(methodKeys[catalogue.translationMethod]),
             })}
           </p>
+          {ownedCount ? (
+            <p className="text-muted-foreground mb-3 text-sm">
+              {t('discovery.ownedSummary', {
+                owned: ownedCount,
+                fresh: newVolumes.length,
+              })}
+            </p>
+          ) : null}
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <label className="flex items-center gap-2 text-sm">
               <input
@@ -606,6 +694,15 @@ function NovelDiscovery({
               {t('discovery.allowMissingImages')}
             </label>
             <Button
+              disabled={busy || !newVolumes.length}
+              onClick={() => {
+                setSelection(new Set(newVolumes.map((volume) => volume.id)));
+              }}
+              variant="secondary"
+            >
+              {t('discovery.selectNew', { count: newVolumes.length })}
+            </Button>
+            <Button
               disabled={busy || !selection.size || !services.gateway.available}
               onClick={() => {
                 void acquire();
@@ -616,10 +713,8 @@ function NovelDiscovery({
           </div>
           <ul className="grid gap-3 sm:grid-cols-2">
             {catalogue.volumes.map((volume) => {
-              const unavailable =
-                volume.unavailableChapters > 0 ||
-                !volume.chapters.length ||
-                volume.contentKind !== 'novel';
+              const unavailable = !isSelectable(volume);
+              const ownedVolume = ownedFor(volume.id);
               return (
                 <li
                   key={volume.id}
@@ -672,6 +767,24 @@ function NovelDiscovery({
                       ) : null}
                     </span>
                   </label>
+                  {ownedVolume ? (
+                    <div className="mt-3 flex items-center justify-between gap-2 border-t pt-3 text-sm">
+                      <span className="text-primary font-medium">
+                        {t('discovery.onShelf')}
+                      </span>
+                      <Button
+                        onClick={() => {
+                          void navigate(
+                            `/reader/${encodeURIComponent(ownedVolume.bookId)}`,
+                          );
+                        }}
+                        size="sm"
+                        variant="secondary"
+                      >
+                        {t('discovery.readVolume')}
+                      </Button>
+                    </div>
+                  ) : null}
                 </li>
               );
             })}
@@ -747,6 +860,46 @@ function NovelDiscovery({
                 </li>
               );
             })}
+          </ul>
+        </section>
+      ) : !busy && !searched && followed.length ? (
+        <section aria-label={t('discovery.followed')}>
+          <h2 className="mb-1 text-lg font-semibold">
+            {t('discovery.followed')}
+          </h2>
+          <p className="text-muted-foreground mb-3 text-sm">
+            {t('discovery.followedDescription')}
+          </p>
+          <ul className="grid gap-3 sm:grid-cols-2">
+            {followed.map((work) => (
+              <li
+                className="bg-surface flex items-center justify-between gap-3 rounded-lg border p-4 text-sm"
+                key={`${work.source}:${work.novelId}`}
+              >
+                <span className="min-w-0">
+                  <span className="block truncate font-medium">
+                    {work.title}
+                  </span>
+                  <span className="text-muted-foreground block text-xs">
+                    {t('discovery.followedVolumes', {
+                      source: sourceNames[work.source],
+                      count: work.volumes,
+                    })}
+                  </span>
+                </span>
+                <Button
+                  disabled={!services.gateway.available}
+                  onClick={() => {
+                    setScope(work.source);
+                    void loadCatalogue(work.source, work.novelId);
+                  }}
+                  size="sm"
+                  variant="secondary"
+                >
+                  {t('discovery.checkNew')}
+                </Button>
+              </li>
+            ))}
           </ul>
         </section>
       ) : !busy ? (

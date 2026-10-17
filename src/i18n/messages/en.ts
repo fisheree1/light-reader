@@ -101,6 +101,16 @@ export const en: Messages = {
     reportShort: 'Possibly short chapters: {titles}',
     copyReport: 'Copy acceptance report',
     reportCopied: 'Copied',
+    ownedSummary:
+      '{owned} volumes are on your shelf; {fresh} new volumes can be fetched.',
+    selectNew: 'Select all new volumes ({count})',
+    onShelf: 'On your shelf',
+    followed: 'My series',
+    followedDescription:
+      "Works you've fetched before. Checking for new volumes reads that work's volume list once.",
+    followedVolumes: '{source} · {count} on your shelf',
+    checkNew: 'Check for new volumes',
+    readVolume: 'Read this volume',
   },
   errors: {
     USER_CANCELLED: '',
@@ -299,6 +309,7 @@ export const en: Messages = {
     statusFinished: 'Finished',
     progressRead: '{percent}% read · {date}',
     finished: 'Finished · {date}',
+    seriesCheckNew: 'Check for new volumes',
   },
   common: {
     unknownAuthor: 'Unknown author',

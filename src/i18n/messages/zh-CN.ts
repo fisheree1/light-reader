@@ -85,6 +85,15 @@ export const zhCN = {
     reportShort: '疑似过短章节：{titles}',
     copyReport: '复制验收报告',
     reportCopied: '已复制',
+    ownedSummary: '书架中已有 {owned} 卷，可获取的新卷 {fresh} 卷。',
+    selectNew: '选择全部未收藏的卷（{count}）',
+    onShelf: '书架中已有',
+    followed: '我的系列',
+    followedDescription:
+      '从书源获取过的作品。检查新卷只会读取一次该作品的目录。',
+    followedVolumes: '{source} · 书架中 {count} 卷',
+    checkNew: '检查新卷',
+    readVolume: '阅读此卷',
   },
   errors: {
     USER_CANCELLED: '',
@@ -233,6 +242,7 @@ export const zhCN = {
     statusFinished: '已读完',
     progressRead: '已读 {percent}% · {date}',
     finished: '已读完 · {date}',
+    seriesCheckNew: '检查新卷',
   },
   common: {
     unknownAuthor: '未知作者',

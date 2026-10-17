@@ -160,3 +160,19 @@ export function continueVolume<
       .find((book) => readingStatus(book) !== 'finished') ?? current
   );
 }
+
+/**
+ * The discovery page for the online work a series was fetched from, where new
+ * volumes can be checked. Null when no volume came from a light-novel source.
+ */
+export function seriesUpdateLink(
+  books: readonly { metadata: { origin?: BookOrigin } }[],
+): string | null {
+  const origin = books.find((book) => book.metadata.origin)?.metadata.origin;
+  if (!origin) return null;
+  const query = new URLSearchParams({
+    source: origin.source,
+    novel: origin.novelId,
+  });
+  return `/discover?${query.toString()}`;
+}
