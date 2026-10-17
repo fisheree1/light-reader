@@ -10,6 +10,10 @@ import {
   type NoteSearchResult,
 } from '../../features/search/domain/search';
 import { AppError } from '../../lib/app-error';
+import {
+  searchIndexWrites,
+  type AtomicSearchIndexWrites,
+} from '../atomic-writes';
 import { getDatabase, type SqlDatabase } from '../client';
 import {
   mapAnnotationSearchRecord,
@@ -61,9 +65,14 @@ export function createSearchQuery(value: string): {
 
 export class SqliteSearchRepository implements SearchRepository {
   private readonly databaseProvider: DatabaseProvider;
+  private readonly atomicWrites: AtomicSearchIndexWrites;
 
-  constructor(databaseProvider: DatabaseProvider = getDatabase) {
+  constructor(
+    databaseProvider: DatabaseProvider = getDatabase,
+    atomicWrites: AtomicSearchIndexWrites = searchIndexWrites,
+  ) {
     this.databaseProvider = databaseProvider;
+    this.atomicWrites = atomicWrites;
   }
 
   async searchBooks(
@@ -216,21 +225,9 @@ export class SqliteSearchRepository implements SearchRepository {
     const bookId = validId(valueBookId);
     const chapters = bookContentChapterSchema.array().parse(values);
     try {
-      const database = await this.databaseProvider();
-      await this.transaction(database, async () => {
-        await database.execute(
-          'DELETE FROM book_content_index WHERE book_id = $1',
-          [bookId],
-        );
-        for (const chapter of chapters) {
-          await database.execute(
-            `INSERT INTO book_content_index (
-               book_id, chapter_href, chapter_title, text
-             ) VALUES ($1, $2, $3, $4)`,
-            [bookId, chapter.chapterHref, chapter.chapterTitle, chapter.text],
-          );
-        }
-      });
+      // Loads the plugin pool the command writes through.
+      await this.databaseProvider();
+      await this.atomicWrites.replaceBookContent(bookId, chapters);
     } catch (error) {
       throw new AppError('SEARCH_INDEX_FAILED', { cause: error });
     }
@@ -247,35 +244,10 @@ export class SqliteSearchRepository implements SearchRepository {
 
   async rebuildTextIndexes(): Promise<void> {
     try {
-      const database = await this.databaseProvider();
-      await this.transaction(database, async () => {
-        await database.execute('DELETE FROM notes_fts');
-        await database.execute(
-          `INSERT INTO notes_fts (note_id, title, content)
-           SELECT id, title, plain_text FROM notes`,
-        );
-        await database.execute('DELETE FROM annotations_fts');
-        await database.execute(
-          `INSERT INTO annotations_fts (annotation_id, text)
-           SELECT id, text FROM annotations`,
-        );
-      });
+      await this.databaseProvider();
+      await this.atomicWrites.rebuildTextIndexes();
     } catch (error) {
       throw new AppError('SEARCH_INDEX_FAILED', { cause: error });
-    }
-  }
-
-  private async transaction(
-    database: SqlDatabase,
-    action: () => Promise<void>,
-  ): Promise<void> {
-    await database.execute('BEGIN IMMEDIATE');
-    try {
-      await action();
-      await database.execute('COMMIT');
-    } catch (error) {
-      await database.execute('ROLLBACK').catch(() => undefined);
-      throw error;
     }
   }
 }

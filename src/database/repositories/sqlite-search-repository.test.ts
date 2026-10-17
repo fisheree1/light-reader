@@ -1,8 +1,21 @@
+import type { AtomicSearchIndexWrites } from '../atomic-writes';
 import type { SqlDatabase } from '../client';
 import {
   createSearchQuery,
   SqliteSearchRepository,
 } from './sqlite-search-repository';
+
+function fakeIndexWrites(
+  replaceBookContent: AtomicSearchIndexWrites['replaceBookContent'] = () =>
+    Promise.resolve(),
+  rebuildTextIndexes: AtomicSearchIndexWrites['rebuildTextIndexes'] = () =>
+    Promise.resolve(),
+) {
+  return {
+    replaceBookContent: vi.fn(replaceBookContent),
+    rebuildTextIndexes: vi.fn(rebuildTextIndexes),
+  };
+}
 
 class RecordingSearchDatabase implements SqlDatabase {
   readonly executions: { query: string; values: unknown[] }[] = [];
@@ -60,30 +73,27 @@ describe('SqliteSearchRepository', () => {
     expect(database.selections[0]?.values[0]).toBe('"中文搜索"');
   });
 
-  it('replaces EPUB chapters transactionally and rebuilds derived indexes', async () => {
+  it('replaces EPUB chapters and rebuilds derived indexes through atomic commands', async () => {
     const database = new RecordingSearchDatabase();
-    const repository = new SqliteSearchRepository(() =>
-      Promise.resolve(database),
+    const writes = fakeIndexWrites();
+    const repository = new SqliteSearchRepository(
+      () => Promise.resolve(database),
+      writes,
     );
+    const chapter = {
+      chapterHref: 'one.xhtml',
+      chapterTitle: '第一章',
+      text: '大量正文内容',
+    };
 
-    await repository.replaceBookContent('book-1', [
-      {
-        chapterHref: 'one.xhtml',
-        chapterTitle: '第一章',
-        text: '大量正文内容',
-      },
-    ]);
+    await repository.replaceBookContent(' book-1 ', [chapter]);
     await repository.rebuildTextIndexes();
 
-    expect(database.executions.map((item) => item.query.trim())).toEqual(
-      expect.arrayContaining([
-        'BEGIN IMMEDIATE',
-        'DELETE FROM book_content_index WHERE book_id = $1',
-        'COMMIT',
-        'DELETE FROM notes_fts',
-        'DELETE FROM annotations_fts',
-      ]),
-    );
+    expect(writes.replaceBookContent).toHaveBeenCalledWith('book-1', [chapter]);
+    expect(writes.rebuildTextIndexes).toHaveBeenCalledOnce();
+    // Statement-by-statement transactions would split across the plugin's
+    // pooled connections, so none may run through the SQL plugin.
+    expect(database.executions).toEqual([]);
     await expect(repository.findIndexedBookIds()).resolves.toEqual(['book-1']);
   });
 
@@ -127,8 +137,11 @@ class ScriptedSearchDatabase implements SqlDatabase {
   }
 }
 
-function createRepository(database: SqlDatabase) {
-  return new SqliteSearchRepository(() => Promise.resolve(database));
+function createRepository(
+  database: SqlDatabase,
+  writes: AtomicSearchIndexWrites = fakeIndexWrites(),
+) {
+  return new SqliteSearchRepository(() => Promise.resolve(database), writes);
 }
 
 const annotationRow = {
@@ -286,7 +299,8 @@ describe('SqliteSearchRepository query modes', () => {
 describe('SqliteSearchRepository index maintenance', () => {
   it('rejects invalid book ids before touching the database', async () => {
     const database = new ScriptedSearchDatabase([]);
-    const repository = createRepository(database);
+    const writes = fakeIndexWrites();
+    const repository = createRepository(database, writes);
 
     await expect(repository.replaceBookContent('  ', [])).rejects.toMatchObject(
       { code: 'SEARCH_INDEX_FAILED' },
@@ -295,33 +309,30 @@ describe('SqliteSearchRepository index maintenance', () => {
       repository.replaceBookContent('x'.repeat(129), []),
     ).rejects.toMatchObject({ code: 'SEARCH_INDEX_FAILED' });
     expect(database.executions).toEqual([]);
+    expect(writes.replaceBookContent).not.toHaveBeenCalled();
   });
 
-  it('rolls back a partially written chapter index', async () => {
+  it('maps failed atomic index writes to SEARCH_INDEX_FAILED with the cause', async () => {
     const database = new ScriptedSearchDatabase([]);
-    database.failExecute = (query) => query.startsWith('INSERT INTO');
+    const writes = fakeIndexWrites(
+      () => Promise.reject(new Error('database is locked')),
+      () => Promise.reject(new Error('disk I/O error')),
+    );
+    const repository = createRepository(database, writes);
 
     await expect(
-      createRepository(database).replaceBookContent('book-1', [
+      repository.replaceBookContent('book-1', [
         { chapterHref: 'one.xhtml', chapterTitle: '第一章', text: '正文' },
       ]),
-    ).rejects.toMatchObject({ code: 'SEARCH_INDEX_FAILED' });
-    expect(database.executions.at(-1)).toBe('ROLLBACK');
-    expect(database.executions).not.toContain('COMMIT');
-  });
-
-  it('keeps the original error when rollback itself fails', async () => {
-    const database = new ScriptedSearchDatabase([]);
-    database.failExecute = (query) =>
-      query.startsWith('INSERT INTO notes_fts') || query === 'ROLLBACK';
-
-    await expect(
-      createRepository(database).rebuildTextIndexes(),
     ).rejects.toMatchObject({
+      code: 'SEARCH_INDEX_FAILED',
+      cause: { message: 'database is locked' },
+    });
+    await expect(repository.rebuildTextIndexes()).rejects.toMatchObject({
       code: 'SEARCH_INDEX_FAILED',
       cause: { message: 'disk I/O error' },
     });
-    expect(database.executions).toContain('ROLLBACK');
+    expect(database.executions).toEqual([]);
   });
 
   it('clears the content index and maps clear and listing failures', async () => {
@@ -343,8 +354,10 @@ describe('SqliteSearchRepository index maintenance', () => {
   });
 
   it('fails clearly when the database cannot be opened', async () => {
-    const repository = new SqliteSearchRepository(() =>
-      Promise.reject(new Error('missing plugin')),
+    const writes = fakeIndexWrites();
+    const repository = new SqliteSearchRepository(
+      () => Promise.reject(new Error('missing plugin')),
+      writes,
     );
 
     await expect(repository.findIndexedBookIds()).rejects.toMatchObject({
@@ -353,5 +366,6 @@ describe('SqliteSearchRepository index maintenance', () => {
     await expect(repository.rebuildTextIndexes()).rejects.toMatchObject({
       code: 'SEARCH_INDEX_FAILED',
     });
+    expect(writes.rebuildTextIndexes).not.toHaveBeenCalled();
   });
 });
