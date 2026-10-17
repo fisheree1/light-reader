@@ -786,6 +786,26 @@ test('manages favorites, tags, sorting, and protected deletion locally', async (
   );
   await page.getByRole('searchbox', { name: '搜索书架' }).clear();
 
+  for (const [title, index] of [
+    ['Zulu', '2'],
+    ['Alpha', '1'],
+  ] as const) {
+    await page.getByRole('button', { name: `管理《${title}》` }).click();
+    await page.getByLabel('系列名').fill('测试系列');
+    await page.getByLabel('系列顺序').fill(index);
+    await page.getByRole('button', { name: '保存书籍信息' }).click();
+    await page.getByRole('button', { name: '关闭书籍管理' }).click();
+    await expect(page.getByRole('status')).toContainText('书籍信息已保存');
+  }
+  // Series details persist in IndexedDB and group the volumes in order.
+  await page.reload();
+  const series = page.getByRole('region', { name: '系列《测试系列》' });
+  await expect(series).toContainText('2 卷');
+  await series.getByRole('button', { name: '展开系列《测试系列》' }).click();
+  await expect(
+    series.getByRole('button', { name: /^打开/ }).first(),
+  ).toHaveAccessibleName('打开《Alpha》');
+
   await page.getByRole('button', { name: '管理《Zulu》' }).click();
   await page.getByRole('button', { name: /删除文件但保留笔记引用/ }).click();
   await expect(

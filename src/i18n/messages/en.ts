@@ -283,6 +283,14 @@ export const en: Messages = {
       'The book and its data were deleted; {count} note quotes were removed.',
     deletedKeepReferences:
       'The book file and reading data were deleted; note quote snapshots were kept.',
+    groupSeries: 'Group by series',
+    seriesLabel: 'Series: {title}',
+    seriesSummary: '{count} volumes · {opened} started',
+    seriesExpand: 'Expand series {title}',
+    seriesCollapse: 'Collapse series {title}',
+    seriesContinue: 'Continue: {title}',
+    seriesStart: 'Start: {title}',
+    detailsSaved: 'Book details saved.',
   },
   common: {
     unknownAuthor: 'Unknown author',
@@ -295,7 +303,8 @@ export const en: Messages = {
   },
   bookManagement: {
     title: 'Manage “{title}”',
-    description: 'Edit tags, or safely delete this book from this device.',
+    description:
+      'Edit book details and tags, or safely delete this book from this device.',
     close: 'Close book management',
     confirmTitle: 'Delete “{title}”?',
     deleteAllDetail:
@@ -316,6 +325,16 @@ export const en: Messages = {
     keepReferences: 'Delete the file but keep note quotes',
     keepReferencesHint:
       'Keeps the quoted text, chapter, and position in notes, without links back to the book.',
+    details: 'Book details',
+    titleLabel: 'Title',
+    authorLabel: 'Author',
+    seriesTitle: 'Series',
+    seriesIndex: 'Position in series',
+    seriesIndexInvalid:
+      'Enter a number from 0 to 100000 with up to 3 decimal places.',
+    seriesHint:
+      'Books with the same series name are shown together on the shelf, in order (decimals such as 2.5 work). Clear the series name to remove it. Only the shelf details change; the book file is untouched.',
+    saveDetails: 'Save details',
   },
   reader: {
     backToLibrary: 'Back to library',

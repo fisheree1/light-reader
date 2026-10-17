@@ -48,6 +48,7 @@ function createServices(
         Promise.resolve({ cleanupPending: false, removedReferences: 0 }),
       list: () => Promise.resolve([book]),
       replaceTags: () => Promise.resolve(book),
+      updateDetails: () => Promise.resolve(book),
       setFavorite: () => Promise.resolve(book),
     },
     loadCoverUrl,

@@ -302,6 +302,27 @@ describe('novel acquisition', () => {
     expect(sourcePage).toContain('<p>翻译类型：未知（来源未声明）</p>');
   });
 
+  it('records the series and volume position for the shelf', async () => {
+    const { service, importBytes } = setup();
+    const signal = new AbortController().signal;
+    const catalogue = await service.catalogue('bilinovel', '1', signal);
+    await service.acquire(
+      {
+        source: 'bilinovel',
+        catalogue,
+        volume: catalogue.volumes[0],
+        allowMissingImages: false,
+        onProgress: vi.fn(),
+      },
+      signal,
+    );
+    const parsed = await new FflateEpubMetadataParser().parse(
+      importBytes.mock.calls[0][1],
+      'volume.epub',
+    );
+    expect(parsed.metadata.series).toEqual({ title: '测试轻小说', index: 1 });
+  });
+
   it('reports what was fetched and refuses to import a structurally broken EPUB', async () => {
     const { service, importBytes } = setup();
     const signal = new AbortController().signal;

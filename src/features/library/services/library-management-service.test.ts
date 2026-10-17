@@ -145,6 +145,7 @@ function createSubject() {
     list: () => Promise.resolve(persistedBook ? [libraryBook] : []),
     setFavorite: () => Promise.resolve(libraryBook),
     replaceTags: () => Promise.resolve(libraryBook),
+    updateDetails: () => Promise.resolve(libraryBook),
     deleteBook: (_id, updates) => {
       receivedUpdates = updates;
       if (failDelete) return Promise.reject(new AppError('BOOK_DELETE_FAILED'));

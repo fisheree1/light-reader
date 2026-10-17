@@ -111,6 +111,18 @@ function createServices(
         books = books.map((item) => (item.id === id ? updated : item));
         return Promise.resolve(updated);
       },
+      updateDetails(id, details) {
+        const book = books.find((item) => item.id === id);
+        if (!book) return Promise.reject(new AppError('BOOK_NOT_FOUND'));
+        const updated = {
+          ...book,
+          title: details.title,
+          author: details.author,
+          metadata: { ...book.metadata, series: details.series },
+        };
+        books = books.map((item) => (item.id === id ? updated : item));
+        return Promise.resolve(updated);
+      },
       deleteBook(id) {
         books = books.filter((book) => book.id !== id);
         return Promise.resolve({
@@ -317,7 +329,7 @@ describe('LibraryPage', () => {
     await screen.findByRole('button', { name: '打开《受控删除》' });
 
     await user.click(screen.getByRole('button', { name: '管理《受控删除》' }));
-    await user.type(screen.getByLabelText('标签'), '技术, 待读');
+    await user.type(await screen.findByLabelText('标签'), '技术, 待读');
     await user.click(screen.getByRole('button', { name: '保存标签' }));
     await user.click(screen.getByRole('button', { name: '关闭书籍管理' }));
     expect(await screen.findByRole('status')).toHaveTextContent('标签已保存');
@@ -338,5 +350,115 @@ describe('LibraryPage', () => {
       ).not.toBeInTheDocument();
     });
     expect(screen.getByRole('status')).toHaveTextContent('笔记引用快照已保留');
+  });
+});
+
+describe('LibraryPage series', () => {
+  const volume = (
+    id: string,
+    title: string,
+    index: number,
+    lastReadAt: number | null,
+  ) =>
+    createBook({
+      id,
+      title,
+      filePath: `light-reader/books/${id}/book.epub`,
+      lastReadAt,
+      metadata: {
+        ...createBook().metadata,
+        title,
+        series: { title: '测试系列', index },
+      },
+    });
+
+  it('collapses a series and continues its most recently read volume', async () => {
+    const user = userEvent.setup();
+    renderLibrary(
+      createServices({
+        initialBooks: [
+          volume('v2', '测试系列 第二卷', 2, 50),
+          createBook({
+            id: 'solo',
+            title: '独立作品',
+            filePath: 'light-reader/books/solo/book.epub',
+          }),
+          volume('v1', '测试系列 第一卷', 1, 20),
+        ],
+      }),
+    );
+
+    const series = await screen.findByRole('region', {
+      name: '系列《测试系列》',
+    });
+    expect(within(series).getByText('2 卷 · 已开始 2 卷')).toBeVisible();
+    expect(
+      within(series).queryByRole('button', { name: '打开《测试系列 第一卷》' }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(series).getByRole('button', { name: '继续阅读：测试系列 第二卷' }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: '打开《独立作品》' }),
+    ).toBeVisible();
+
+    await user.click(
+      within(series).getByRole('button', { name: '展开系列《测试系列》' }),
+    );
+    expect(
+      within(series)
+        .getAllByRole('button', { name: /^打开《/ })
+        .map((button) => button.getAttribute('aria-label')),
+    ).toEqual(['打开《测试系列 第一卷》', '打开《测试系列 第二卷》']);
+
+    await user.click(screen.getByRole('checkbox', { name: '按系列分组' }));
+    expect(
+      screen.queryByRole('region', { name: /系列《/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /^打开《/ })).toHaveLength(3);
+  });
+
+  it('edits title, author and series from book management', async () => {
+    const user = userEvent.setup();
+    renderLibrary(
+      createServices({
+        initialBooks: [
+          volume('v1', '测试系列 第一卷', 1, null),
+          createBook({
+            id: 'v2',
+            title: '旧书名',
+            filePath: 'light-reader/books/v2/book.epub',
+          }),
+        ],
+      }),
+    );
+    await user.click(
+      await screen.findByRole('button', { name: '管理《旧书名》' }),
+    );
+    const dialog = await screen.findByRole('dialog');
+    await user.clear(within(dialog).getByLabelText('书名'));
+    await user.type(within(dialog).getByLabelText('书名'), '测试系列 第二卷');
+    await user.type(within(dialog).getByLabelText('作者'), '作者甲');
+    await user.type(within(dialog).getByLabelText('系列名'), '测试系列');
+    await user.type(within(dialog).getByLabelText('系列顺序'), 'x');
+    expect(within(dialog).getByText(/请输入 0–100000/)).toBeVisible();
+    expect(
+      within(dialog).getByRole('button', { name: '保存书籍信息' }),
+    ).toBeDisabled();
+    await user.clear(within(dialog).getByLabelText('系列顺序'));
+    await user.type(within(dialog).getByLabelText('系列顺序'), '2');
+    await user.click(
+      within(dialog).getByRole('button', { name: '保存书籍信息' }),
+    );
+
+    expect(await screen.findByText('书籍信息已保存。')).toBeVisible();
+    await user.keyboard('{Escape}');
+    expect(
+      await screen.findByRole('region', { name: '系列《测试系列》' }),
+    ).toBeVisible();
+    expect(screen.getByText('2 卷 · 已开始 0 卷')).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: '开始阅读：测试系列 第一卷' }),
+    ).toBeVisible();
   });
 });

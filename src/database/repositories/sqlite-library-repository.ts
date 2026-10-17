@@ -1,10 +1,13 @@
 import { invoke } from '@tauri-apps/api/core';
 
+import { bookMetadataSchema } from '../../features/library/domain/book';
 import {
+  bookDetailsSchema,
   bookListOptionsSchema,
   bookTagSchema,
   normalizeBookTags,
   noteReferenceUpdateSchema,
+  type BookDetails,
   type BookListOptions,
   type LibraryBook,
   type NoteReferenceUpdate,
@@ -152,6 +155,38 @@ export class SqliteLibraryRepository implements LibraryRepository {
           [this.now(), id],
         );
       });
+      return await this.requireBook(database, id);
+    } catch (error) {
+      if (isAppError(error)) throw error;
+      throw new AppError('BOOK_UPDATE_FAILED', { cause: error });
+    }
+  }
+
+  async updateDetails(
+    bookId: string,
+    value: BookDetails,
+  ): Promise<LibraryBook> {
+    const id = validId(bookId);
+    const details = bookDetailsSchema.parse(value);
+    try {
+      const database = await this.databaseProvider();
+      const book = await this.requireBook(database, id);
+      const metadata = bookMetadataSchema.parse({
+        ...book.metadata,
+        series: details.series,
+      });
+      // One statement, so the change is atomic without a transaction.
+      await database.execute(
+        `UPDATE books SET title = $1, author = $2, metadata_json = $3,
+           updated_at = $4 WHERE id = $5`,
+        [
+          details.title,
+          details.author,
+          JSON.stringify(metadata),
+          this.now(),
+          id,
+        ],
+      );
       return await this.requireBook(database, id);
     } catch (error) {
       if (isAppError(error)) throw error;

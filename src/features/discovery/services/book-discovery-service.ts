@@ -431,6 +431,12 @@ export class BookDiscoveryService {
         script: origin.script,
         translationMethod: origin.translationMethod,
         edition: origin.edition,
+        // Catalogue order, so side stories sort where the source lists them.
+        series: {
+          title: catalogue.title,
+          index:
+            catalogue.volumes.findIndex((item) => item.id === volume.id) + 1,
+        },
         chapters,
         images,
         coverPath,

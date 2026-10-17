@@ -1,12 +1,14 @@
 import { BookOpen, CircleAlert, Search } from 'lucide-react';
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { EmptyState } from '../../components/common/empty-state';
 import { Button } from '../../components/ui/button';
 import { cn } from '../../lib/cn';
 import { BookCard } from './components/book-card';
-import { BookManagementDialog } from './components/book-management-dialog';
+import { SeriesSection } from './components/series-section';
+import { groupBySeries } from './domain/book-series';
+import type { LibraryBook } from './domain/library';
 import { ImportBookButton } from './components/import-book-button';
 import { useLibrary } from './hooks/use-library';
 import {
@@ -14,6 +16,13 @@ import {
   type LibraryServices,
 } from './services/library-services';
 import { useI18n } from '../../i18n/use-i18n';
+
+// Opened on demand, so it stays out of the shelf's initial load.
+const BookManagementDialog = lazy(() =>
+  import('./components/book-management-dialog').then((module) => ({
+    default: module.BookManagementDialog,
+  })),
+);
 
 interface LibraryPageProps {
   services?: LibraryServices;
@@ -28,6 +37,27 @@ export function LibraryPage({ services = libraryServices }: LibraryPageProps) {
     library.books.find((book) => book.id === managedBookId) ?? null;
   const hasFilter = Boolean(library.query.trim()) || library.favoritesOnly;
   const showLibraryControls = library.books.length > 0 || hasFilter;
+  const entries = library.groupSeries
+    ? groupBySeries(library.books)
+    : library.books.map((book) => ({ kind: 'book' as const, book }));
+  const openBook = (book: LibraryBook) => {
+    void navigate(`/reader/${encodeURIComponent(book.id)}`);
+  };
+  const renderBook = (book: LibraryBook) => (
+    <BookCard
+      key={book.id}
+      book={book}
+      disabled={library.mutatingBookId === book.id}
+      onManage={(selectedBook) => {
+        setManagedBookId(selectedBook.id);
+      }}
+      onOpen={openBook}
+      onToggleFavorite={(selectedBook) => {
+        void library.setFavorite(selectedBook.id, !selectedBook.favorite);
+      }}
+      services={services}
+    />
+  );
 
   return (
     <div>
@@ -110,6 +140,17 @@ export function LibraryPage({ services = libraryServices }: LibraryPageProps) {
             />
             {t('library.favoritesOnly')}
           </label>
+          <label className="flex h-9 items-center gap-2 px-2 text-sm">
+            <input
+              checked={library.groupSeries}
+              className="accent-primary size-4"
+              onChange={(event) => {
+                library.setGroupSeries(event.currentTarget.checked);
+              }}
+              type="checkbox"
+            />
+            {t('library.groupSeries')}
+          </label>
         </section>
       ) : null}
 
@@ -176,40 +217,37 @@ export function LibraryPage({ services = libraryServices }: LibraryPageProps) {
           aria-label={t('library.books')}
           className="grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
         >
-          {library.books.map((book) => (
-            <BookCard
-              key={book.id}
-              book={book}
-              disabled={library.mutatingBookId === book.id}
-              onManage={(selectedBook) => {
-                setManagedBookId(selectedBook.id);
-              }}
-              onOpen={(selectedBook) => {
-                void navigate(`/reader/${encodeURIComponent(selectedBook.id)}`);
-              }}
-              onToggleFavorite={(selectedBook) => {
-                void library.setFavorite(
-                  selectedBook.id,
-                  !selectedBook.favorite,
-                );
-              }}
-              services={services}
-            />
-          ))}
+          {entries.map((entry) =>
+            entry.kind === 'book' ? (
+              renderBook(entry.book)
+            ) : (
+              <SeriesSection
+                key={entry.key}
+                group={entry}
+                onOpen={openBook}
+                renderBook={renderBook}
+              />
+            ),
+          )}
         </section>
       )}
 
       {managedBook ? (
-        <BookManagementDialog
-          book={managedBook}
-          busy={library.mutatingBookId === managedBook.id}
-          onDelete={(mode) => library.deleteBook(managedBook.id, mode)}
-          onOpenChange={(open) => {
-            if (!open) setManagedBookId(null);
-          }}
-          onSaveTags={(tags) => library.replaceTags(managedBook.id, tags)}
-          open
-        />
+        <Suspense fallback={null}>
+          <BookManagementDialog
+            book={managedBook}
+            busy={library.mutatingBookId === managedBook.id}
+            onDelete={(mode) => library.deleteBook(managedBook.id, mode)}
+            onOpenChange={(open) => {
+              if (!open) setManagedBookId(null);
+            }}
+            onSaveDetails={(details) =>
+              library.updateDetails(managedBook.id, details)
+            }
+            onSaveTags={(tags) => library.replaceTags(managedBook.id, tags)}
+            open
+          />
+        </Suspense>
       ) : null}
     </div>
   );
