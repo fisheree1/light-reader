@@ -4,14 +4,28 @@ import { noteDocumentSchema } from '../../notes/domain/note';
 import { bookSchema } from './book';
 import { bookSeriesSchema } from './book-series';
 
+export {
+  FINISHED_PROGRESS,
+  readingStatus,
+  type ReadingStatus,
+} from './reading-status';
+
 export const bookTagSchema = z.string().trim().min(1).max(40);
 export const bookSortSchema = z.enum(['recent', 'added', 'title']);
 export type BookSort = z.infer<typeof bookSortSchema>;
+export const bookStatusFilterSchema = z.enum([
+  'all',
+  'unread',
+  'reading',
+  'finished',
+]);
+export type BookStatusFilter = z.infer<typeof bookStatusFilterSchema>;
 
 export const bookListOptionsSchema = z.object({
   query: z.string().trim().max(200).default(''),
   sort: bookSortSchema.default('recent'),
   favoritesOnly: z.boolean().default(false),
+  status: bookStatusFilterSchema.default('all'),
 });
 
 export type BookListOptions = z.infer<typeof bookListOptionsSchema>;
@@ -20,6 +34,8 @@ export const libraryBookSchema = bookSchema.extend({
   favorite: z.boolean(),
   tags: z.array(bookTagSchema).max(20),
   lastReadAt: z.number().int().nonnegative().nullable(),
+  /** Saved reading position as 0–1, when the reader reported one. */
+  progress: z.number().min(0).max(1).nullable(),
 });
 
 export type LibraryBook = z.infer<typeof libraryBookSchema>;

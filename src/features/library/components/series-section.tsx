@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react';
 import { Button } from '../../../components/ui/button';
 import { useI18n } from '../../../i18n/use-i18n';
 import { continueVolume, type SeriesGroup } from '../domain/book-series';
+import { readingStatus } from '../domain/reading-status';
 import type { LibraryBook } from '../domain/library';
 
 interface SeriesSectionProps {
@@ -20,7 +21,9 @@ export function SeriesSection({
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const next = continueVolume(group.books);
-  const opened = group.books.filter((book) => book.lastReadAt !== null).length;
+  const finished = group.books.filter(
+    (book) => readingStatus(book) === 'finished',
+  ).length;
   const listId = `series-${group.key}`;
 
   return (
@@ -59,7 +62,7 @@ export function SeriesSection({
             <span className="text-muted-foreground block text-xs">
               {t('library.seriesSummary', {
                 count: group.books.length,
-                opened,
+                finished,
               })}
             </span>
           </span>

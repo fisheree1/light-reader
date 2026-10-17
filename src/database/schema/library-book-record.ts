@@ -9,6 +9,7 @@ import { mapBookRecord, bookRecordSchema } from './book-record';
 export const libraryBookRecordSchema = bookRecordSchema.extend({
   favorite: z.union([z.literal(0), z.literal(1), z.boolean()]),
   last_read_at: z.number().int().nonnegative().nullable(),
+  progression: z.number().min(0).max(1).nullable().optional(),
 });
 
 export const bookTagRecordSchema = z.object({
@@ -29,5 +30,6 @@ export function mapLibraryBookRecord(
     favorite: row.favorite === true || row.favorite === 1,
     tags,
     lastReadAt: row.last_read_at,
+    progress: row.last_read_at === null ? null : (row.progression ?? null),
   });
 }

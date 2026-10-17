@@ -27,6 +27,7 @@ const book: LibraryBook = {
   favorite: false,
   tags: [],
   lastReadAt: null,
+  progress: null,
 };
 
 function createServices(

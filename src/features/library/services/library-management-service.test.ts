@@ -42,6 +42,7 @@ const libraryBook: LibraryBook = {
   favorite: false,
   tags: [],
   lastReadAt: null,
+  progress: null,
 };
 
 const reference = {

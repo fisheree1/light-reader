@@ -4,7 +4,11 @@ import { MemoryRouter } from 'react-router-dom';
 
 import type { BookRepository } from '../../database/repositories/book-repository';
 import { AppError } from '../../lib/app-error';
-import { type BookListOptions, type LibraryBook } from './domain/library';
+import {
+  readingStatus,
+  type BookListOptions,
+  type LibraryBook,
+} from './domain/library';
 import { LibraryPage } from './library-page';
 import type { ImportBookResult } from './services/book-import-service';
 import type { LibraryServices } from './services/library-services';
@@ -32,6 +36,7 @@ function createBook(overrides: Partial<LibraryBook> = {}): LibraryBook {
     favorite: false,
     tags: [],
     lastReadAt: null,
+    progress: null,
     ...overrides,
   };
 }
@@ -51,6 +56,7 @@ function createServices(
         favorite: false,
         tags: [],
         lastReadAt: null,
+        progress: null,
       });
       return Promise.resolve(book);
     },
@@ -80,6 +86,8 @@ function createServices(
           .filter(
             (book) =>
               (!options.favoritesOnly || book.favorite) &&
+              (options.status === 'all' ||
+                readingStatus(book) === options.status) &&
               (!query ||
                 book.title.toLocaleLowerCase().includes(query) ||
                 (book.author ?? '').toLocaleLowerCase().includes(query) ||
@@ -391,7 +399,7 @@ describe('LibraryPage series', () => {
     const series = await screen.findByRole('region', {
       name: '系列《测试系列》',
     });
-    expect(within(series).getByText('2 卷 · 已开始 2 卷')).toBeVisible();
+    expect(within(series).getByText('2 卷 · 已读完 0 卷')).toBeVisible();
     expect(
       within(series).queryByRole('button', { name: '打开《测试系列 第一卷》' }),
     ).not.toBeInTheDocument();
@@ -456,9 +464,78 @@ describe('LibraryPage series', () => {
     expect(
       await screen.findByRole('region', { name: '系列《测试系列》' }),
     ).toBeVisible();
-    expect(screen.getByText('2 卷 · 已开始 0 卷')).toBeVisible();
+    expect(screen.getByText('2 卷 · 已读完 0 卷')).toBeVisible();
     expect(
       screen.getByRole('button', { name: '开始阅读：测试系列 第一卷' }),
     ).toBeVisible();
+  });
+});
+
+describe('LibraryPage reading progress', () => {
+  const read = (
+    id: string,
+    title: string,
+    progress: number | null,
+    lastReadAt: number | null,
+    series?: { title: string; index: number },
+  ) =>
+    createBook({
+      id,
+      title,
+      filePath: `light-reader/books/${id}/book.epub`,
+      lastReadAt,
+      progress,
+      metadata: { ...createBook().metadata, title, series: series ?? null },
+    });
+
+  it('shows progress, filters by status and continues with the next volume', async () => {
+    const user = userEvent.setup();
+    renderLibrary(
+      createServices({
+        initialBooks: [
+          read('half', '读到一半', 0.374, 40),
+          read('done', '已经读完', 0.99, 30),
+          read('new', '还没打开', null, null),
+          read('s1', '系列 第一卷', 1, 60, { title: '系列', index: 1 }),
+          read('s2', '系列 第二卷', null, null, { title: '系列', index: 2 }),
+        ],
+      }),
+    );
+
+    const half = await screen.findByRole('button', {
+      name: '打开《读到一半》',
+    });
+    expect(within(half).getByText(/^已读 37% · /)).toBeVisible();
+    expect(
+      within(
+        screen.getByRole('button', { name: '打开《已经读完》' }),
+      ).getByText(/^已读完 · /),
+    ).toBeVisible();
+    const series = screen.getByRole('region', { name: '系列《系列》' });
+    expect(within(series).getByText('2 卷 · 已读完 1 卷')).toBeVisible();
+    expect(
+      within(series).getByRole('button', { name: '开始阅读：系列 第二卷' }),
+    ).toBeVisible();
+
+    await user.selectOptions(screen.getByLabelText('阅读状态筛选'), 'finished');
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('button', { name: '打开《读到一半》' }),
+      ).not.toBeInTheDocument();
+    });
+    expect(
+      screen.getByRole('button', { name: '打开《已经读完》' }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: '打开《系列 第一卷》' }),
+    ).toBeVisible();
+
+    await user.selectOptions(screen.getByLabelText('阅读状态筛选'), 'unread');
+    expect(
+      await screen.findByRole('button', { name: '打开《还没打开》' }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole('button', { name: '打开《已经读完》' }),
+    ).not.toBeInTheDocument();
   });
 });
