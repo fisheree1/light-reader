@@ -252,6 +252,11 @@ export const zhCN = {
     progressRead: '已读 {percent}% · {date}',
     finished: '已读完 · {date}',
     seriesCheckNew: '检查新卷',
+    resumeLabel: '接着读',
+    resumeNext: '下一卷',
+    resumeProgress: '已读 {percent}%',
+    resumeContinue: '继续阅读',
+    resumeStart: '开始阅读',
   },
   common: {
     unknownAuthor: '未知作者',
@@ -315,6 +320,9 @@ export const zhCN = {
     openFailedTitle: '无法打开图书',
     previousPage: '上一页',
     nextPage: '下一页',
+    nextVolumeLabel: '下一卷',
+    nextVolume: '本卷已读完 · 下一卷：{title}',
+    openNextVolume: '阅读下一卷',
   },
   readerSearch: {
     searching: '正在查找…',

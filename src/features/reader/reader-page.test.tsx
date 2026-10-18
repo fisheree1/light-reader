@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {
@@ -226,6 +227,121 @@ function renderReader(services: ReaderServices) {
     </MemoryRouter>,
   );
 }
+
+function setWindowWidth(width: number) {
+  Object.defineProperty(window, 'innerWidth', {
+    configurable: true,
+    value: width,
+  });
+  window.dispatchEvent(new Event('resize'));
+}
+
+const defaultWidth = window.innerWidth;
+
+beforeEach(() => {
+  // A desktop-sized window, where both side panels fit beside the text.
+  setWindowWidth(1280);
+});
+
+afterEach(() => {
+  setWindowWidth(defaultWidth);
+});
+
+describe('ReaderPage layout on smaller windows', () => {
+  const services = () => ({
+    annotationRepository: createAnnotationRepository(),
+    repository: createRepository(),
+    settingsRepository: createSettingsRepository(),
+    source: { read: () => Promise.resolve(new ArrayBuffer(1)) },
+    createReader: () => new FakeReader(),
+  });
+
+  it('opens only one side panel at a time on a compact window', async () => {
+    setWindowWidth(1000);
+    const user = userEvent.setup();
+    renderReader(services());
+    expect(await screen.findByRole('button', { name: '第一章' })).toBeVisible();
+    // The annotations panel starts closed so the text keeps its width.
+    expect(screen.queryByLabelText('高亮与批注')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '显示高亮与批注' }));
+    expect(screen.getByLabelText('高亮与批注')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: '第一章' }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '显示目录' }));
+    expect(screen.getByRole('button', { name: '第一章' })).toBeVisible();
+    expect(screen.queryByLabelText('高亮与批注')).not.toBeInTheDocument();
+  });
+
+  it('starts without panels on a narrow window and closes them on shrinking', async () => {
+    setWindowWidth(800);
+    const first = renderReader(services());
+    await screen.findByRole('button', { name: '显示目录' });
+    expect(
+      screen.queryByRole('button', { name: '第一章' }),
+    ).not.toBeInTheDocument();
+    first.unmount();
+
+    setWindowWidth(1280);
+    renderReader(services());
+    expect(await screen.findByRole('button', { name: '第一章' })).toBeVisible();
+    expect(screen.getByLabelText('高亮与批注')).toBeInTheDocument();
+    act(() => {
+      setWindowWidth(850);
+    });
+    expect(screen.queryByLabelText('高亮与批注')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: '第一章' }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe('ReaderPage next volume', () => {
+  it('offers the next volume of the series once the book is finished', async () => {
+    const user = userEvent.setup();
+    const reader = new FakeReader();
+    const volume = (id: string, index: number) => ({
+      ...BOOK,
+      id,
+      title: `测试系列 第${String(index)}卷`,
+      filePath: `light-reader/books/${id}/book.epub`,
+      metadata: { ...BOOK.metadata, series: { title: '测试系列', index } },
+      favorite: false,
+      tags: [],
+      lastReadAt: null,
+      progress: null,
+    });
+    const list = vi
+      .fn()
+      .mockResolvedValue([volume('book-1', 1), volume('book-2', 2)]);
+    const repository = createRepository();
+    const findById = vi.spyOn(repository, 'findById');
+    renderReader({
+      annotationRepository: createAnnotationRepository(),
+      repository,
+      settingsRepository: createSettingsRepository(),
+      source: { read: () => Promise.resolve(new ArrayBuffer(1)) },
+      createReader: () => reader,
+      library: { list },
+    });
+    await screen.findByRole('button', { name: '第一章' });
+    reader.emit({ version: 1, format: 'epub', progression: 0.5 });
+    await screen.findByLabelText('阅读进度 50%');
+    // Nothing is looked up before the end of the book.
+    expect(list).not.toHaveBeenCalled();
+
+    reader.emit({ version: 1, format: 'epub', progression: 0.99 });
+    const next = await screen.findByRole('region', { name: '下一卷' });
+    expect(next).toHaveTextContent('本卷已读完 · 下一卷：测试系列 第2卷');
+    await user.click(within(next).getByRole('button', { name: '阅读下一卷' }));
+    // The reader now opens the next volume.
+    await waitFor(() => {
+      expect(findById).toHaveBeenLastCalledWith('book-2');
+    });
+  });
+});
 
 describe('ReaderPage', () => {
   it('shows loading while the managed EPUB is being read', async () => {

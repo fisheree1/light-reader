@@ -1,5 +1,5 @@
 import { BookOpen, CircleAlert, Search } from 'lucide-react';
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { EmptyState } from '../../components/common/empty-state';
@@ -7,7 +7,8 @@ import { Button } from '../../components/ui/button';
 import { cn } from '../../lib/cn';
 import { BookCard } from './components/book-card';
 import { SeriesSection } from './components/series-section';
-import { groupBySeries } from './domain/book-series';
+import { groupBySeries, resumeTarget } from './domain/book-series';
+import { ResumeCard } from './components/resume-card';
 import type { LibraryBook } from './domain/library';
 import { ImportBookButton } from './components/import-book-button';
 import { useLibrary } from './hooks/use-library';
@@ -43,6 +44,7 @@ export function LibraryPage({ services = libraryServices }: LibraryPageProps) {
   const entries = library.groupSeries
     ? groupBySeries(library.books)
     : library.books.map((book) => ({ kind: 'book' as const, book }));
+  const resume = useMemo(() => resumeTarget(library.books), [library.books]);
   const openBook = (book: LibraryBook) => {
     void navigate(`/reader/${encodeURIComponent(book.id)}`);
   };
@@ -90,6 +92,14 @@ export function LibraryPage({ services = libraryServices }: LibraryPageProps) {
           ) : null}
         </div>
       </header>
+
+      {resume && !hasFilter ? (
+        <ResumeCard
+          book={resume.book}
+          nextVolume={resume.nextVolume}
+          onOpen={openBook}
+        />
+      ) : null}
 
       {showLibraryControls ? (
         <section

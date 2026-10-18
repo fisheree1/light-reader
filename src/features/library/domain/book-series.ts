@@ -176,3 +176,31 @@ export function seriesUpdateLink(
   });
   return `/discover?${query.toString()}`;
 }
+
+/**
+ * What to read next from the shelf: the book read most recently, or, when it
+ * is finished, the next unfinished volume of its series. Null when nothing
+ * was read yet or the latest book was a finished standalone.
+ */
+export function resumeTarget<
+  T extends SeriesBook & { lastReadAt: number | null; progress: number | null },
+>(books: readonly T[]): { book: T; nextVolume: boolean } | null {
+  let latest: T | null = null;
+  for (const book of books)
+    if (
+      book.lastReadAt !== null &&
+      book.lastReadAt > (latest?.lastReadAt ?? -1)
+    )
+      latest = book;
+  if (!latest) return null;
+  if (readingStatus(latest) !== 'finished')
+    return { book: latest, nextVolume: false };
+  const series = groupBySeries(books).find(
+    (entry) => entry.kind === 'series' && entry.books.includes(latest),
+  );
+  if (series?.kind !== 'series') return null;
+  const next = continueVolume(series.books);
+  return next && next !== latest && readingStatus(next) !== 'finished'
+    ? { book: next, nextVolume: true }
+    : null;
+}

@@ -30,12 +30,15 @@ import {
   type ReaderBookSource,
 } from './reader-book-source';
 import { WebReaderBookSource } from './web-reader-book-source';
+import type { LibraryManagement } from '../../library/services/library-management-service';
 
 export interface ReaderServices {
   annotationRepository: AnnotationRepository;
   bookmarkRepository?: BookmarkRepository;
   createReader(format: BookFormat): EbookReader;
   exportPlatform?: FileExportPlatform;
+  /** The shelf, to offer the next volume of a series at the end of a book. */
+  library?: Pick<LibraryManagement, 'list'>;
   noteRepository?: NoteRepository;
   repository: BookRepository;
   readingActivityRepository?: ReadingActivityRepository;
@@ -51,6 +54,7 @@ export const readerServices: ReaderServices = {
     ? new SqliteBookmarkRepository()
     : new WebBookmarkRepository(),
   repository: libraryServices.repository,
+  library: libraryServices.management,
   readingActivityRepository: isTauri()
     ? new SqliteReadingActivityRepository()
     : new WebReadingActivityRepository(libraryServices.repository),

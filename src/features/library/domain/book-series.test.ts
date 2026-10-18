@@ -1,5 +1,6 @@
 import {
   continueVolume,
+  resumeTarget,
   seriesUpdateLink,
   groupBySeries,
   parseSeriesIndex,
@@ -124,5 +125,41 @@ describe('seriesUpdateLink', () => {
       ]),
     ).toBe('/discover?source=bilinovel&novel=42');
     expect(seriesUpdateLink([book('a', 'x')])).toBeNull();
+  });
+});
+
+describe('resumeTarget', () => {
+  const read = (
+    id: string,
+    lastReadAt: number | null,
+    progress: number | null,
+    series?: BookSeries,
+  ) => ({
+    ...book(id, `书${id}`, series ? { series } : {}),
+    lastReadAt,
+    progress,
+  });
+
+  it('resumes the latest unfinished book, or the next volume once finished', () => {
+    expect(resumeTarget([read('a', null, null)])).toBeNull();
+    expect(
+      resumeTarget([read('a', 10, 0.5), read('b', 20, 0.2)])?.book.id,
+    ).toBe('b');
+    const series = { title: '系列', index: 1 };
+    expect(
+      resumeTarget([
+        read('v1', 30, 1, series),
+        read('v2', null, null, { title: '系列', index: 2 }),
+        read('solo', 5, 0.3),
+      ]),
+    ).toMatchObject({ book: { id: 'v2' }, nextVolume: true });
+    // A finished standalone, or a finished last volume, offers nothing.
+    expect(resumeTarget([read('solo', 30, 1)])).toBeNull();
+    expect(
+      resumeTarget([
+        read('v1', 10, 1, series),
+        read('v2', 30, 0.99, { title: '系列', index: 2 }),
+      ]),
+    ).toBeNull();
   });
 });
