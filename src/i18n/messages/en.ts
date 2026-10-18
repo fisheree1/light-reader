@@ -319,6 +319,11 @@ export const en: Messages = {
     progressRead: '{percent}% read · {date}',
     finished: 'Finished · {date}',
     seriesCheckNew: 'Check for new volumes',
+    resumeLabel: 'Continue reading',
+    resumeNext: 'Next volume',
+    resumeProgress: '{percent}% read',
+    resumeContinue: 'Continue',
+    resumeStart: 'Start reading',
   },
   common: {
     unknownAuthor: 'Unknown author',
@@ -386,6 +391,9 @@ export const en: Messages = {
     openFailedTitle: 'Could not open book',
     previousPage: 'Previous page',
     nextPage: 'Next page',
+    nextVolumeLabel: 'Next volume',
+    nextVolume: 'Finished · Next: {title}',
+    openNextVolume: 'Read next volume',
   },
   readerSearch: {
     searching: 'Searching…',

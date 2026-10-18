@@ -18,6 +18,12 @@ import { IconButton } from '../../components/ui/icon-button';
 import { cn } from '../../lib/cn';
 import { bookFormatLabels } from '../library/domain/book';
 import { AnnotationPopover } from '../annotations/components/annotation-popover';
+import { FINISHED_PROGRESS } from '../library/domain/reading-status';
+import { useNextVolume } from './hooks/use-next-volume';
+import {
+  measureReadingLayout,
+  useReadingLayout,
+} from './hooks/use-reading-layout';
 import { AnnotationSidebar } from '../annotations/components/annotation-sidebar';
 import { AnnotationExportService } from '../annotations/services/annotation-export-service';
 import { SelectionToolbar } from '../annotations/components/selection-toolbar';
@@ -110,10 +116,27 @@ export function ReaderPage({
     unresolvedAnnotationIds,
     updateAnnotationNote,
   } = useReader(bookId, services, navigationTarget);
-  const [isTocOpen, setIsTocOpen] = useState(true);
+  // On smaller windows the side panels would squeeze the text: they start
+  // closed and only one stays open at a time.
+  const [initialLayout] = useState(measureReadingLayout);
+  const [isTocOpen, setIsTocOpen] = useState(!initialLayout.narrow);
   const [rightSidebar, setRightSidebar] = useState<ReaderRightSidebar | null>(
-    'annotations',
+    initialLayout.compact ? null : 'annotations',
   );
+  const layout = useReadingLayout((next) => {
+    setRightSidebar(null);
+    if (next.narrow) setIsTocOpen(false);
+  });
+  const showRightSidebar = (
+    next:
+      | ReaderRightSidebar
+      | null
+      | ((current: ReaderRightSidebar | null) => ReaderRightSidebar | null),
+  ) => {
+    const value = typeof next === 'function' ? next(rightSidebar) : next;
+    setRightSidebar(value);
+    if (value && layout.compact) setIsTocOpen(false);
+  };
   const [isChapterSearchOpen, setIsChapterSearchOpen] = useState(false);
   const [aiSelection, setAiSelection] = useState(selection);
   const [aiSelectionBookId, setAiSelectionBookId] = useState<string | null>(
@@ -166,17 +189,19 @@ export function ReaderPage({
         : null;
     setAiSelection(selection);
     setAiSelectionBookId(bookId);
-    setRightSidebar('ai');
+    showRightSidebar('ai');
   }
 
   function closeAiAssistant() {
-    setRightSidebar(null);
+    showRightSidebar(null);
     queueMicrotask(() => {
       aiReturnFocusRef.current?.focus();
     });
   }
 
   const progress = Math.round((locator.progression ?? 0) * 100);
+  const atEnd = (locator.progression ?? 0) >= FINISHED_PROGRESS;
+  const nextVolume = useNextVolume(bookId, services.library, atEnd);
 
   return (
     <div className="bg-background text-foreground flex h-screen min-h-[32rem] flex-col overflow-hidden">
@@ -192,7 +217,9 @@ export function ReaderPage({
           icon={<ListTree aria-hidden="true" size={17} />}
           label={isTocOpen ? t('reader.hideToc') : t('reader.showToc')}
           onClick={() => {
-            setIsTocOpen((current) => !current);
+            const opening = !isTocOpen;
+            setIsTocOpen(opening);
+            if (opening && layout.compact) setRightSidebar(null);
           }}
           variant="ghost"
         />
@@ -242,7 +269,7 @@ export function ReaderPage({
               : t('reader.showBookmarks')
           }
           onClick={() => {
-            setRightSidebar((current) =>
+            showRightSidebar((current) =>
               current === 'bookmarks' ? null : 'bookmarks',
             );
           }}
@@ -257,7 +284,7 @@ export function ReaderPage({
               : t('reader.showAnnotations')
           }
           onClick={() => {
-            setRightSidebar((current) =>
+            showRightSidebar((current) =>
               current === 'annotations' ? null : 'annotations',
             );
           }}
@@ -311,12 +338,12 @@ export function ReaderPage({
           <SelectionToolbar
             onCreate={async (color) => {
               await createHighlight(color);
-              setRightSidebar('annotations');
+              showRightSidebar('annotations');
             }}
             onLookup={() => {
               if (!selection) return;
               setLookupText(selection.text);
-              setRightSidebar('dictionary');
+              showRightSidebar('dictionary');
             }}
             onOpenAi={openAiAssistant}
             selection={selection}
@@ -404,6 +431,28 @@ export function ReaderPage({
             </div>
           ) : null}
 
+          {atEnd && nextVolume ? (
+            <div className="pointer-events-none absolute inset-x-0 bottom-16 flex justify-center px-4">
+              <section
+                aria-label={t('reader.nextVolumeLabel')}
+                className="bg-surface pointer-events-auto flex max-w-full flex-wrap items-center gap-3 rounded-lg border px-4 py-2 text-sm shadow"
+              >
+                <span className="min-w-0 truncate">
+                  {t('reader.nextVolume', { title: nextVolume.title })}
+                </span>
+                <Button
+                  onClick={() => {
+                    void navigate(
+                      `/reader/${encodeURIComponent(nextVolume.id)}`,
+                    );
+                  }}
+                  size="sm"
+                >
+                  {t('reader.openNextVolume')}
+                </Button>
+              </section>
+            </div>
+          ) : null}
           <div
             className={cn(
               'pointer-events-none absolute inset-x-0 bottom-4 flex justify-center gap-2 transition-opacity',
@@ -492,7 +541,7 @@ export function ReaderPage({
             canSpeak={speech.available}
             dictionary={dictionary.dictionary}
             onClose={() => {
-              setRightSidebar(null);
+              showRightSidebar(null);
             }}
             onSpeak={(text) => void speech.speak(text)}
             text={lookupText}

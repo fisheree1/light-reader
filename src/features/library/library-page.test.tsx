@@ -573,3 +573,61 @@ describe('LibraryPage fetched series', () => {
     ).toHaveAttribute('href', '/discover?source=linovelib&novel=9');
   });
 });
+
+describe('LibraryPage resume card', () => {
+  it('offers the book read last, then the next volume once it is finished', async () => {
+    const user = userEvent.setup();
+    const book = (
+      id: string,
+      title: string,
+      lastReadAt: number | null,
+      progress: number | null,
+      index: number,
+    ) =>
+      createBook({
+        id,
+        title,
+        filePath: `light-reader/books/${id}/book.epub`,
+        lastReadAt,
+        progress,
+        metadata: {
+          ...createBook().metadata,
+          title,
+          series: { title: '接续系列', index },
+        },
+      });
+    const { unmount } = renderLibrary(
+      createServices({
+        initialBooks: [book('v1', '接续系列 第一卷', 50, 0.42, 1)],
+      }),
+    );
+    const card = await screen.findByRole('region', { name: '接着读' });
+    expect(within(card).getByText('已读 42%')).toBeVisible();
+    expect(
+      within(card).getByRole('button', { name: '继续阅读' }),
+    ).toBeVisible();
+    unmount();
+
+    renderLibrary(
+      createServices({
+        initialBooks: [
+          book('v1', '接续系列 第一卷', 50, 1, 1),
+          book('v2', '接续系列 第二卷', null, null, 2),
+        ],
+      }),
+    );
+    const next = await screen.findByRole('region', { name: '接着读' });
+    expect(within(next).getByText('下一卷')).toBeVisible();
+    expect(within(next).getByText('接续系列 第二卷')).toBeVisible();
+    // Filtering hides the shortcut.
+    await user.type(
+      screen.getByRole('searchbox', { name: '搜索书架' }),
+      '第一',
+    );
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('region', { name: '接着读' }),
+      ).not.toBeInTheDocument();
+    });
+  });
+});
